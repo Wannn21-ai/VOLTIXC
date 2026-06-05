@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Session Detail - VOLTIX</title>
+  <meta name="firebase-api-key" content="NETLIFY_ENV_FIREBASE_API_KEY"/>
+  <meta name="firebase-auth-domain" content="NETLIFY_ENV_FIREBASE_AUTH_DOMAIN"/>
+  <meta name="firebase-database-url" content="NETLIFY_ENV_FIREBASE_DATABASE_URL"/>
+  <meta name="firebase-project-id" content="NETLIFY_ENV_FIREBASE_PROJECT_ID"/>
+  <meta name="firebase-storage-bucket" content="NETLIFY_ENV_FIREBASE_STORAGE_BUCKET"/>
+  <meta name="firebase-messaging-sender-id" content="NETLIFY_ENV_FIREBASE_MESSAGING_SENDER_ID"/>
+  <meta name="firebase-app-id" content="NETLIFY_ENV_FIREBASE_APP_ID"/>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main-content" id="main-content">
+      <header class="topbar" id="topbar"></header>
+      <main class="page-content">
+        <div class="page-header">
+          <div>
+            <a class="detail-back-link" href="history.html">← Back to History</a>
+            <div class="page-header-title" id="detail-device-name">Session Detail</div>
+            <div class="page-header-sub" id="detail-date">Loading selected session...</div>
+          </div>
+          <button class="btn btn-ghost" id="btn-export">↓ Export Detail CSV</button>
+        </div>
+
+        <div class="empty-state detail-empty" id="detail-empty" style="display:none;">
+          <div class="empty-state-icon">◷</div>
+          <div class="empty-state-title">No selected session</div>
+          <div class="empty-state-sub">Return to History and choose a monitoring session.</div>
+          <a class="btn btn-primary" href="history.html">Open History</a>
+        </div>
+
+        <div id="detail-report" style="display:none;">
+          <section class="detail-section detail-session-header">
+            <div>
+              <div class="card-title">Session Report</div>
+              <div class="detail-header-name" id="detail-header-name">Device</div>
+              <div class="detail-header-date" id="detail-header-date">—</div>
+            </div>
+            <div class="detail-tags" id="detail-header-tags"></div>
+          </section>
+
+          <section class="detail-section">
+            <div class="detail-section-title">Main Session Summary</div>
+            <div class="detail-summary-grid" id="detail-summary-grid"></div>
+          </section>
+
+          <section class="detail-section">
+            <div class="detail-section-title">Electrical Readings</div>
+            <div class="detail-reading-grid" id="detail-reading-grid"></div>
+          </section>
+
+          <section class="detail-section detail-two-column">
+            <div>
+              <div class="detail-section-title">Session Metadata</div>
+              <div class="detail-metadata-card" id="detail-metadata"></div>
+            </div>
+            <div>
+              <div class="detail-section-title">Usage Projection</div>
+              <div class="detail-projection-intro" id="detail-projection-intro"></div>
+              <div class="detail-projection-grid" id="detail-projection-grid"></div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script type="module" src="js/advanced.js"></script>
+</body>
+</html>

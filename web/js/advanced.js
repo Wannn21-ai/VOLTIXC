@@ -6,13 +6,11 @@ import { db, ref, get } from "./firebase-config.js";
 import { loadDeviceHistory } from "./local-history.js";
 
 const user = await requireAuth();
-renderShell("advanced", "SESSION DETAIL");
+renderShell("history", "SESSION DETAIL");
 fillUserInfo(user);
 startStatusWatcher();
 const uid = user.uid;
-
-// Load dan apply theme + language dari Firebase/localStorage
-await loadAndApplySettings(uid);
+const settings = await loadAndApplySettings(uid);
 
 const selectedKey = sessionStorage.getItem(`sem_selected_key_${uid}`);
 const cachedSession = (() => {
@@ -20,59 +18,284 @@ const cachedSession = (() => {
   catch { return null; }
 })();
 
-const detailGrid  = document.getElementById("detail-grid");
+const detailReport = document.getElementById("detail-report");
 const detailEmpty = document.getElementById("detail-empty");
-const nameEl      = document.getElementById("detail-device-name");
-const dateEl      = document.getElementById("detail-date");
-const btnExport   = document.getElementById("btn-export");
+const btnExport = document.getElementById("btn-export");
+let selectedSession = null;
 
-if (!selectedKey) {
-  detailEmpty.style.display = "flex";
-  btnExport.style.display   = "none";
-} else {
-  try {
-    let session = cachedSession?._key === selectedKey ? cachedSession : null;
-    if (!session) {
-      const snap = await get(ref(db, `users/${uid}/history/${selectedKey}`));
-      if (snap.exists()) session = snap.val();
-    }
-    if (!session) {
-      const allHistory = await loadDeviceHistory(uid);
-      session = allHistory.find(item => item._key === selectedKey);
-    }
-    if (!session) {
-      detailEmpty.style.display = "flex";
-      btnExport.style.display   = "none";
-    } else {
-      nameEl.textContent = session.name;
-      dateEl.textContent = `Recorded on ${session.date}`;
-      const fields = [
-        { label: "Duration",        value: session.duration,      accent: "var(--cyan)"  },
-        { label: "Power",           value: `${session.power} W`,  accent: "var(--amber)" },
-        { label: "Energy",          value: `${session.energy} kWh`, accent: "var(--green)" },
-        { label: "Estimated Cost",  value: session.cost,          accent: "var(--cyan)"  },
-        { label: "Date",            value: session.date,          accent: ""             },
-      ];
-      fields.forEach(f => {
-        const item = document.createElement("div");
-        item.className = "detail-item";
-        item.innerHTML = `
-          <div class="detail-item-label">${f.label}</div>
-          <div class="detail-item-value" style="${f.accent ? `color:${f.accent}` : ""}">${f.value}</div>`;
-        detailGrid.appendChild(item);
-      });
-      btnExport.addEventListener("click", () => {
-        const csv = `Name,Duration,Power (W),Energy (kWh),Cost,Date\n${session.name},${session.duration},${session.power},${session.energy},${session.cost},${session.date}`;
-        const blob = new Blob([csv], { type: "text/csv" });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement("a");
-        a.href = url; a.download = `${session.name}_session.csv`; a.click();
-        URL.revokeObjectURL(url);
-        showToast("Exported ✓", "success");
-      });
-    }
-  } catch {
-    detailEmpty.style.display = "flex";
-    btnExport.style.display   = "none";
+function firstValue(session, keys) {
+  for (const key of keys) {
+    const value = session?.[key];
+    if (value !== undefined && value !== null && value !== "") return value;
   }
+  return null;
 }
+
+function toNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const parsed = Number(String(value ?? "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function numeric(session, keys) {
+  return toNumber(firstValue(session, keys));
+}
+
+function costOf(session) {
+  const raw = firstValue(session, ["costRaw", "sessionCost", "totalCost", "cost"]);
+  if (typeof raw === "string") {
+    const compact = raw.replace(/[^0-9.,-]/g, "");
+    if (compact.includes(".") && compact.includes(",")) {
+      const decimalSeparator = compact.lastIndexOf(".") > compact.lastIndexOf(",") ? "." : ",";
+      const thousandsSeparator = decimalSeparator === "." ? "," : ".";
+      return toNumber(compact.replaceAll(thousandsSeparator, "").replace(decimalSeparator, "."));
+    }
+    if (/rp/i.test(raw) && /^\d{1,3}(\.\d{3})+$/.test(compact)) return toNumber(compact.replaceAll(".", ""));
+  }
+  return toNumber(raw);
+}
+
+function durationSeconds(session) {
+  const value = firstValue(session, ["durationSec", "elapsedSec", "seconds", "duration"]);
+  if (typeof value === "string" && value.includes(":")) {
+    const parts = value.split(":").map(Number);
+    if (parts.every(Number.isFinite)) return parts.reduce((total, part) => total * 60 + part, 0);
+  }
+  return Math.max(0, toNumber(value));
+}
+
+function timestampMs(value) {
+  if (typeof value === "string" && !/^\d+(\.\d+)?$/.test(value.trim())) return 0;
+  const number = Number(value || 0);
+  return number > 0 ? (number > 1000000000000 ? number : number * 1000) : 0;
+}
+
+function formatDuration(totalSeconds) {
+  const seconds = Math.max(0, Math.round(totalSeconds || 0));
+  const h = String(Math.floor(seconds / 3600)).padStart(2, "0");
+  const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+  const s = String(seconds % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+
+function formatDate(value) {
+  const timestamp = timestampMs(value);
+  if (timestamp) return new Date(timestamp).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
+  return value || "—";
+}
+
+function formatNumber(value, decimals = 1, fallback = "—") {
+  return value > 0 ? value.toFixed(decimals) : fallback;
+}
+
+function formatCost(value, tariffAvailable = true) {
+  if (!tariffAvailable) return "—";
+  return settings.currency === "USD"
+    ? `$ ${value.toFixed(2)}`
+    : `Rp ${Math.round(value).toLocaleString("id-ID")}`;
+}
+
+function modeInfo(session) {
+  const explicit = String(firstValue(session, ["modePath", "mode"]) || "").toLowerCase();
+  const start = String(firstValue(session, ["modeStart", "startMode"]) || "").toLowerCase();
+  const end = String(firstValue(session, ["modeEnd", "endMode"]) || "").toLowerCase();
+  const combined = `${explicit} ${start} ${end}`.replace(/[_>→-]+/g, " ");
+  if ((start.includes("online") && end.includes("offline")) || /online(?:\s+to)?\s+offline/.test(combined)) return { key: "online-offline", label: "Online → Offline" };
+  if ((start.includes("offline") && end.includes("online")) || /offline(?:\s+to)?\s+online/.test(combined)) return { key: "offline-online", label: "Offline → Online" };
+  if (combined.includes("offline")) return { key: "offline", label: "Offline" };
+  if (combined.includes("online")) return { key: "online", label: "Online" };
+  return { key: "", label: "Mode Unknown" };
+}
+
+function reasonInfo(session) {
+  const raw = String(firstValue(session, ["endReason", "status", "tag", "stopReason"]) || "");
+  const text = raw.toLowerCase();
+  if (/overload/.test(text)) return { key: "overload", label: "Overload" };
+  if (/device.*removed|removed|unplug|load.*removed/.test(text)) return { key: "device-removed", label: "Device Removed" };
+  if (/power.*loss|lost.*power|blackout/.test(text)) return { key: "power-loss", label: "Power Loss" };
+  if (/offline.*monitor/.test(text)) return { key: "offline-monitoring", label: "Offline Monitoring" };
+  if (/stop.*app|app.*stop|manual|user.*stop/.test(text)) return { key: "stop-app", label: "Stop by App" };
+  return { key: "", label: raw || "Completed" };
+}
+
+function syncInfo(session) {
+  const raw = String(firstValue(session, ["syncStatus"]) || "").toLowerCase();
+  if (session.pendingSync === true || raw.includes("pending")) return { key: "pending", label: "Pending Sync" };
+  if (session.synced === true || raw.includes("sync")) return { key: "synced", label: "Synced" };
+  return { key: "", label: "Sync Unknown" };
+}
+
+function overloadInfo(session) {
+  const value = firstValue(session, ["overload", "wasOverload", "overloadStatus"]);
+  return value === true || String(value).toLowerCase() === "true" || reasonInfo(session).key === "overload";
+}
+
+function humanize(value, fallback = "—") {
+  if (value === undefined || value === null || value === "") return fallback;
+  return String(value)
+    .replace(/[_-]+/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, character => character.toUpperCase());
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
+  })[char]);
+}
+
+function metricCard(label, value, unit = "", accent = "") {
+  return `<div class="detail-report-card ${accent}">
+    <div class="detail-report-label">${escapeHtml(label)}</div>
+    <div class="detail-report-value">${escapeHtml(value)}${unit ? `<span>${escapeHtml(unit)}</span>` : ""}</div>
+  </div>`;
+}
+
+function metadataRow(label, value) {
+  return `<div class="detail-metadata-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function renderSession(session) {
+  selectedSession = session;
+  const name = firstValue(session, ["name", "deviceName"]) || "Device";
+  const dateTime = formatDate(firstValue(session, ["timestamp", "endTime", "end_ts", "dateTime", "date"]));
+  const duration = durationSeconds(session);
+  const energy = numeric(session, ["energy", "energyKwh", "sessionEnergy", "kwh"]);
+  const cost = costOf(session);
+  const avgPower = numeric(session, ["avgPower", "powerAvg", "averagePower", "power"]);
+  const maxPower = numeric(session, ["maxPower", "powerMax", "peakPower"]);
+  const avgVoltage = numeric(session, ["avgVoltage", "voltageAvg", "voltage"]);
+  const minVoltage = numeric(session, ["minVoltage", "voltageMin"]);
+  const maxVoltage = numeric(session, ["maxVoltage", "voltageMax"]);
+  const avgCurrent = numeric(session, ["avgCurrent", "currentAvg", "current"]);
+  const maxCurrent = numeric(session, ["maxCurrent", "currentMax"]);
+  const pf = numeric(session, ["pf", "powerFactor", "powerFactorAvg", "avgPowerFactor"]);
+  const frequency = numeric(session, ["frequency", "freq", "frequencyAvg", "avgFrequency"]);
+  const apparent = numeric(session, ["apparent", "apparentPower", "apparentPowerAvg", "avgApparentPower"]);
+  const threshold = numeric(session, ["threshold", "overloadThreshold"]);
+  const mode = modeInfo(session);
+  const reason = reasonInfo(session);
+  const sync = syncInfo(session);
+  const tariff = numeric(session, ["tariff", "electricityCostPerKwh"]) || Number(settings.tariff || 0);
+  const tariffAvailable = tariff > 0;
+
+  document.getElementById("detail-device-name").textContent = name;
+  document.getElementById("detail-date").textContent = dateTime;
+  document.getElementById("detail-header-name").textContent = name;
+  document.getElementById("detail-header-date").textContent = dateTime;
+  document.getElementById("detail-header-tags").innerHTML = `
+    <span class="detail-tag ${reason.key === "overload" ? "red" : "amber"}">${escapeHtml(reason.label)}</span>
+    <span class="detail-tag">${escapeHtml(mode.label)}</span>
+    <span class="detail-tag ${sync.key === "synced" ? "green" : "amber"}">${escapeHtml(sync.label)}</span>`;
+
+  document.getElementById("detail-summary-grid").innerHTML = [
+    metricCard("Duration", formatDuration(duration), "", "cyan"),
+    metricCard("Energy Total", energy.toFixed(3), "kWh", "green"),
+    metricCard("Cost Total", formatCost(cost), "", "amber"),
+    metricCard("Average Power", formatNumber(avgPower, 1), "W"),
+    metricCard("Max Power", formatNumber(maxPower, 1), "W", "red"),
+  ].join("");
+
+  const voltageRange = minVoltage || maxVoltage
+    ? `${formatNumber(minVoltage, 1)} / ${formatNumber(maxVoltage, 1)} V`
+    : "—";
+  document.getElementById("detail-reading-grid").innerHTML = [
+    metricCard("Voltage Average", formatNumber(avgVoltage, 1), "V", "cyan"),
+    metricCard("Voltage Min / Max", voltageRange),
+    metricCard("Current Average", formatNumber(avgCurrent, 2), "A", "green"),
+    metricCard("Current Max", formatNumber(maxCurrent, 2), "A"),
+    metricCard("Power Average", formatNumber(avgPower, 1), "W", "amber"),
+    metricCard("Power Max", formatNumber(maxPower, 1), "W", "red"),
+    metricCard("Power Factor Average", formatNumber(pf, 2)),
+    metricCard("Frequency Average", formatNumber(frequency, 1), "Hz"),
+    metricCard("Apparent Power Average", formatNumber(apparent, 1), "VA"),
+    metricCard("Overload Threshold", formatNumber(threshold, 0), "W"),
+  ].join("");
+
+  const startTime = formatDate(firstValue(session, ["startTime", "start_ts", "sessionStartTs"]));
+  const endTime = formatDate(firstValue(session, ["endTime", "end_ts", "timestamp"]));
+  const startMode = humanize(firstValue(session, ["modeStart", "startMode"]), mode.label);
+  const endMode = humanize(firstValue(session, ["modeEnd", "endMode"]), mode.label);
+  const relayFinal = firstValue(session, ["relayFinal", "finalRelayState", "relay"]);
+  const relayLabel = relayFinal === true || String(relayFinal).toLowerCase() === "on"
+    ? "ON"
+    : relayFinal === false || String(relayFinal).toLowerCase() === "off"
+      ? "OFF"
+      : "—";
+  document.getElementById("detail-metadata").innerHTML = [
+    metadataRow("Start Time", startTime),
+    metadataRow("End Time", endTime),
+    metadataRow("Start Mode", startMode),
+    metadataRow("End Mode", endMode),
+    metadataRow("End Reason", reason.label),
+    metadataRow("Overload Status", overloadInfo(session) ? "Overload detected" : "No overload"),
+    metadataRow("Relay Final State", relayLabel),
+    metadataRow("Sync Status", sync.label),
+  ].join("");
+
+  const hours = [1, 5, 8, 24];
+  document.getElementById("detail-projection-intro").textContent = avgPower > 0
+    ? `Estimated usage for ${name} based on ${avgPower.toFixed(1)} W average power.`
+    : "Average power is unavailable, so usage projections cannot be calculated.";
+  document.getElementById("detail-projection-grid").innerHTML = hours.map(hour => {
+    const projectedEnergy = avgPower > 0 ? avgPower * hour / 1000 : 0;
+    const projectedCost = projectedEnergy * tariff;
+    return `<div class="detail-projection-card">
+      <div class="detail-projection-hours">${hour} hour${hour === 1 ? "" : "s"}</div>
+      <div class="detail-projection-energy">${avgPower > 0 ? projectedEnergy.toFixed(3) : "—"} kWh</div>
+      <div class="detail-projection-cost">${avgPower > 0 ? formatCost(projectedCost, tariffAvailable) : "—"}</div>
+    </div>`;
+  }).join("");
+
+  detailReport.style.display = "block";
+}
+
+function showEmpty() {
+  detailEmpty.style.display = "flex";
+  detailReport.style.display = "none";
+  btnExport.style.display = "none";
+}
+
+async function loadSelectedSession() {
+  if (!selectedKey) return null;
+  if (cachedSession?._key === selectedKey) return cachedSession;
+
+  const snapshot = await get(ref(db, `users/${uid}/history/${selectedKey}`));
+  if (snapshot.exists()) return { ...snapshot.val(), _key: selectedKey };
+
+  const allHistory = await loadDeviceHistory(uid);
+  return allHistory.find(item => item._key === selectedKey) || null;
+}
+
+try {
+  const session = await loadSelectedSession();
+  if (session) renderSession(session);
+  else showEmpty();
+} catch (error) {
+  console.warn("[History Detail] Unable to load selected session:", error);
+  showEmpty();
+}
+
+btnExport.addEventListener("click", () => {
+  if (!selectedSession) return;
+  const fields = [
+    ["Name", firstValue(selectedSession, ["name", "deviceName"]) || "Device"],
+    ["Duration", formatDuration(durationSeconds(selectedSession))],
+    ["Energy (kWh)", numeric(selectedSession, ["energy", "energyKwh", "sessionEnergy", "kwh"])],
+    ["Cost", costOf(selectedSession)],
+    ["Average Power (W)", numeric(selectedSession, ["avgPower", "powerAvg", "averagePower", "power"])],
+    ["Max Power (W)", numeric(selectedSession, ["maxPower", "powerMax", "peakPower"])],
+    ["Mode", modeInfo(selectedSession).label],
+    ["End Reason", reasonInfo(selectedSession).label],
+    ["Sync Status", syncInfo(selectedSession).label],
+  ];
+  const csv = `Field,Value\n${fields.map(([key, value]) => `"${key}","${String(value).replaceAll('"', '""')}"`).join("\n")}`;
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${firstValue(selectedSession, ["name", "deviceName"]) || "session"}_detail.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+  showToast("Detail exported ✓", "success");
+});
