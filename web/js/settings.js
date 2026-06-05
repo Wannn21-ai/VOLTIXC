@@ -56,32 +56,55 @@ function highlightThemeBtn(theme) {
 
 function updateConvertedPreview() {
   const currencyEl = document.getElementById("currency");
-  const tariffEl   = document.getElementById("tariff");
-  const el         = document.getElementById("tariff-converted");
-  if (!el || !currencyEl || !tariffEl) return;
+  const tariffEl = document.getElementById("tariff");
+  const preview = document.getElementById("tariff-converted");
+  if (!preview || !currencyEl || !tariffEl) return;
   const currency = currencyEl.value;
-  const tariff   = parseFloat(tariffEl.value);
-  if (isNaN(tariff) || tariff <= 0) { el.textContent = ""; return; }
-  el.textContent = currency === "IDR"
-    ? `≈ $ ${(tariff / USD_RATE).toFixed(4)} / kWh`
-    : `≈ Rp ${Math.round(tariff * USD_RATE).toLocaleString("id-ID")} / kWh`;
+  const tariff = parseFloat(tariffEl.value);
+  if (!Number.isFinite(tariff) || tariff <= 0) {
+    preview.textContent = "";
+    return;
+  }
+  preview.textContent = currency === "IDR"
+    ? `Approx. $ ${(tariff / USD_RATE).toFixed(4)} / kWh`
+    : `Approx. Rp ${Math.round(tariff * USD_RATE).toLocaleString("id-ID")} / kWh`;
+}
+
+function updateOverloadPreview() {
+  const threshold = parseFloat(document.getElementById("overload-threshold")?.value);
+  const warningPercent = parseFloat(document.getElementById("overload-warning-percent")?.value);
+  const preview = document.getElementById("overload-warning-preview");
+  if (!preview) return;
+  if (!Number.isFinite(threshold) || threshold <= 0 ||
+      !Number.isFinite(warningPercent) || warningPercent < 1 || warningPercent > 100) {
+    preview.textContent = "Enter a valid threshold and warning level.";
+    return;
+  }
+  preview.textContent = `Warning starts at ${(threshold * warningPercent / 100).toFixed(1)} W`;
 }
 
 function applyToUI() {
   const el = id => document.getElementById(id);
-  if (el("currency"))           el("currency").value           = settings.currency          ?? "IDR";
-  if (el("tariff"))             el("tariff").value             = settings.tariff            ?? 1444.70;
+  if (el("currency")) el("currency").value = settings.currency ?? "IDR";
+  if (el("tariff")) el("tariff").value = settings.tariff ?? 1444.70;
   if (el("overload-threshold")) el("overload-threshold").value = settings.overloadThreshold ?? 2000;
-  if (el("language"))           el("language").value           = settings.language          ?? "en";
-  if (el("notif-device"))       el("notif-device").checked     = settings.notifDevice       ?? true;
-  if (el("notif-disconnect"))   el("notif-disconnect").checked = settings.notifDisconnect   ?? true;
-  if (el("notif-session"))      el("notif-session").checked    = settings.notifSession      ?? true;
-  if (el("notif-overload"))     el("notif-overload").checked   = settings.notifOverload     ?? true;
-  if (el("refresh-interval"))   el("refresh-interval").value  = settings.refreshInterval   ?? 3000;
-  if (el("display-name"))       el("display-name").value      = user.displayName || "";
-  if (el("display-email"))      el("display-email").value     = user.email || "";
+  if (el("overload-warning-percent")) el("overload-warning-percent").value = settings.overloadWarningPercent ?? 99;
+  if (el("load-power-threshold")) el("load-power-threshold").value = settings.loadPowerThreshold ?? 1;
+  if (el("load-current-threshold")) el("load-current-threshold").value = settings.loadCurrentThreshold ?? 0.02;
+  if (el("load-removed-delay")) el("load-removed-delay").value = settings.loadRemovedDelaySec ?? 2;
+  if (el("offline-timeout")) el("offline-timeout").value = settings.offlineTimeoutSec ?? 300;
+  if (el("checkpoint-interval")) el("checkpoint-interval").value = settings.checkpointIntervalSec ?? 30;
+  if (el("language")) el("language").value = settings.language ?? "en";
+  if (el("notif-device")) el("notif-device").checked = settings.notifDevice ?? true;
+  if (el("notif-disconnect")) el("notif-disconnect").checked = settings.notifDisconnect ?? true;
+  if (el("notif-session")) el("notif-session").checked = settings.notifSession ?? true;
+  if (el("notif-overload")) el("notif-overload").checked = settings.notifOverload ?? true;
+  if (el("refresh-interval")) el("refresh-interval").value = settings.refreshInterval ?? 3000;
+  if (el("display-name")) el("display-name").value = user.displayName || "";
+  if (el("display-email")) el("display-email").value = user.email || "";
   highlightThemeBtn(settings.theme || "dark");
   updateConvertedPreview();
+  updateOverloadPreview();
 }
 
 function setBtnLoading(btnId, loading, originalText) {
@@ -180,39 +203,55 @@ document.getElementById("currency").addEventListener("change", function () {
   updateConvertedPreview();
 });
 document.getElementById("tariff").addEventListener("input", updateConvertedPreview);
+document.getElementById("overload-threshold").addEventListener("input", updateOverloadPreview);
+document.getElementById("overload-warning-percent").addEventListener("input", updateOverloadPreview);
 
-// ── Save Pricing + Threshold ──
+// Save monitoring configuration
 document.getElementById("btn-save-settings").addEventListener("click", async () => {
-  const currency  = document.getElementById("currency").value;
-  const tariff    = parseFloat(document.getElementById("tariff").value);
-  const threshold = parseFloat(document.getElementById("overload-threshold").value);
-
-  if (isNaN(tariff)    || tariff    <= 0) { showToast("Masukkan nilai tarif yang valid",    "error"); return; }
-  if (isNaN(threshold) || threshold <= 0) { showToast("Masukkan nilai threshold yang valid", "error"); return; }
+  const config = {
+    currency: document.getElementById("currency").value,
+    tariff: parseFloat(document.getElementById("tariff").value),
+    overloadThreshold: parseFloat(document.getElementById("overload-threshold").value),
+    overloadWarningPercent: parseFloat(document.getElementById("overload-warning-percent").value),
+    loadPowerThreshold: parseFloat(document.getElementById("load-power-threshold").value),
+    loadCurrentThreshold: parseFloat(document.getElementById("load-current-threshold").value),
+    loadRemovedDelaySec: parseFloat(document.getElementById("load-removed-delay").value),
+    offlineTimeoutSec: parseFloat(document.getElementById("offline-timeout").value),
+    checkpointIntervalSec: parseFloat(document.getElementById("checkpoint-interval").value)
+  };
+  const positiveFields = [
+    ["tariff", "tarif"], ["overloadThreshold", "overload threshold"],
+    ["loadPowerThreshold", "load power threshold"], ["loadCurrentThreshold", "load current threshold"],
+    ["loadRemovedDelaySec", "removed-load delay"], ["offlineTimeoutSec", "offline timeout"],
+    ["checkpointIntervalSec", "checkpoint interval"]
+  ];
+  const invalidPositive = positiveFields.find(([key]) => !Number.isFinite(config[key]) || config[key] <= 0);
+  if (invalidPositive) {
+    showToast(`Masukkan nilai ${invalidPositive[1]} yang valid`, "error");
+    return;
+  }
+  if (!Number.isFinite(config.overloadWarningPercent) ||
+      config.overloadWarningPercent < 1 || config.overloadWarningPercent > 100) {
+    showToast("Warning level harus antara 1 dan 100 persen", "error");
+    return;
+  }
 
   const span = document.querySelector("#btn-save-settings span");
-  const originalText = span?.textContent || "Save Settings";
+  const originalText = span?.textContent || "Save Configuration";
   setBtnLoading("btn-save-settings", true, originalText);
 
   try {
-    await saveSettingsToFirebase({ currency, tariff, overloadThreshold: threshold });
+    await saveSettingsToFirebase(config);
     try {
-      await update(ref(db, `devices/${DEVICE_ID}/config`), {
-        tariff,
-        currency,
-        overloadThreshold: threshold,
-        overloadWarningPercent: settings.overloadWarningPercent,
-        loadPowerThreshold: settings.loadPowerThreshold,
-        loadCurrentThreshold: settings.loadCurrentThreshold,
-        loadRemovedDelaySec: settings.loadRemovedDelaySec,
-        offlineTimeoutSec: settings.offlineTimeoutSec,
-        checkpointIntervalSec: settings.checkpointIntervalSec
+      await update(ref(db, `devices/${DEVICE_ID}/config`), config);
+      await update(ref(db, SETTINGS_PATH), {
+        overloadThreshold: config.overloadThreshold,
+        tariff: config.tariff
       });
-      await update(ref(db, SETTINGS_PATH), { overloadThreshold: threshold, tariff });
     } catch (e) {
       console.warn("[SEM] Gagal sync config device:", e);
     }
-    showToast("Pengaturan tersimpan ✓", "success");
+    showToast("Pengaturan tersimpan", "success");
   } catch (e) {
     console.error("[SEM] Gagal simpan pricing settings:", e);
     showToast("Gagal menyimpan pengaturan — cek koneksi internet", "error");
@@ -282,7 +321,10 @@ document.getElementById("btn-save-notif").addEventListener("click", async () => 
     notifOverload:   document.getElementById("notif-overload").checked,
     refreshInterval: parseInt(document.getElementById("refresh-interval").value)
   };
-  if (isNaN(partial.refreshInterval)) partial.refreshInterval = 3000;
+  if (!Number.isFinite(partial.refreshInterval) || partial.refreshInterval < 1000) {
+    showToast("Refresh interval minimal 1000 ms", "error");
+    return;
+  }
 
   const span = document.querySelector("#btn-save-notif span");
   const originalText = span?.textContent || "Save Preferences";
