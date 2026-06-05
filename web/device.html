@@ -22,15 +22,51 @@
         <div class="page-header">
           <div>
             <div class="page-header-title">Device</div>
-            <div class="page-header-sub">Device management will be available in a future sprint.</div>
+            <div class="page-header-sub">Identity, connectivity, and configuration overview</div>
           </div>
+          <span class="product-mode-badge" id="device-data-mode">Read-only UI</span>
         </div>
-        <section class="card placeholder-card">
-          <div class="empty-state">
-            <div class="empty-state-icon">DEV</div>
-            <div class="empty-state-title">Device Management Coming Soon</div>
-            <div class="empty-state-sub">Continue monitoring the connected device from the Dashboard. Pairing logic is not included in this sprint.</div>
-            <a class="btn btn-primary" href="index.html">Back to Dashboard</a>
+
+        <section class="product-section">
+          <div class="product-section-title">Device Identity</div>
+          <div class="product-info-grid">
+            <div class="product-info-card cyan"><span>Device Name</span><strong id="device-name">VOLTIX Rumah</strong></div>
+            <div class="product-info-card"><span>Device ID</span><strong id="device-id">esp32-smart-energy-001</strong></div>
+            <div class="product-info-card green"><span>Pairing Status</span><strong id="device-pairing">Not Paired</strong></div>
+            <div class="product-info-card"><span>Owner</span><strong id="device-owner">—</strong></div>
+            <div class="product-info-card amber"><span>Firmware Version</span><strong id="device-firmware">v1.0.0</strong></div>
+          </div>
+        </section>
+
+        <section class="product-section">
+          <div class="product-section-title">Connectivity and Runtime Status</div>
+          <div class="product-status-grid">
+            <div class="product-status-card"><span>Status</span><strong id="runtime-online">Offline</strong><small id="runtime-online-sub">Waiting for device data</small></div>
+            <div class="product-status-card"><span>WiFi / Active SSID</span><strong id="runtime-wifi">—</strong><small id="runtime-wifi-sub">No network data</small></div>
+            <div class="product-status-card"><span>Mode</span><strong id="runtime-mode">—</strong><small>Current operating mode</small></div>
+            <div class="product-status-card"><span>Relay</span><strong id="runtime-relay">OFF</strong><small>Read-only status</small></div>
+            <div class="product-status-card"><span>Last Seen</span><strong id="runtime-last-seen">—</strong><small>Latest reported timestamp</small></div>
+          </div>
+        </section>
+
+        <section class="product-section">
+          <div class="product-section-title">Device Configuration Summary</div>
+          <div class="product-info-grid">
+            <div class="product-info-card cyan"><span>Tariff / kWh</span><strong id="config-tariff">Rp 1.445</strong></div>
+            <div class="product-info-card red"><span>Overload Threshold</span><strong id="config-overload">2,000 W</strong></div>
+            <div class="product-info-card amber"><span>Warning Threshold</span><strong id="config-warning">99%</strong></div>
+            <div class="product-info-card"><span>Load Detection</span><strong id="config-load">1 W / 0.02 A</strong></div>
+            <div class="product-info-card green"><span>Checkpoint Interval</span><strong id="config-checkpoint">30 sec</strong></div>
+          </div>
+        </section>
+
+        <section class="product-section">
+          <div class="product-section-title">Safe Actions</div>
+          <div class="safe-action-grid">
+            <button class="safe-action-card" data-safe-action="Rename Device"><strong>Rename Device</strong><span>Update the display name in a future sprint.</span></button>
+            <button class="safe-action-card" data-safe-action="Reset WiFi"><strong>Reset WiFi</strong><span>No reset command is sent from this UI.</span></button>
+            <button class="safe-action-card danger" data-safe-action="Factory Reset"><strong>Factory Reset</strong><span>Destructive action intentionally disabled.</span></button>
+            <button class="safe-action-card" data-safe-action="Pairing Info"><strong>Pairing Info</strong><span>Pairing backend is not implemented yet.</span></button>
           </div>
         </section>
       </main>

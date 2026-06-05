@@ -22,15 +22,70 @@
         <div class="page-header">
           <div>
             <div class="page-header-title">Members</div>
-            <div class="page-header-sub">Account sharing controls will be available in a future sprint.</div>
+            <div class="page-header-sub">Device access and sharing overview</div>
           </div>
+          <span class="product-mode-badge">UI-only preview</span>
         </div>
-        <section class="card placeholder-card">
-          <div class="empty-state">
-            <div class="empty-state-icon">USR</div>
-            <div class="empty-state-title">Member Management Coming Soon</div>
-            <div class="empty-state-sub">No owner, member, or account-sharing rules are changed by this placeholder page.</div>
-            <a class="btn btn-primary" href="index.html">Back to Dashboard</a>
+
+        <section class="product-section">
+          <div class="product-section-title">Access Overview</div>
+          <div class="access-overview-card">
+            <div>
+              <span>Current User Role</span>
+              <strong id="current-role">Local Visual</strong>
+            </div>
+            <div>
+              <span>Device Sharing</span>
+              <strong id="sharing-status">Not Configured</strong>
+            </div>
+            <p>One VOLTIX device has one owner and may later grant monitoring access to member accounts. This page does not change access records yet.</p>
+          </div>
+        </section>
+
+        <section class="product-section">
+          <div class="product-section-title">Owner and Members</div>
+          <div class="member-list">
+            <article class="member-card">
+              <div class="member-avatar" id="owner-avatar">O</div>
+              <div class="member-info"><strong id="owner-name">Current User</strong><span id="owner-email">—</span><small>Full monitoring and management preview</small></div>
+              <span class="member-role owner" id="owner-role">Owner</span>
+            </article>
+            <article class="member-card demo">
+              <div class="member-avatar">D</div>
+              <div class="member-info"><strong>Demo Member</strong><span>demo.member@voltix.local</span><small>Sample data only · View live monitoring and history</small></div>
+              <span class="member-role">Member</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="product-section">
+          <div class="product-section-title">Invite Member UI</div>
+          <div class="invite-card">
+            <div>
+              <span class="invite-label">Local Demo Invite Code</span>
+              <div class="invite-code" id="invite-code">------</div>
+              <small id="invite-expiry">Generate a local preview code. No Firebase records will be created.</small>
+            </div>
+            <div class="invite-actions">
+              <button class="btn btn-primary" id="btn-generate-code">Generate Invite Code</button>
+              <button class="btn btn-ghost" id="btn-copy-code" disabled>Copy Code</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="product-section">
+          <div class="product-section-title">Permissions Summary</div>
+          <div class="permission-table-wrap">
+            <table class="permission-table">
+              <thead><tr><th>Permission</th><th>Owner</th><th>Member</th></tr></thead>
+              <tbody>
+                <tr><td>Start / stop monitoring</td><td class="allowed">Allowed</td><td>Not included</td></tr>
+                <tr><td>Edit settings</td><td class="allowed">Allowed</td><td>Not included</td></tr>
+                <tr><td>Manage members</td><td class="allowed">Allowed</td><td>Not included</td></tr>
+                <tr><td>View live monitoring</td><td class="allowed">Allowed</td><td class="allowed">Allowed</td></tr>
+                <tr><td>View history</td><td class="allowed">Allowed</td><td class="allowed">Allowed</td></tr>
+              </tbody>
+            </table>
           </div>
         </section>
       </main>
