@@ -412,7 +412,7 @@ const lineChart = new Chart(document.getElementById("chart-line"), {
 });
 const barChart = new Chart(document.getElementById("chart-bar"), {
   type: "bar",
-  data: { labels: [], datasets: [{ label: "Avg Power (W)", data: [],
+  data: { labels: [], datasets: [{ label: "Device Usage (kWh)", data: [],
     backgroundColor: "rgba(0,229,255,0.6)", borderColor: "#00e5ff",
     borderWidth: 1, borderRadius: 4 }] },
   options: makeChartOpts()
@@ -696,15 +696,12 @@ async function updateBarPie() {
   const history  = await getHistory();
   const byDevice = {};
   history.forEach(s => {
-    if (!byDevice[s.name]) byDevice[s.name] = { power: 0, energy: 0, count: 0 };
-    byDevice[s.name].power  += s.power;
+    if (!byDevice[s.name]) byDevice[s.name] = { energy: 0 };
     byDevice[s.name].energy += s.energy;
-    byDevice[s.name].count++;
   });
   const names    = Object.keys(byDevice);
-  const powers   = names.map(n => parseFloat((byDevice[n].power / byDevice[n].count).toFixed(1)));
   const energies = names.map(n => parseFloat(byDevice[n].energy.toFixed(3)));
-  barChart.data.labels = names; barChart.data.datasets[0].data = powers; barChart.update();
+  barChart.data.labels = names; barChart.data.datasets[0].data = energies; barChart.update();
   pieChart.data.labels = names; pieChart.data.datasets[0].data = energies; pieChart.update();
 }
 

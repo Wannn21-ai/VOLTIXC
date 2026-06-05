@@ -52,7 +52,7 @@
         </div>
         <!-- DEVICE TABS -->
         <div class="device-tabs" id="device-tabs"></div>
-        <!-- GAUGE ROW -->
+        <!-- SECTION 1: LIVE ELECTRICAL READINGS -->
         <div class="gauge-grid">
           <div class="gauge-card">
             <div class="gauge-label">Voltage</div>
@@ -95,7 +95,7 @@
             <div class="badge idle" id="badge-device-status">● Idle</div>
           </div>
         </div>
-        <!-- STAT CARDS -->
+        <!-- SECTION 2: SESSION SUMMARY -->
         <div class="stat-grid">
           <div class="stat-card cyan">
             <div class="stat-label">Energy</div>
@@ -119,11 +119,14 @@
           </div>
         </div>
 
-        <!-- ADVANCED READINGS (Power Factor, Frequency, Apparent Power) -->
-      <div class="chart-card" style="margin-bottom:24px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-          <div class="chart-card-title">Advanced Readings</div>
-          <span style="font-size:11px;color:var(--text-muted);">For technical reference</span>
+        <!-- SECTION 3: ADVANCED READINGS SUMMARY -->
+      <div class="chart-card chart-inner" style="margin-bottom:24px;">
+        <div class="section-card-header">
+          <div>
+            <div class="chart-card-title" style="margin-bottom:4px;">Advanced Readings</div>
+            <span style="font-size:11px;color:var(--text-muted);">For technical reference</span>
+          </div>
+          <a class="btn btn-ghost" href="advanced.html">View Advanced Readings</a>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;">
           <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;">
@@ -144,25 +147,25 @@
         </div>
       </div>
 
-        <!-- CHARTS -->
-        <div class="chart-grid">
-          <div class="chart-card .chart-inner">
-            <div class="chart-card-title">Power over time</div>
+        <!-- SECTION 4: USAGE CHARTS -->
+        <div class="chart-grid chart-grid-three">
+          <div class="chart-card chart-inner">
+            <div class="chart-card-title">Device Usage (kWh)</div>
+            <div style="position:relative;height:220px;">
+              <canvas id="chart-bar" role="img" aria-label="Device usage bar chart"></canvas>
+            </div>
+          </div>
+          <div class="chart-card chart-inner">
+            <div class="chart-card-title">Energy Distribution</div>
+            <div style="position:relative;height:220px;">
+              <canvas id="chart-pie" role="img" aria-label="Energy distribution donut chart"></canvas>
+            </div>
+          </div>
+          <div class="chart-card chart-inner">
+            <div class="chart-card-title">Power Over Time (W)</div>
             <div style="position:relative;height:220px;">
               <canvas id="chart-line" role="img" aria-label="Realtime power chart"></canvas>
             </div>
-          </div>
-          <div class="chart-card .chart-inner">
-            <div class="chart-card-title">Device usage (kWh)</div>
-            <div style="position:relative;height:220px;">
-              <canvas id="chart-pie" role="img" aria-label="Device usage pie chart"></canvas>
-            </div>
-          </div>
-        </div>
-        <div class="chart-card" style="margin-bottom:24px;">
-          <div class="chart-card-title">Power comparison per device</div>
-          <div style="position:relative;height:200px;">
-            <canvas id="chart-bar" role="img" aria-label="Device power comparison bar chart"></canvas>
           </div>
         </div>
       </div>

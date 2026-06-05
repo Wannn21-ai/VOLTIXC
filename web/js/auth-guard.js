@@ -1,9 +1,14 @@
-import { auth, db, ref, onValue, get, DEVICE_ID } from "./firebase-config.js";
+import {
+  auth, db, ref, onValue, get, DEVICE_ID,
+  FIREBASE_CONFIGURED, localUser
+} from "./firebase-config.js";
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { importCompletedSessionsForCurrentUser } from "./local-history.js";
 
 // ── Auth guard ────────────────────────────────────
 export function requireAuth() {
+  if (!FIREBASE_CONFIGURED) return Promise.resolve(localUser);
+
   return new Promise((resolve, reject) => {
     const unsub = onAuthStateChanged(auth, user => {
       unsub();
@@ -47,7 +52,7 @@ export const LANG = {
     aboutTitle:"ℹ About", aboutApp:"Application", aboutVer:"Version",
     aboutHw:"Hardware", aboutCloud:"Cloud",
     // Sidebar & nav
-    navDashboard:"Dashboard", navHistory:"History", navAdvanced:"Advanced", navSettings:"Settings",
+    navDashboard:"Dashboard", navHistory:"History", navDevice:"Device", navMembers:"Members", navSettings:"Settings",
     signOut:"Sign Out",
     // Dashboard page strings
     dashTitle:"Dashboard", noActiveDevice:"No active device",
@@ -105,7 +110,7 @@ export const LANG = {
     aboutTitle:"ℹ Tentang", aboutApp:"Aplikasi", aboutVer:"Versi",
     aboutHw:"Perangkat Keras", aboutCloud:"Cloud",
     // Sidebar & nav
-    navDashboard:"Dasbor", navHistory:"Riwayat", navAdvanced:"Lanjutan", navSettings:"Pengaturan",
+    navDashboard:"Dasbor", navHistory:"Riwayat", navDevice:"Device", navMembers:"Anggota", navSettings:"Pengaturan",
     signOut:"Keluar",
     // Dashboard page strings
     dashTitle:"Dasbor", noActiveDevice:"Tidak ada device aktif",
@@ -230,7 +235,8 @@ export function applyLanguage(lang) {
   // ── Sidebar nav labels (rendered by renderShell) ──
   s("nav-label-dashboard",      t.navDashboard);
   s("nav-label-history",        t.navHistory);
-  s("nav-label-advanced",       t.navAdvanced);
+  s("nav-label-device",         t.navDevice);
+  s("nav-label-members",        t.navMembers);
   s("nav-label-settings",       t.navSettings);
   s("sidebar-signout-txt",      t.signOut);
 }
@@ -245,18 +251,19 @@ export function renderShell(activePage, pageTitle) {
   const navItems  = [
     { href: "index.html",    icon: "⊡", key: "dashboard", labelId: "nav-label-dashboard", defaultLabel: "Dashboard" },
     { href: "history.html",  icon: "◷", key: "history",   labelId: "nav-label-history",   defaultLabel: "History"   },
-    { href: "advanced.html", icon: "◈", key: "advanced",  labelId: "nav-label-advanced",  defaultLabel: "Advanced"  },
+    { href: "device.html",   icon: "◈", key: "device",    labelId: "nav-label-device",    defaultLabel: "Device"    },
+    { href: "members.html",  icon: "◇", key: "members",   labelId: "nav-label-members",   defaultLabel: "Members"   },
     { href: "settings.html", icon: "⚙", key: "settings",  labelId: "nav-label-settings",  defaultLabel: "Settings"  },
   ];
 
   sidebarEl.innerHTML = `
     <div class="sidebar-logo">
       <div class="sidebar-logo-icon">
-        <img src="assets/logo/LOGO.png" alt="SEM Logo" style="width:22px;height:22px;object-fit:contain" onerror="this.style.display='none';this.parentElement.textContent='⚡'"/>
+        <img src="assets/logo/LOGO.png" alt="VOLTIX Logo" style="width:22px;height:22px;object-fit:contain" onerror="this.style.display='none';this.parentElement.textContent='⚡'"/>
       </div>
       <div>
-        <div class="sidebar-logo-text">SMART ENERGY</div>
-        <div class="sidebar-logo-sub">Monitoring</div>
+        <div class="sidebar-logo-text">VOLTIX</div>
+        <div class="sidebar-logo-sub">Smart Energy Monitor</div>
       </div>
     </div>
     <nav class="sidebar-nav">
@@ -310,6 +317,10 @@ export function renderShell(activePage, pageTitle) {
 
   // Logout
   document.getElementById("btn-logout").addEventListener("click", async () => {
+    if (!FIREBASE_CONFIGURED) {
+      showToast("Sign out is disabled in local visual mode.");
+      return;
+    }
     await signOut(auth);
     window.location.href = "login.html";
   });
