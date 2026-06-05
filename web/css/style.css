@@ -303,6 +303,28 @@ body {
 .form-input::placeholder { color: var(--text-muted); }
 
 /* ===== HISTORY ===== */
+.history-section { margin-bottom: 24px; }
+.history-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.history-section-sub { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
+.history-summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.history-summary-card {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 16px; position: relative; overflow: hidden;
+}
+.history-summary-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 2px; background: var(--accent-color, var(--border-accent)); }
+.history-summary-card.cyan { --accent-color: var(--cyan); }
+.history-summary-card.green { --accent-color: var(--green); }
+.history-summary-card.amber { --accent-color: var(--amber); }
+.history-summary-label { color: var(--text-muted); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; margin-bottom: 8px; text-transform: uppercase; }
+.history-summary-value { color: var(--text-primary); font-family: var(--font-display); font-size: 18px; font-weight: 700; }
+.history-summary-unit { color: var(--text-secondary); font-size: 10px; margin-left: 4px; }
+.history-controls {
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  display: grid; grid-template-columns: minmax(220px, 2fr) repeat(5, minmax(130px, 1fr)); gap: 12px; padding: 16px;
+}
+.history-search { align-self: end; margin-bottom: 0; }
+.history-filter-field { color: var(--text-muted); display: flex; flex-direction: column; font-size: 10px; font-weight: 600; gap: 6px; letter-spacing: 0.08em; text-transform: uppercase; }
+.history-filter-field .form-select { font-size: 12px; min-height: 42px; text-transform: none; }
 .history-list { display: flex; flex-direction: column; gap: 10px; }
 .history-card {
   background: var(--bg-surface); border: 1px solid var(--border);
@@ -317,6 +339,10 @@ body {
 .history-meta-item span { color: var(--text-secondary); margin-left: 4px; }
 .history-card-actions { display: flex; gap: 8px; align-items: center; }
 .history-date { font-size: 11px; color: var(--text-muted); font-family: var(--font-display); text-align: right; margin-bottom: 8px; }
+.history-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.history-tag { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 20px; color: var(--text-secondary); font-size: 10px; padding: 2px 8px; }
+.history-tag.amber { background: var(--amber-dim); border-color: rgba(255,171,0,0.25); color: var(--amber); }
+.history-tag.red { background: var(--red-dim); border-color: rgba(255,23,68,0.25); color: var(--red); }
 
 /* ===== SEARCH ===== */
 .search-wrap { position: relative; margin-bottom: 20px; }
@@ -427,6 +453,9 @@ body {
   :root { --sidebar-w: 200px; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .settings-grid { grid-template-columns: repeat(2, 1fr); }
+  .history-summary-grid { grid-template-columns: repeat(3, 1fr); }
+  .history-controls { grid-template-columns: repeat(3, 1fr); }
+  .history-search { grid-column: span 3; }
 }
 
 @media (max-width: 768px) {
@@ -444,6 +473,10 @@ body {
   .detail-grid { grid-template-columns: 1fr 1fr; }
   .history-card { grid-template-columns: 1fr; gap: 10px; }
   .history-card-actions { justify-content: flex-start; }
+  .history-summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .history-controls { grid-template-columns: repeat(2, 1fr); }
+  .history-search { grid-column: span 2; }
+  .history-section-heading { align-items: flex-start; flex-direction: column; }
   .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
   .fab { right: 16px; bottom: 16px; width: 48px; height: 48px; font-size: 22px; }
   .modal { padding: 20px; }
@@ -454,4 +487,6 @@ body {
   .gauge-grid { grid-template-columns: 1fr; }
   .stat-grid { grid-template-columns: 1fr 1fr; }
   .detail-grid { grid-template-columns: 1fr; }
+  .history-summary-grid, .history-controls { grid-template-columns: 1fr; }
+  .history-search { grid-column: auto; }
 }
