@@ -382,6 +382,73 @@ body {
 .placeholder-card { max-width: 720px; }
 .placeholder-card .empty-state { min-height: 280px; }
 
+/* ===== DEVICE & MEMBERS UI ===== */
+.product-section { margin-bottom: 26px; }
+.product-section-title { color: var(--text-muted); font-family: var(--font-display); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; margin-bottom: 14px; text-transform: uppercase; }
+.product-mode-badge { background: var(--cyan-dim); border: 1px solid rgba(0,229,255,0.25); border-radius: 20px; color: var(--cyan); font-family: var(--font-display); font-size: 10px; font-weight: 700; padding: 4px 10px; }
+.product-info-grid, .product-status-grid { display: grid; gap: 12px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.product-info-card, .product-status-card {
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  min-height: 100px; overflow: hidden; padding: 16px; position: relative;
+}
+.product-info-card::before { background: var(--accent-color, var(--border-accent)); content: ""; height: 2px; inset: 0 0 auto; position: absolute; }
+.product-info-card.cyan { --accent-color: var(--cyan); }
+.product-info-card.green { --accent-color: var(--green); }
+.product-info-card.amber { --accent-color: var(--amber); }
+.product-info-card.red { --accent-color: var(--red); }
+.product-info-card span, .product-status-card span, .access-overview-card span {
+  color: var(--text-muted); display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; margin-bottom: 8px; text-transform: uppercase;
+}
+.product-info-card strong, .product-status-card strong, .access-overview-card strong {
+  color: var(--text-primary); display: block; font-family: var(--font-display); font-size: 15px; overflow-wrap: anywhere;
+}
+.product-status-card small { color: var(--text-muted); display: block; font-size: 11px; margin-top: 6px; }
+.safe-action-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.safe-action-card {
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);
+  cursor: pointer; font-family: var(--font-body); padding: 16px; text-align: left; transition: all var(--transition);
+}
+.safe-action-card:hover { background: var(--bg-elevated); border-color: var(--cyan); }
+.safe-action-card.danger:hover { border-color: var(--red); }
+.safe-action-card strong { display: block; font-size: 13px; margin-bottom: 5px; }
+.safe-action-card span { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.access-overview-card {
+  align-items: start; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  display: grid; gap: 20px; grid-template-columns: 180px 220px 1fr; padding: 20px;
+}
+.access-overview-card p { color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
+.member-list { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.member-card {
+  align-items: center; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  display: flex; gap: 12px; padding: 16px;
+}
+.member-card.demo { border-style: dashed; }
+.member-avatar {
+  align-items: center; background: var(--cyan-dim); border: 1px solid var(--cyan); border-radius: 50%;
+  color: var(--cyan); display: flex; flex: 0 0 38px; font-family: var(--font-display); font-size: 13px; font-weight: 700; height: 38px; justify-content: center;
+}
+.member-info { flex: 1; min-width: 0; }
+.member-info strong, .member-info span, .member-info small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-info strong { color: var(--text-primary); font-size: 13px; }
+.member-info span { color: var(--text-secondary); font-size: 11px; }
+.member-info small { color: var(--text-muted); font-size: 10px; margin-top: 4px; }
+.member-role { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 20px; color: var(--text-secondary); font-size: 10px; font-weight: 600; padding: 3px 9px; }
+.member-role.owner { background: var(--amber-dim); border-color: rgba(255,171,0,0.3); color: var(--amber); }
+.invite-card {
+  align-items: center; background: linear-gradient(135deg, var(--cyan-dim), var(--bg-surface) 60%); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); display: flex; gap: 20px; justify-content: space-between; padding: 20px;
+}
+.invite-label { color: var(--text-muted); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.invite-code { color: var(--cyan); font-family: var(--font-display); font-size: 28px; font-weight: 700; letter-spacing: 0.18em; margin: 5px 0; }
+.invite-card small { color: var(--text-muted); font-size: 11px; }
+.invite-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.permission-table-wrap { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow-x: auto; }
+.permission-table { border-collapse: collapse; min-width: 560px; width: 100%; }
+.permission-table th, .permission-table td { border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; padding: 12px 16px; text-align: left; }
+.permission-table th { background: var(--bg-elevated); color: var(--text-muted); font-family: var(--font-display); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.permission-table tr:last-child td { border-bottom: none; }
+.permission-table .allowed { color: var(--green); }
+
 /* ===== DETAIL PAGE ===== */
 .detail-back-link { color: var(--cyan); display: inline-block; font-size: 12px; margin-bottom: 8px; text-decoration: none; }
 .detail-empty { min-height: 360px; }
@@ -495,6 +562,10 @@ body {
   .history-summary-grid { grid-template-columns: repeat(3, 1fr); }
   .history-controls { grid-template-columns: repeat(3, 1fr); }
   .history-search { grid-column: span 3; }
+  .product-info-grid, .product-status-grid { grid-template-columns: repeat(3, 1fr); }
+  .safe-action-grid { grid-template-columns: repeat(2, 1fr); }
+  .access-overview-card { grid-template-columns: 1fr 1fr; }
+  .access-overview-card p { grid-column: span 2; }
 }
 
 @media (max-width: 768px) {
@@ -520,6 +591,10 @@ body {
   .history-controls { grid-template-columns: repeat(2, 1fr); }
   .history-search { grid-column: span 2; }
   .history-section-heading { align-items: flex-start; flex-direction: column; }
+  .product-info-grid, .product-status-grid, .member-list { grid-template-columns: repeat(2, 1fr); }
+  .access-overview-card { grid-template-columns: 1fr; }
+  .access-overview-card p { grid-column: auto; }
+  .invite-card { align-items: flex-start; flex-direction: column; }
   .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
   .fab { right: 16px; bottom: 16px; width: 48px; height: 48px; font-size: 22px; }
   .modal { padding: 20px; }
@@ -533,4 +608,5 @@ body {
   .detail-summary-grid, .detail-reading-grid, .detail-projection-grid { grid-template-columns: 1fr; }
   .history-summary-grid, .history-controls { grid-template-columns: 1fr; }
   .history-search { grid-column: auto; }
+  .product-info-grid, .product-status-grid, .safe-action-grid, .member-list { grid-template-columns: 1fr; }
 }
