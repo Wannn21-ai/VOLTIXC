@@ -6,7 +6,7 @@ import { db, ref, get } from "./firebase-config.js";
 import { loadDeviceHistory } from "./local-history.js";
 
 const user = await requireAuth();
-renderShell("history", "SESSION DETAIL");
+renderShell("advanced", "SESSION DETAIL");
 fillUserInfo(user);
 startStatusWatcher();
 const uid = user.uid;

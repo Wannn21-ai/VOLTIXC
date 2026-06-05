@@ -231,9 +231,11 @@ body {
 
 /* ===== CHARTS ===== */
 .chart-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+.chart-grid-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
-.chart-card .chart-inner { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; position: relative; height: 160px;}
+.chart-inner { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; position: relative; }
 .chart-card-title { font-family: var(--font-display); font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 20px; }
+.section-card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 
 /* ===== BUTTONS ===== */
 .btn {
@@ -351,6 +353,8 @@ body {
 .empty-state-icon { font-size: 40px; opacity: 0.3; }
 .empty-state-title { font-family: var(--font-display); font-size: 13px; font-weight: 700; letter-spacing: 0.05em; }
 .empty-state-sub { font-size: 13px; color: var(--text-muted); }
+.placeholder-card { max-width: 720px; }
+.placeholder-card .empty-state { min-height: 280px; }
 
 /* ===== DETAIL PAGE ===== */
 .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
@@ -435,6 +439,7 @@ body {
   .gauge-grid { grid-template-columns: 1fr 1fr; }
   .stat-grid { grid-template-columns: 1fr 1fr; }
   .chart-grid { grid-template-columns: 1fr; }
+  .section-card-header { align-items: flex-start; flex-direction: column; }
   .settings-grid { grid-template-columns: 1fr; }
   .detail-grid { grid-template-columns: 1fr 1fr; }
   .history-card { grid-template-columns: 1fr; gap: 10px; }
