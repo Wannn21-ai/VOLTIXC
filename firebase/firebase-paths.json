@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "variables": {
+    "uid": "Firebase Auth user UID",
+    "deviceId": "Stable VOLTIX device identifier",
+    "historyId": "Stable completed-session identifier",
+    "code": "Short-lived pairing or invite code"
+  },
+  "paths": {
+    "userProfile": "/users/{uid}/profile",
+    "userSettings": "/users/{uid}/settings",
+    "userDevices": "/users/{uid}/devices",
+    "userDevice": "/users/{uid}/devices/{deviceId}",
+    "userHistoryProjection": "/users/{uid}/history/{historyId}",
+    "deviceRoot": "/devices/{deviceId}",
+    "deviceMembers": "/devices/{deviceId}/members",
+    "deviceMember": "/devices/{deviceId}/members/{uid}",
+    "deviceConfig": "/devices/{deviceId}/config",
+    "deviceLive": "/devices/{deviceId}/live",
+    "deviceLiveSystem": "/devices/{deviceId}/live/system",
+    "deviceLiveMeasurement": "/devices/{deviceId}/live/device",
+    "deviceCommand": "/devices/{deviceId}/command",
+    "deviceHistory": "/devices/{deviceId}/history/{historyId}",
+    "developmentCompletedSessionQueue": "/devices/{deviceId}/completedSessions/{historyId}",
+    "developmentCommandCurrent": "/devices/{deviceId}/commands/current",
+    "developmentCommandLastAck": "/devices/{deviceId}/commands/lastAck",
+    "pairingCode": "/pairingCodes/{code}",
+    "inviteCode": "/inviteCodes/{code}"
+  },
+  "roles": {
+    "owner": "Full device administration and command access",
+    "operator": "Read device data and issue non-administrative commands",
+    "viewer": "Read device live data and history only"
+  }
+}
