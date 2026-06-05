@@ -95,3 +95,6 @@ own trusted code.
 
 These claims are design targets. This sprint does not create tokens, services,
 or a real Firebase project.
+
+The final firmware payload fields and current-to-final live migration boundary
+are documented in [../docs/device-live-schema.md](../docs/device-live-schema.md).
