@@ -1,0 +1,17 @@
+# PlatformIO
+.pio/
+.vscode/
+
+# Local credentials
+include/credentials.h
+
+# OS junk
+.DS_Store
+Thumbs.db
+thumbs.db
+desktop.ini
+
+# Logs / env
+*.log
+.env
+.env.local
