@@ -85,6 +85,10 @@ Ordinary clients cannot perform this transaction under the draft production
 rules. A trusted Admin SDK service can perform the transaction while enforcing
 expiry, one-time use, and device eligibility in backend code.
 
+The current web pairing foundation and isolated Stage A manual testing procedure
+are documented in [`pairing-foundation.md`](pairing-foundation.md). Production
+rules remain strict and intentionally block direct client claims.
+
 ## Invite Transaction Target
 
 Only the device owner may create an invite for role `operator` or `viewer`.

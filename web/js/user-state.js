@@ -80,6 +80,76 @@ export async function getCurrentDevice(uid) {
   return { id: deviceId, ...devices[deviceId] };
 }
 
+export async function claimPairingCode(user, code) {
+  if (!FIREBASE_CONFIGURED) throw new Error("Pairing is unavailable in local visual mode.");
+  if (!user?.uid) throw new Error("Sign in before pairing a device.");
+  if (!/^\d{6}$/.test(code)) throw new Error("Enter a valid 6-digit pairing code.");
+
+  const pairingServiceRequiredError = error => Object.assign(
+    new Error("Secure rules require the trusted pairing service. Use the documented Stage A development rules only for isolated testing."),
+    { code: "pairing/trusted-service-required", cause: error }
+  );
+  const isPermissionDenied = error =>
+    error?.code === "PERMISSION_DENIED" || error?.code === "database/permission-denied";
+
+  let pairingSnapshot;
+  try {
+    pairingSnapshot = await get(ref(db, `pairingCodes/${code}`));
+  } catch (error) {
+    if (isPermissionDenied(error)) throw pairingServiceRequiredError(error);
+    throw error;
+  }
+  if (!pairingSnapshot.exists()) throw new Error("Pairing code is invalid.");
+
+  const pairing = pairingSnapshot.val() || {};
+  if (pairing.used === true) throw new Error("Pairing code has already been used.");
+  if (!Number.isFinite(Number(pairing.expiresAt)) || Number(pairing.expiresAt) <= Date.now()) {
+    throw new Error("Pairing code has expired.");
+  }
+  if (!pairing.deviceId) throw new Error("Pairing code does not reference a device.");
+
+  let deviceSnapshot;
+  try {
+    deviceSnapshot = await get(ref(db, `devices/${pairing.deviceId}`));
+  } catch (error) {
+    if (isPermissionDenied(error)) throw pairingServiceRequiredError(error);
+    throw error;
+  }
+  if (!deviceSnapshot.exists()) throw new Error("Pairing device was not found.");
+
+  const device = deviceSnapshot.val() || {};
+  if (device.paired === true || device.ownerUid) throw new Error("Device is already paired.");
+
+  const now = Date.now();
+  const nickname = device.name || "VOLTIX Device";
+  const updates = {
+    [`users/${user.uid}/devices/${pairing.deviceId}`]: {
+      role: "owner",
+      nickname,
+      addedAt: now
+    },
+    [`devices/${pairing.deviceId}/ownerUid`]: user.uid,
+    [`devices/${pairing.deviceId}/paired`]: true,
+    [`devices/${pairing.deviceId}/name`]: nickname,
+    [`devices/${pairing.deviceId}/members/${user.uid}`]: {
+      role: "owner",
+      addedAt: now
+    },
+    [`pairingCodes/${code}/used`]: true,
+    [`pairingCodes/${code}/usedBy`]: user.uid
+  };
+
+  try {
+    await update(ref(db, "/"), updates);
+  } catch (error) {
+    if (isPermissionDenied(error)) throw pairingServiceRequiredError(error);
+    throw error;
+  }
+
+  localStorage.setItem(`${CURRENT_DEVICE_KEY_PREFIX}${user.uid}`, pairing.deviceId);
+  return { id: pairing.deviceId, nickname, role: "owner" };
+}
+
 export function readableFirebaseError(error, fallback = "Firebase request failed.") {
   const code = error?.code || "";
   if (code === "PERMISSION_DENIED" || code === "database/permission-denied") {

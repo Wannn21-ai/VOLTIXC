@@ -381,6 +381,11 @@ body {
 .empty-state-sub { font-size: 13px; color: var(--text-muted); }
 .placeholder-card { max-width: 720px; }
 .placeholder-card .empty-state { min-height: 280px; }
+.device-detail-list { display: flex; flex-direction: column; gap: 12px; }
+.device-detail-list div { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.device-detail-list span { color: var(--text-muted); }
+.device-detail-list strong { max-width: 68%; color: var(--text-secondary); font-family: var(--font-display); font-size: 10px; text-align: right; overflow-wrap: anywhere; }
+.device-foundation-note { margin-top: 18px; padding: 12px; border-left: 2px solid var(--cyan); background: var(--cyan-dim); color: var(--text-muted); font-size: 11px; line-height: 1.6; }
 
 /* ===== DETAIL PAGE ===== */
 .detail-back-link { color: var(--cyan); display: inline-block; font-size: 12px; margin-bottom: 8px; text-decoration: none; }

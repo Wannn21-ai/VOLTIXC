@@ -1,4 +1,5 @@
 import { auth, db, ref, get, set, DEVICE_ID } from "./firebase-config.js";
+import { getCurrentDevice } from "./user-state.js";
 
 const LOCAL_FETCH_TIMEOUT_MS = 1500;
 
@@ -136,7 +137,15 @@ async function countUserHistory(uid) {
 }
 
 async function importCompletedSessions(uid) {
-  const deviceId = DEVICE_ID;
+  let currentDevice;
+  try {
+    currentDevice = await getCurrentDevice(uid);
+  } catch {
+    return 0;
+  }
+  if (!currentDevice) return 0;
+
+  const deviceId = currentDevice.id;
   console.log("[History Import] currentUser.uid", uid);
   try {
     const queueSnap = await get(ref(db, `devices/${deviceId}/completedSessions`));

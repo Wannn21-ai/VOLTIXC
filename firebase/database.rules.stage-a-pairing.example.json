@@ -1,0 +1,42 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "devices": {
+      "$deviceId": {
+        ".read": "auth != null && (data.child('paired').val() === false || data.child('ownerUid').val() === auth.uid || data.child('members').child(auth.uid).exists())",
+        "ownerUid": {
+          ".write": "auth != null && data.val() === '' && newData.val() === auth.uid"
+        },
+        "paired": {
+          ".write": "auth != null && data.val() === false && newData.val() === true"
+        },
+        "name": {
+          ".write": "auth != null && data.parent().child('paired').val() === false && newData.isString()"
+        },
+        "members": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && !data.exists() && newData.child('role').val() === 'owner' && newData.child('addedAt').isNumber()"
+          }
+        }
+      }
+    },
+    "pairingCodes": {
+      "$code": {
+        ".read": "auth != null",
+        "used": {
+          ".write": "auth != null && data.val() === false && newData.val() === true"
+        },
+        "usedBy": {
+          ".write": "auth != null && !data.exists() && newData.val() === auth.uid"
+        }
+      }
+    }
+  }
+}
