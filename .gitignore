@@ -11,6 +11,8 @@ node_modules/
 # Env / secrets
 .env
 .env.local
+.env.*
+!.env.example
 credentials.h
 secrets.h
 private_key.json

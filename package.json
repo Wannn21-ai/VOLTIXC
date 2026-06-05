@@ -1,0 +1,7 @@
+{
+  "name": "voltix-web",
+  "private": true,
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs"
+  }
+}
