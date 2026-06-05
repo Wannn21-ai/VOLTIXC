@@ -89,14 +89,14 @@
       "$code": {
         ".read": "auth != null && auth.token.pairingService === true",
         ".write": "auth != null && auth.token.pairingService === true",
-        ".validate": "newData.exists() && newData.hasChildren(['deviceId', 'createdAt', 'expiresAt', 'used']) && newData.child('deviceId').isString() && newData.child('createdAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() > newData.child('createdAt').val() && newData.child('used').isBoolean() && (!newData.child('used').val() || newData.child('usedBy').isString()) && (!data.child('used').val() || (newData.child('used').val() === true && newData.child('usedBy').val() === data.child('usedBy').val()))"
+        ".validate": "newData.exists() && newData.hasChildren(['deviceId', 'createdAt', 'expiresAt', 'used']) && newData.child('deviceId').isString() && newData.child('createdAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() > newData.child('createdAt').val() && newData.child('used').isBoolean() && (newData.child('used').val() === false || newData.child('usedBy').isString()) && (data.exists() === false || data.child('used').val() === false || (newData.child('used').val() === true && newData.child('usedBy').val() === data.child('usedBy').val()))"
       }
     },
     "inviteCodes": {
       "$code": {
         ".read": "auth != null && auth.token.inviteService === true",
         ".write": "auth != null && (auth.token.inviteService === true || (!data.exists() && newData.child('used').val() === false && root.child('devices').child(newData.child('deviceId').val()).child('ownerUid').val() === auth.uid && newData.child('createdBy').val() === auth.uid))",
-        ".validate": "newData.exists() && newData.hasChildren(['deviceId', 'createdBy', 'role', 'createdAt', 'expiresAt', 'used']) && newData.child('deviceId').isString() && newData.child('createdBy').isString() && (newData.child('role').val() === 'operator' || newData.child('role').val() === 'viewer') && newData.child('createdAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() > newData.child('createdAt').val() && newData.child('used').isBoolean() && (!newData.child('used').val() || newData.child('usedBy').isString()) && (!data.child('used').val() || (newData.child('used').val() === true && newData.child('usedBy').val() === data.child('usedBy').val()))"
+        ".validate": "newData.exists() && newData.hasChildren(['deviceId', 'createdBy', 'role', 'createdAt', 'expiresAt', 'used']) && newData.child('deviceId').isString() && newData.child('createdBy').isString() && (newData.child('role').val() === 'operator' || newData.child('role').val() === 'viewer') && newData.child('createdAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() > newData.child('createdAt').val() && newData.child('used').isBoolean() && (newData.child('used').val() === false || newData.child('usedBy').isString()) && (data.exists() === false || data.child('used').val() === false || (newData.child('used').val() === true && newData.child('usedBy').val() === data.child('usedBy').val()))"
       }
     }
   }
