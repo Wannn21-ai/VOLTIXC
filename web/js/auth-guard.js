@@ -1,18 +1,24 @@
 import {
-  auth, db, ref, onValue, get, DEVICE_ID,
+  auth, db, ref, onValue, get,
   FIREBASE_CONFIGURED, localUser
 } from "./firebase-config.js";
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { importCompletedSessionsForCurrentUser } from "./local-history.js";
+import { ensureInitialUserState, getCurrentDevice } from "./user-state.js";
 
 // ── Auth guard ────────────────────────────────────
 export function requireAuth() {
   if (!FIREBASE_CONFIGURED) return Promise.resolve(localUser);
 
   return new Promise((resolve, reject) => {
-    const unsub = onAuthStateChanged(auth, user => {
+    const unsub = onAuthStateChanged(auth, async user => {
       unsub();
       if (user) {
+        try {
+          await ensureInitialUserState(user);
+        } catch (error) {
+          console.warn("[Auth] Initial user state could not be synchronized:", error?.code || error?.message || error);
+        }
         importCompletedSessionsForCurrentUser(user);
         resolve(user);
       }
@@ -373,7 +379,9 @@ export async function loadAndApplySettings(uid) {
   }
 
   try {
-    const appSnap = await get(ref(db, `devices/${DEVICE_ID}/config`));
+    const currentDevice = await getCurrentDevice(uid);
+    if (!currentDevice) return settings;
+    const appSnap = await get(ref(db, `devices/${currentDevice.id}/config`));
     if (appSnap.exists()) {
       const shared = appSnap.val() || {};
       const sharedThreshold = Number(shared.overloadThreshold ?? shared.threshold);
@@ -422,12 +430,23 @@ export function setSystemStatus(online) {
 
 // ── Firebase status watcher ───────────────────────
 export function startStatusWatcher() {
-  onValue(ref(db, `devices/${DEVICE_ID}/live/system`), snapshot => {
-    const sys  = snapshot.val() || {};
-    const now  = Math.floor(Date.now() / 1000);
-    const diff = now - (sys.timestamp || 0);
-    setSystemStatus(sys.internet === true && sys.timestamp > 0 && diff <= 15);
-  });
+  getCurrentDevice(auth.currentUser?.uid)
+    .then(currentDevice => {
+      if (!currentDevice) {
+        setSystemStatus(false);
+        return;
+      }
+      onValue(ref(db, `devices/${currentDevice.id}/live/system`), snapshot => {
+        const sys = snapshot.val() || {};
+        const now = Math.floor(Date.now() / 1000);
+        const diff = now - (sys.timestamp || 0);
+        setSystemStatus(sys.internet === true && sys.timestamp > 0 && diff <= 15);
+      });
+    })
+    .catch(error => {
+      console.warn("[Status] Device status unavailable:", error?.code || error?.message || error);
+      setSystemStatus(false);
+    });
 }
 
 // ── Toast ─────────────────────────────────────────
