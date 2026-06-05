@@ -1,6 +1,7 @@
 #include "firebase_sync.h"
 #include "config.h"
 #include "credentials.h"
+#include "firebase_paths.h"
 #include "network.h"
 #include "relay.h"
 #include "session.h"
@@ -10,6 +11,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
+#include <math.h>
 #include <stdlib.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -26,6 +28,18 @@ static bool pendingStartAck = false;
 static char pendingStartCommandId[48] = "";
 static unsigned long lastLiveLogMs = 0;
 static unsigned long lastPollLogMs = 0;
+
+static String configJsonPath(const String& configPath) {
+  return configPath + ".json";
+}
+
+static String finalConfigJsonPath() {
+  return configJsonPath(FirebasePaths::pathDeviceConfig(String(Config::DEVICE_ID)));
+}
+
+static String legacyConfigJsonPath() {
+  return configJsonPath(String(Config::FIREBASE_DEVICE_CONFIG_PATH));
+}
 
 static String configRevisionText(uint64_t revision) {
   char buffer[24];
@@ -49,21 +63,114 @@ static bool readRevision(JsonDocument& doc, uint64_t& revision) {
   return false;
 }
 
-static void applyConfigDocument(JsonDocument& doc) {
-  if (doc["tariff"].is<float>()) appConfig.tariffPerKwh = doc["tariff"].as<float>();
-  if (doc["currency"].is<const char*>()) strlcpy(appConfig.currency, doc["currency"].as<const char*>(), sizeof(appConfig.currency));
-  if (doc["overloadThreshold"].is<float>()) appConfig.overloadThresholdW = doc["overloadThreshold"].as<float>();
-  if (doc["overloadWarningPercent"].is<float>()) appConfig.overloadWarningPercent = doc["overloadWarningPercent"].as<float>();
-  if (doc["loadPowerThreshold"].is<float>()) appConfig.loadPowerThresholdW = doc["loadPowerThreshold"].as<float>();
-  if (doc["loadCurrentThreshold"].is<float>()) appConfig.loadCurrentThresholdA = doc["loadCurrentThreshold"].as<float>();
-  if (doc["loadRemovedDelaySec"].is<unsigned long>()) appConfig.loadRemovedDelaySec = doc["loadRemovedDelaySec"].as<unsigned long>();
-  if (doc["offlineTimeoutSec"].is<unsigned long>()) appConfig.offlineTimeoutSec = doc["offlineTimeoutSec"].as<unsigned long>();
-  if (doc["checkpointIntervalSec"].is<unsigned long>()) appConfig.checkpointIntervalSec = doc["checkpointIntervalSec"].as<unsigned long>();
+static void logRejectedConfigField(const char* field) {
+  Serial.print("[config] Ignored invalid field ");
+  Serial.println(field);
+}
+
+static bool readFiniteFloat(JsonDocument& doc, const char* field, float& value) {
+  if (!doc.containsKey(field)) {
+    return false;
+  }
+  if (!doc[field].is<float>()) {
+    logRejectedConfigField(field);
+    return false;
+  }
+  const float candidate = doc[field].as<float>();
+  if (!isfinite(candidate)) {
+    logRejectedConfigField(field);
+    return false;
+  }
+  value = candidate;
+  return true;
+}
+
+static bool applyPositiveFloat(JsonDocument& doc, const char* field, float& target) {
+  float candidate = 0.0f;
+  if (!readFiniteFloat(doc, field, candidate)) {
+    return false;
+  }
+  if (candidate <= 0.0f) {
+    logRejectedConfigField(field);
+    return false;
+  }
+  target = candidate;
+  return true;
+}
+
+static bool applyNonNegativeFloat(JsonDocument& doc, const char* field, float& target) {
+  float candidate = 0.0f;
+  if (!readFiniteFloat(doc, field, candidate)) {
+    return false;
+  }
+  if (candidate < 0.0f) {
+    logRejectedConfigField(field);
+    return false;
+  }
+  target = candidate;
+  return true;
+}
+
+static bool applyPositiveULong(JsonDocument& doc, const char* field, unsigned long& target) {
+  if (!doc.containsKey(field)) {
+    return false;
+  }
+  if (!doc[field].is<unsigned long>()) {
+    logRejectedConfigField(field);
+    return false;
+  }
+  const unsigned long candidate = doc[field].as<unsigned long>();
+  if (candidate == 0) {
+    logRejectedConfigField(field);
+    return false;
+  }
+  target = candidate;
+  return true;
+}
+
+static bool applyConfigDocument(JsonDocument& doc, const char* source) {
+  bool applied = false;
+  applied = applyPositiveFloat(doc, "tariff", appConfig.tariffPerKwh) || applied;
+  applied = applyPositiveFloat(doc, "overloadThreshold", appConfig.overloadThresholdW) || applied;
+  applied = applyNonNegativeFloat(doc, "loadPowerThreshold", appConfig.loadPowerThresholdW) || applied;
+  applied = applyNonNegativeFloat(doc, "loadCurrentThreshold", appConfig.loadCurrentThresholdA) || applied;
+  applied = applyPositiveULong(doc, "loadRemovedDelaySec", appConfig.loadRemovedDelaySec) || applied;
+  applied = applyPositiveULong(doc, "offlineTimeoutSec", appConfig.offlineTimeoutSec) || applied;
+  applied = applyPositiveULong(doc, "checkpointIntervalSec", appConfig.checkpointIntervalSec) || applied;
+
+  float warningPercent = 0.0f;
+  if (readFiniteFloat(doc, "overloadWarningPercent", warningPercent)) {
+    const float clampedWarning = constrain(warningPercent, 1.0f, 100.0f);
+    if (clampedWarning != warningPercent) {
+      Serial.println("[config] Clamped overloadWarningPercent to 1..100");
+    }
+    appConfig.overloadWarningPercent = clampedWarning;
+    applied = true;
+  }
+
+  if (doc.containsKey("currency")) {
+    if (doc["currency"].is<const char*>()) {
+      const char* currency = doc["currency"].as<const char*>();
+      if (currency != nullptr && currency[0] != '\0' && strlen(currency) < sizeof(appConfig.currency)) {
+        strlcpy(appConfig.currency, currency, sizeof(appConfig.currency));
+        applied = true;
+      } else {
+        logRejectedConfigField("currency");
+      }
+    } else {
+      logRejectedConfigField("currency");
+    }
+  }
+
+  if (!applied) {
+    return false;
+  }
   if (doc["source"].is<const char*>()) {
     strlcpy(appConfig.configSource, doc["source"].as<const char*>(), sizeof(appConfig.configSource));
   } else {
-    strlcpy(appConfig.configSource, "FIREBASE", sizeof(appConfig.configSource));
+    strlcpy(appConfig.configSource, source, sizeof(appConfig.configSource));
   }
+  return true;
 }
 
 static bool shouldLog(unsigned long& lastLogMs) {
@@ -155,6 +262,29 @@ static bool httpRequest(const char* method, const char* path, const String& payl
 
   logHttp(method, path, statusCode, ok, forceLog || !ok);
   return ok;
+}
+
+static bool fetchConfigDocument(const String& jsonPath, const char* source, JsonDocument& doc) {
+  String response;
+  if (!httpRequest("GET", jsonPath.c_str(), "", &response, true)) {
+    return false;
+  }
+  if (response == "null" || response.length() == 0) {
+    Serial.print("[config] ");
+    Serial.print(source);
+    Serial.println(" config empty");
+    return false;
+  }
+
+  const DeserializationError error = deserializeJson(doc, response);
+  if (error) {
+    Serial.print("[config] ");
+    Serial.print(source);
+    Serial.print(" config parse FAIL ");
+    Serial.println(error.c_str());
+    return false;
+  }
+  return true;
 }
 
 static void formatDuration(unsigned long durationSec, char* out, size_t outSize) {
@@ -260,20 +390,20 @@ void firebasePublishLive() {
 }
 
 void firebaseReadConfig() {
-  String response;
-  if (!httpRequest("GET", "/devices/esp32-voltix-001/config.json", "", &response, true)) {
-    return;
-  }
-  if (response == "null" || response.length() == 0) {
-    Serial.println("[firebase] Config empty");
-    return;
-  }
-
   StaticJsonDocument<768> doc;
-  const DeserializationError error = deserializeJson(doc, response);
-  if (error) {
-    Serial.print("[firebase] Config parse FAIL ");
-    Serial.println(error.c_str());
+  const String finalPath = finalConfigJsonPath();
+  const String legacyPath = legacyConfigJsonPath();
+  const char* configSource = "DEVICE_CONFIG";
+
+  bool loaded = fetchConfigDocument(finalPath, "device", doc);
+  if (!loaded && legacyPath != finalPath) {
+    doc.clear();
+    loaded = fetchConfigDocument(legacyPath, "legacy", doc);
+    configSource = "LEGACY_CONFIG";
+  }
+  if (!loaded) {
+    Serial.print("[config] Keeping cached/default config source=");
+    Serial.println(appConfig.configSource[0] == '\0' ? "DEFAULT" : appConfig.configSource);
     return;
   }
 
@@ -293,7 +423,10 @@ void firebaseReadConfig() {
     return;
   }
 
-  applyConfigDocument(doc);
+  if (!applyConfigDocument(doc, configSource)) {
+    Serial.println("[config] No valid device config fields; keeping cached/default config");
+    return;
+  }
   if (hasRevision) {
     appConfig.configRevision = firebaseRevision;
   } else if (appConfig.configRevision == 0) {
@@ -302,7 +435,8 @@ void firebaseReadConfig() {
   appConfig.configPendingSync = false;
   saveLocalConfig();
 
-  Serial.println("[config] Firebase config applied");
+  Serial.print("[config] Loaded from ");
+  Serial.println(configSource);
   Serial.print("[firebase] Config applied tariff=");
   Serial.print(appConfig.tariffPerKwh, 2);
   Serial.print(" overload=");
@@ -327,7 +461,8 @@ bool firebasePushDeviceConfig() {
 
   String payload;
   serializeJson(doc, payload);
-  const bool ok = httpRequest("PATCH", "/devices/esp32-voltix-001/config.json", payload, nullptr, true);
+  const String path = finalConfigJsonPath();
+  const bool ok = httpRequest("PATCH", path.c_str(), payload, nullptr, true);
   if (ok) {
     appConfig.configPendingSync = false;
     saveLocalConfig();
