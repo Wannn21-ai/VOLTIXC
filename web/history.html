@@ -32,13 +32,100 @@
             <button class="btn btn-danger" id="btn-delete-all">✕ Delete All</button>
           </div>
         </div>
-        <div class="device-tabs" id="filter-tabs">
-          <button class="device-tab active" data-filter="all">All Devices</button>
-        </div>
-        <div class="search-wrap">
-          <span class="search-icon">⌕</span>
-          <input type="text" class="search-input" id="search-input" placeholder="Search by device name..."/>
-        </div>
+
+        <section class="history-section">
+          <div class="history-section-heading">
+            <div>
+              <div class="card-title">Overall History Summary</div>
+              <div class="history-section-sub">Totals from all loaded monitoring sessions</div>
+            </div>
+          </div>
+          <div class="history-summary-grid">
+            <div class="history-summary-card cyan">
+              <div class="history-summary-label">Total Sessions</div>
+              <div class="history-summary-value" id="summary-sessions">0</div>
+            </div>
+            <div class="history-summary-card">
+              <div class="history-summary-label">Total Duration</div>
+              <div class="history-summary-value" id="summary-duration">00:00:00</div>
+            </div>
+            <div class="history-summary-card green">
+              <div class="history-summary-label">Total Energy</div>
+              <div class="history-summary-value"><span id="summary-energy">0.000</span><span class="history-summary-unit">kWh</span></div>
+            </div>
+            <div class="history-summary-card amber">
+              <div class="history-summary-label">Total Cost</div>
+              <div class="history-summary-value" id="summary-cost">Rp 0</div>
+            </div>
+            <div class="history-summary-card">
+              <div class="history-summary-label">Average Power</div>
+              <div class="history-summary-value"><span id="summary-power">0</span><span class="history-summary-unit">W</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="history-section">
+          <div class="history-section-heading">
+            <div>
+              <div class="card-title">Monitoring History</div>
+              <div class="history-section-sub">Search, filter, and sort completed sessions</div>
+            </div>
+            <button class="btn btn-ghost" id="btn-reset-filters">Reset Filters</button>
+          </div>
+          <div class="history-controls">
+            <div class="search-wrap history-search">
+              <span class="search-icon">⌕</span>
+              <input type="text" class="search-input" id="search-input" placeholder="Search by device name..."/>
+            </div>
+            <label class="history-filter-field">
+              <span>Device</span>
+              <select class="form-select" id="filter-device">
+                <option value="all">All Devices</option>
+              </select>
+            </label>
+            <label class="history-filter-field">
+              <span>Mode</span>
+              <select class="form-select" id="filter-mode">
+                <option value="all">All Modes</option>
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+                <option value="online-offline">Online → Offline</option>
+                <option value="offline-online">Offline → Online</option>
+              </select>
+            </label>
+            <label class="history-filter-field">
+              <span>Status / End Reason</span>
+              <select class="form-select" id="filter-status">
+                <option value="all">All Statuses</option>
+                <option value="stop-app">Stop by App</option>
+                <option value="device-removed">Device Removed</option>
+                <option value="overload">Overload</option>
+                <option value="power-loss">Power Loss</option>
+                <option value="offline-monitoring">Offline Monitoring</option>
+              </select>
+            </label>
+            <label class="history-filter-field">
+              <span>Date Range</span>
+              <select class="form-select" id="filter-date">
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="7">Last 7 Days</option>
+                <option value="30">Last 30 Days</option>
+              </select>
+            </label>
+            <label class="history-filter-field">
+              <span>Sort By</span>
+              <select class="form-select" id="sort-history">
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="energy">Highest Energy</option>
+                <option value="cost">Highest Cost</option>
+                <option value="duration">Longest Duration</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
         <div class="history-list" id="history-list"></div>
       </div>
     </div>
