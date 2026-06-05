@@ -3,14 +3,21 @@ import {
   startStatusWatcher, applyTheme, applyLanguage,
   loadAndApplySettings
 } from "./auth-guard.js";
-import { auth, db, ref, set, get, update, DEVICE_ID } from "./firebase-config.js";
+import { auth, db, ref, set, get, update } from "./firebase-config.js";
 import { updateProfile } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getCurrentDevice, readableFirebaseError } from "./user-state.js";
 
 const user = await requireAuth();
 renderShell("settings", "SETTINGS");
 fillUserInfo(user);
 startStatusWatcher();
 const uid = user.uid;
+let currentDevice = null;
+try {
+  currentDevice = await getCurrentDevice(uid);
+} catch (error) {
+  console.warn("[Settings] Current device unavailable:", readableFirebaseError(error));
+}
 
 // ================= CONSTANTS =================
 // FIX: Deklarasikan USD_RATE di ATAS segalanya supaya tidak terjadi
@@ -121,8 +128,9 @@ async function saveSettingsToFirebase(partial) {
 }
 
 async function syncSharedConfigToSettings() {
+  if (!currentDevice) return;
   try {
-    const snap = await get(ref(db, `devices/${DEVICE_ID}/config`));
+    const snap = await get(ref(db, `devices/${currentDevice.id}/config`));
     if (!snap.exists()) return;
     const shared = snap.val() || {};
     const sharedThreshold = Number(shared.overloadThreshold ?? shared.threshold);
@@ -197,7 +205,7 @@ document.getElementById("btn-save-settings").addEventListener("click", async () 
   try {
     await saveSettingsToFirebase({ currency, tariff, overloadThreshold: threshold });
     try {
-      await update(ref(db, `devices/${DEVICE_ID}/config`), {
+      if (currentDevice) await update(ref(db, `devices/${currentDevice.id}/config`), {
         tariff,
         currency,
         overloadThreshold: threshold,

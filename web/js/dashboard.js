@@ -3,8 +3,9 @@ import {
   showToast, applyTheme, updateChartColors, startStatusWatcher,
   loadAndApplySettings
 } from "./auth-guard.js";
-import { db, ref, onValue, set, push, get, DEVICE_ID } from "./firebase-config.js";
+import { db, ref, onValue, set, push, get } from "./firebase-config.js";
 import { loadDeviceHistory } from "./local-history.js";
+import { getCurrentDevice, readableFirebaseError } from "./user-state.js";
 
 // ================= INIT =================
 const user = await requireAuth();
@@ -12,6 +13,15 @@ renderShell("dashboard", "DASHBOARD");
 fillUserInfo(user);
 startStatusWatcher();
 const uid = user.uid;
+let selectedDevice = null;
+try {
+  selectedDevice = await getCurrentDevice(uid);
+  if (!selectedDevice) document.getElementById("no-device-state").style.display = "block";
+} catch (error) {
+  document.getElementById("no-device-state").style.display = "block";
+  document.querySelector("#no-device-state .empty-state-title").textContent = "Device access unavailable";
+  document.querySelector("#no-device-state .empty-state-sub").textContent = readableFirebaseError(error);
+}
 
 // ================= FIREBASE PATHS =================
 const historyRef  = ref(db, `users/${uid}/history`);
@@ -39,8 +49,10 @@ setInterval(async () => {
   try {
     const snap = await get(settingsRef);
     const remote = snap.exists() ? { ...SETTING_DEFAULTS, ...snap.val() } : { ...settings };
-    const appConfigSnap = await get(ref(db, `devices/${DEVICE_ID}/config`));
-    if (appConfigSnap.exists()) {
+    const appConfigSnap = selectedDevice
+      ? await get(ref(db, `devices/${selectedDevice.id}/config`))
+      : null;
+    if (appConfigSnap?.exists()) {
       const shared = appConfigSnap.val() || {};
       const sharedThreshold = Number(shared.overloadThreshold ?? shared.threshold);
       const sharedTariff = Number(shared.electricityCostPerKwh ?? shared.tariff ?? shared.tarif);
@@ -824,7 +836,7 @@ if (btnStop) {
 }
 
 // ================= FIREBASE LIVE LISTENER =================
-onValue(ref(db, `devices/${DEVICE_ID}/live`), snapshot => {
+if (selectedDevice) onValue(ref(db, `devices/${selectedDevice.id}/live`), snapshot => {
   const data = snapshot.val();
   if (!data) return;
 

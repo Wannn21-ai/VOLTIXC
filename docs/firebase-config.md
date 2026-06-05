@@ -84,6 +84,23 @@ configuration.
 Environment variables supplied by the shell or hosting provider take precedence
 over `.env.local`.
 
+## Auth and First-Login Verification
+
+After generating `dist/` with all seven Firebase variables:
+
+1. Enable Email/Password in Firebase Authentication.
+2. Serve `dist/` from a local HTTP server or hosting preview.
+3. Register a new user or sign in from `login.html`.
+4. Confirm the authenticated user is redirected to `index.html`.
+5. Confirm `/users/{uid}/profile` and missing `/users/{uid}/settings` defaults
+   are initialized without replacing existing values.
+6. With no `/users/{uid}/devices` entries, confirm Dashboard, Device, Members,
+   and Settings render the safe no-device state.
+
+The web selects the earliest device listed under `/users/{uid}/devices` as the
+initial current device and caches that ID locally. This is selection foundation
+only; it does not implement pairing or create fake devices.
+
 ## Mode 3: Vercel or Netlify
 
 In the hosting dashboard, add all seven required environment variables for the
