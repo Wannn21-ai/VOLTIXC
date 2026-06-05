@@ -126,3 +126,7 @@ Cloud Function:
 
 Never embed an Admin SDK credential, service account, or permanent pairing
 secret in the web app or firmware.
+
+The target firmware state machine, OLED priority, code lifecycle, and identity
+persistence plan are documented in
+[firmware-pairing-flow.md](firmware-pairing-flow.md).
