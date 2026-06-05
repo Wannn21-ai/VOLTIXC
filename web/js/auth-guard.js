@@ -1,9 +1,14 @@
-import { auth, db, ref, onValue, get, DEVICE_ID } from "./firebase-config.js";
+import {
+  auth, db, ref, onValue, get, DEVICE_ID,
+  FIREBASE_CONFIGURED, localUser
+} from "./firebase-config.js";
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { importCompletedSessionsForCurrentUser } from "./local-history.js";
 
 // ── Auth guard ────────────────────────────────────
 export function requireAuth() {
+  if (!FIREBASE_CONFIGURED) return Promise.resolve(localUser);
+
   return new Promise((resolve, reject) => {
     const unsub = onAuthStateChanged(auth, user => {
       unsub();
@@ -312,6 +317,10 @@ export function renderShell(activePage, pageTitle) {
 
   // Logout
   document.getElementById("btn-logout").addEventListener("click", async () => {
+    if (!FIREBASE_CONFIGURED) {
+      showToast("Sign out is disabled in local visual mode.");
+      return;
+    }
     await signOut(auth);
     window.location.href = "login.html";
   });
