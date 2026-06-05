@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Settings — Smart Energy Monitor</title>
+  <title>Settings - VOLTIX</title>
   <meta name="firebase-api-key"             content="NETLIFY_ENV_FIREBASE_API_KEY"/>
   <meta name="firebase-auth-domain"         content="NETLIFY_ENV_FIREBASE_AUTH_DOMAIN"/>
   <meta name="firebase-database-url"        content="NETLIFY_ENV_FIREBASE_DATABASE_URL"/>
@@ -23,60 +23,146 @@
         <div class="page-header">
           <div>
             <div class="page-header-title" id="txt-settings-title">Settings</div>
-            <div class="page-header-sub" id="txt-settings-sub">Manage your preferences and data</div>
+            <div class="page-header-sub" id="txt-settings-sub">Manage your preferences and monitoring configuration</div>
           </div>
         </div>
-        <div class="settings-grid">
 
-          <!-- ① Energy Pricing + Overload Threshold -->
-          <div class="settings-card">
-            <div class="settings-card-title" id="txt-pricing-title">💰 Energy Pricing</div>
-            <div class="form-group">
-              <label class="form-label" id="txt-currency-label">Currency</label>
-              <select id="currency" class="form-select">
-                <option value="IDR">IDR — Indonesian Rupiah</option>
-                <option value="USD">USD — US Dollar</option>
-              </select>
+        <div class="settings-intro">
+          <div>
+            <div class="settings-intro-label">SYSTEM CONFIGURATION</div>
+            <div class="settings-intro-title">Tune how VOLTIX monitors every session.</div>
+            <p>Configuration changes stay connected to the existing account, device config, and local visual fallback.</p>
+          </div>
+          <div class="settings-intro-status">
+            <span class="settings-status-dot"></span>
+            Local-first ready
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <section class="settings-card settings-card-wide">
+            <div class="settings-card-heading">
+              <div>
+                <div class="settings-card-kicker">Monitoring configuration</div>
+                <h2>Pricing, protection, and session rules</h2>
+              </div>
+              <span class="settings-card-index">01</span>
             </div>
-            <div class="form-group">
-              <label class="form-label" id="txt-tariff-label">Tariff per kWh</label>
-              <input type="number" id="tariff" class="form-input" placeholder="1444.70" step="0.01"/>
-            </div>
-            <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;" id="tariff-converted"></div>
-            <div class="divider" style="margin:4px 0 16px;"></div>
-            <div class="form-group">
-              <label class="form-label" id="txt-threshold-label">Overload Threshold (Watt)</label>
-              <input type="number" id="overload-threshold" class="form-input"
-                placeholder="2000" step="100" min="100" max="10000"/>
-              <div style="font-size:12px;color:var(--text-muted);margin-top:6px;" id="txt-threshold-sub">
-                Alert when device power exceeds this value
+
+            <div class="settings-config-section">
+              <div class="settings-section-copy">
+                <h3 id="txt-pricing-title">Energy Pricing</h3>
+                <p>Used to estimate session cost with <strong>energy kWh x tariff</strong>.</p>
+              </div>
+              <div class="settings-control-grid">
+                <div class="form-group">
+                  <label class="form-label" id="txt-currency-label" for="currency">Currency</label>
+                  <select id="currency" class="form-select">
+                    <option value="IDR">IDR - Indonesian Rupiah</option>
+                    <option value="USD">USD - US Dollar</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" id="txt-tariff-label" for="tariff">Tariff per kWh</label>
+                  <input type="number" id="tariff" class="form-input" placeholder="1444.70" step="0.01" min="0.01"/>
+                  <div class="settings-helper" id="tariff-converted"></div>
+                </div>
               </div>
             </div>
-            <button class="btn btn-primary" id="btn-save-settings" style="width:100%;justify-content:center;">
-              <span id="txt-save-pricing">Save Settings</span>
-            </button>
-          </div>
 
-          <!-- ② Account -->
-          <div class="settings-card">
-            <div class="settings-card-title" id="txt-account-title">👤 Account</div>
+            <div class="settings-config-section">
+              <div class="settings-section-copy">
+                <h3 id="txt-threshold-label">Overload Protection</h3>
+                <p id="txt-threshold-sub">Warning activates the LED and buzzer. Reaching the overload threshold trips the relay.</p>
+                <div class="settings-preview" id="overload-warning-preview"></div>
+              </div>
+              <div class="settings-control-grid">
+                <div class="form-group">
+                  <label class="form-label" for="overload-threshold">Overload threshold</label>
+                  <div class="settings-input-unit">
+                    <input type="number" id="overload-threshold" class="form-input" placeholder="2000" step="100" min="1"/>
+                    <span>W</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="overload-warning-percent">Warning level</label>
+                  <div class="settings-input-unit">
+                    <input type="number" id="overload-warning-percent" class="form-input" placeholder="99" step="1" min="1" max="100"/>
+                    <span>%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-config-section">
+              <div class="settings-section-copy">
+                <h3>Load Detection and Session Rules</h3>
+                <p>A load is detected when power or current reaches its threshold. Removed-load delay prevents brief drops from ending a session.</p>
+              </div>
+              <div class="settings-control-grid settings-control-grid-three">
+                <div class="form-group">
+                  <label class="form-label" for="load-power-threshold">Load power threshold</label>
+                  <div class="settings-input-unit">
+                    <input type="number" id="load-power-threshold" class="form-input" placeholder="1" step="0.1" min="0.01"/>
+                    <span>W</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="load-current-threshold">Load current threshold</label>
+                  <div class="settings-input-unit">
+                    <input type="number" id="load-current-threshold" class="form-input" placeholder="0.02" step="0.01" min="0.01"/>
+                    <span>A</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="load-removed-delay">Removed-load delay</label>
+                  <div class="settings-input-unit">
+                    <input type="number" id="load-removed-delay" class="form-input" placeholder="2" step="1" min="1"/>
+                    <span>sec</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="offline-timeout">Offline timeout</label>
+                  <div class="settings-input-unit">
+                    <input type="number" id="offline-timeout" class="form-input" placeholder="300" step="1" min="1"/>
+                    <span>sec</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="checkpoint-interval">Checkpoint interval</label>
+                  <div class="settings-input-unit">
+                    <input type="number" id="checkpoint-interval" class="form-input" placeholder="30" step="1" min="1"/>
+                    <span>sec</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-save-row">
+              <p>Saved through the current user settings and device configuration flow.</p>
+              <button class="btn btn-primary" id="btn-save-settings">
+                <span id="txt-save-pricing">Save Configuration</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="settings-card">
+            <div class="settings-card-title" id="txt-account-title">Account</div>
             <div class="form-group">
               <label class="form-label" id="txt-name-label">Display Name</label>
               <input type="text" id="display-name" class="form-input" placeholder="Your name"/>
             </div>
             <div class="form-group">
               <label class="form-label" id="txt-email-label">Email</label>
-              <input type="email" id="display-email" class="form-input" disabled
-                style="opacity:0.5;cursor:not-allowed;"/>
+              <input type="email" id="display-email" class="form-input" disabled/>
             </div>
-            <button class="btn btn-primary" id="btn-save-profile" style="width:100%;justify-content:center;">
+            <button class="btn btn-primary settings-full-button" id="btn-save-profile">
               <span id="txt-save-profile">Update Profile</span>
             </button>
-          </div>
+          </section>
 
-          <!-- ③ Appearance -->
-          <div class="settings-card">
-            <div class="settings-card-title" id="txt-appearance-title">🎨 Appearance</div>
+          <section class="settings-card">
+            <div class="settings-card-title" id="txt-appearance-title">Appearance</div>
             <div class="form-group">
               <label class="form-label" id="txt-theme-label">Theme</label>
               <div class="theme-options" id="theme-options">
@@ -101,108 +187,76 @@
                 <option value="id">Bahasa Indonesia</option>
               </select>
             </div>
-            <button class="btn btn-primary" id="btn-save-appearance" style="width:100%;justify-content:center;">
+            <button class="btn btn-primary settings-full-button" id="btn-save-appearance">
               <span id="txt-save-appearance">Save Appearance</span>
             </button>
-          </div>
+          </section>
 
-          <!-- ④ Notifications & Dashboard -->
-          <div class="settings-card">
-            <div class="settings-card-title" id="txt-notif-title">🔔 Notifications & Dashboard</div>
-            <div class="toggle-row">
-              <div>
-                <div class="toggle-label" id="txt-notif-device">Device connected notification</div>
-                <div class="toggle-sub" id="txt-notif-device-sub">Show toast when device is plugged in</div>
+          <section class="settings-card settings-card-wide">
+            <div class="settings-card-title" id="txt-notif-title">Notifications & Dashboard</div>
+            <div class="settings-notification-grid">
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label" id="txt-notif-device">Device connected notification</div>
+                  <div class="toggle-sub" id="txt-notif-device-sub">Show toast when device is plugged in</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="notif-device" checked/><span class="toggle-slider"></span></label>
               </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="notif-device" checked/>
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <div>
-                <div class="toggle-label" id="txt-notif-disconnect">Device disconnected notification</div>
-                <div class="toggle-sub" id="txt-notif-disconnect-sub">Show toast when device is unplugged</div>
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label" id="txt-notif-disconnect">Device disconnected notification</div>
+                  <div class="toggle-sub" id="txt-notif-disconnect-sub">Show toast when device is unplugged</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="notif-disconnect" checked/><span class="toggle-slider"></span></label>
               </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="notif-disconnect" checked/>
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <div>
-                <div class="toggle-label" id="txt-notif-session">Session saved notification</div>
-                <div class="toggle-sub" id="txt-notif-session-sub">Show toast when session is saved</div>
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label" id="txt-notif-session">Session saved notification</div>
+                  <div class="toggle-sub" id="txt-notif-session-sub">Show toast when session is saved</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="notif-session" checked/><span class="toggle-slider"></span></label>
               </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="notif-session" checked/>
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <!-- NEW: Overload notification toggle -->
-            <div class="toggle-row">
-              <div>
-                <div class="toggle-label" id="txt-notif-overload">Overload notification</div>
-                <div class="toggle-sub" id="txt-notif-overload-sub">Show alert when power exceeds threshold</div>
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label" id="txt-notif-overload">Overload notification</div>
+                  <div class="toggle-sub" id="txt-notif-overload-sub">Show alert when power exceeds threshold</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="notif-overload" checked/><span class="toggle-slider"></span></label>
               </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="notif-overload" checked/>
-                <span class="toggle-slider"></span>
-              </label>
             </div>
-            <div class="divider" style="margin:16px 0;"></div>
-            <div class="form-group">
-              <label class="form-label" id="txt-refresh-label">Dashboard refresh interval</label>
+            <div class="settings-preference-row">
+              <div>
+                <label class="form-label" id="txt-refresh-label">Dashboard refresh interval</label>
+                <div class="settings-helper">Minimum refresh interval is 1 second.</div>
+              </div>
               <select id="refresh-interval" class="form-select">
                 <option value="1000">1 second (most responsive)</option>
                 <option value="3000" selected>3 seconds (recommended)</option>
                 <option value="5000">5 seconds (battery saving)</option>
               </select>
+              <button class="btn btn-primary" id="btn-save-notif"><span id="txt-save-notif">Save Preferences</span></button>
             </div>
-            <button class="btn btn-primary" id="btn-save-notif" style="width:100%;justify-content:center;">
-              <span id="txt-save-notif">Save Preferences</span>
-            </button>
-          </div>
+          </section>
 
-          <!-- ⑤ Data Control -->
-          <div class="settings-card">
-            <div class="settings-card-title" id="txt-data-title">📊 Data Control</div>
-            <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;" id="txt-data-sub">
-              History and settings are synced to your account across all devices.
-            </p>
-            <div style="display:flex;flex-direction:column;gap:12px;">
-              <button class="btn btn-ghost" id="btn-export-all" style="justify-content:center;">
-                <span id="txt-export-all">↓ Export All History CSV</span>
-              </button>
-              <button class="btn btn-danger" id="btn-delete-all" style="justify-content:center;">
-                <span id="txt-delete-all">✕ Delete All History</span>
-              </button>
+          <section class="settings-card">
+            <div class="settings-card-title" id="txt-data-title">Data Control</div>
+            <p class="settings-card-copy" id="txt-data-sub">History and settings are synced to your account across all devices.</p>
+            <div class="settings-action-stack">
+              <button class="btn btn-ghost" id="btn-export-all"><span id="txt-export-all">Export All History CSV</span></button>
+              <button class="btn btn-danger" id="btn-delete-all"><span id="txt-delete-all">Delete All History</span></button>
             </div>
-          </div>
+          </section>
 
-          <!-- ⑥ About -->
-          <div class="settings-card">
-            <div class="settings-card-title" id="txt-about-title">ℹ About</div>
-            <div style="display:flex;flex-direction:column;gap:10px;">
-              <div style="display:flex;justify-content:space-between;font-size:13px;">
-                <span style="color:var(--text-muted);" id="txt-about-app">Application</span>
-                <span style="color:var(--text-secondary);font-family:var(--font-display);">Smart Energy Monitor</span>
-              </div>
-              <div style="display:flex;justify-content:space-between;font-size:13px;">
-                <span style="color:var(--text-muted);" id="txt-about-ver">Version</span>
-                <span style="color:var(--text-secondary);font-family:var(--font-display);">3.0.0</span>
-              </div>
-              <div style="display:flex;justify-content:space-between;font-size:13px;">
-                <span style="color:var(--text-muted);" id="txt-about-hw">Hardware</span>
-                <span style="color:var(--text-secondary);font-family:var(--font-display);">ESP32 + PZEM-004T</span>
-              </div>
-              <div style="display:flex;justify-content:space-between;font-size:13px;">
-                <span style="color:var(--text-muted);" id="txt-about-cloud">Cloud</span>
-                <span style="color:var(--text-secondary);font-family:var(--font-display);">Firebase Realtime DB</span>
-              </div>
+          <section class="settings-card">
+            <div class="settings-card-title" id="txt-about-title">About VOLTIX</div>
+            <div class="settings-about-list">
+              <div><span id="txt-about-app">Application</span><strong>VOLTIX</strong></div>
+              <div><span id="txt-about-ver">Version</span><strong>v1.0.0</strong></div>
+              <div><span id="txt-about-hw">Hardware</span><strong>ESP32 + PZEM + OLED + Relay</strong></div>
+              <div><span id="txt-about-cloud">Cloud</span><strong>Firebase Realtime DB</strong></div>
             </div>
-          </div>
-
+            <p class="settings-about-note">Completed sessions are saved to LittleFS first, then synced to the cloud for the online dashboard.</p>
+          </section>
         </div>
       </div>
     </div>
