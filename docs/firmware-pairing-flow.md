@@ -9,7 +9,8 @@ claim a device.
 
 The target integration state is separate from the current `SystemMode` and
 `SessionState` enums. A later firmware sprint may map these target states onto
-the existing runtime without changing session safety behavior.
+the existing runtime without changing session safety behavior. Its non-active
+code definition lives in `firmware/include/firebase_integration_scaffold.h`.
 
 | State | Responsibility | Main transition out |
 | --- | --- | --- |

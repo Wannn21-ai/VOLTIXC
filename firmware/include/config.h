@@ -5,6 +5,8 @@ static constexpr const char* PROJECT_NAME = "Voltix";
 static constexpr const char* DEVICE_ID = "esp32-voltix-001";
 static constexpr const char* DEFAULT_DEVICE_NAME = "Voltix-ESP32";
 
+// Transitional runtime paths. Keep these unchanged until the coordinated
+// migration adopts the final helpers in firebase_paths.h.
 static constexpr const char* FIREBASE_DEVICE_LIVE_PATH = "/devices/esp32-voltix-001/live";
 static constexpr const char* FIREBASE_DEVICE_CONFIG_PATH = "/devices/esp32-voltix-001/config";
 static constexpr const char* FIREBASE_COMMAND_CURRENT_PATH = "/devices/esp32-voltix-001/commands/current";

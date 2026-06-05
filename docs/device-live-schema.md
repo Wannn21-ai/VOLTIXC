@@ -5,6 +5,11 @@ migrate the current firmware paths, alter Firebase rules, or change web
 behavior. A later integration sprint must introduce secure device auth and
 verify each migration independently.
 
+Non-breaking code scaffolding for this contract lives in
+`firmware/include/firebase_paths.h` and
+`firmware/include/firebase_integration_scaffold.h`. The active runtime does not
+call these helpers yet.
+
 ## Ownership And Identity
 
 - `{deviceId}` is a stable provisioning identity, never a user UID.
