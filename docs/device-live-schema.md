@@ -135,6 +135,18 @@ uses that cache while offline. Invalid or incomplete remote config must not
 erase a valid cache. Web changes are applied when the paired device reconnects,
 using the established revision/pending-sync strategy during implementation.
 
+Firmware config source priority is:
+
+1. final `/devices/{deviceId}/config`;
+2. the transitional config path only when it differs from the final helper;
+3. last valid config cached in Preferences;
+4. compile-time safe defaults.
+
+Incoming positive-only values are rejected when zero, negative, non-numeric,
+or non-finite. Load thresholds may be zero. `overloadWarningPercent` is clamped
+to `1..100`. Missing/invalid fields retain their active cached/default values,
+and a document with no valid config fields is not cached.
+
 ## Command Contract
 
 Firmware consumes `/devices/{deviceId}/command` only when paired and online:
