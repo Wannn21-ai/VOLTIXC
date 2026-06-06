@@ -78,6 +78,12 @@ this phase. Invalid PZEM readings are expected without AC and must be non-fatal.
 
    ```text
    status
+   config
+   setthreshold
+   setthreshold 0
+   setthreshold -1
+   setthreshold nan
+   setthreshold 5001
    time
    recoverystatus
    on
@@ -90,6 +96,10 @@ this phase. Invalid PZEM readings are expected without AC and must be non-fatal.
 3. Verify the following:
 
 - [ ] `status`, `time`, and `recoverystatus` return without a crash or reboot.
+- [ ] `config` prints the current runtime config, including overload threshold,
+      tariff, load thresholds, checkpoint interval, source, and pending state.
+- [ ] Missing, non-numeric, zero, negative, and above-maximum `setthreshold`
+      values are rejected without changing the runtime threshold.
 - [ ] `on` enters the existing load-validation flow, turns the relay ON only
       for validation, then rejects no-load and returns the relay OFF.
 - [ ] The USB-only `on` attempt does not create completed history from invalid
@@ -179,18 +189,37 @@ session semantics for this test.
 
 **Gate:** Stop testing if LittleFS save fails or the relay does not turn OFF.
 
-## Phase 5 - Overload Warning Test Plan
+## Phase 5 - Low-Threshold Overload Test
 
 Do not test overload behavior by connecting a dangerous or high-power load.
 This phase validates the existing behavior only; it does not change overload
 semantics.
 
-1. Record the original overload threshold.
-2. Through an already approved existing configuration path, set a deliberately
-   low but valid test threshold that the small load can safely cross.
-3. Confirm the selected threshold remains below every component rating and does
+1. Confirm the relay is OFF and no session or recovery is active.
+2. Run `config` and record the original `overloadThreshold` value.
+3. Set a deliberately low but valid threshold below the known small load. For
+   example, use `setthreshold 15` for a stable approximately `21 W` test load.
+4. Run `config` again and confirm `overloadThreshold=15.00W` and
+   `configSource=SERIAL`. Confirm `pendingSync=true` while cloud sync is
+   denied or unavailable; it may become `false` after a successful sync. The
+   command persists the threshold locally; Firebase access is not required.
+5. Confirm the selected threshold remains below every component rating and does
    not require increasing load power.
-4. Start a controlled session with the same small load.
+6. Run `on` and wait for the existing load-verification flow to accept the
+   small load and begin monitoring.
+
+   ```text
+   config
+   setthreshold 15
+   config
+   on
+   wait for load verification with ~21W small load
+   confirm overload triggers
+   history
+   pending
+   setthreshold 2000
+   config
+   ```
 
 - [ ] The configured warning behavior appears before the trip point, where
       supported by the current configuration.
@@ -200,12 +229,18 @@ semantics.
       requiring unsafe power.
 - [ ] The completed session is saved to LittleFS first and records the overload
       end reason.
+- [ ] Run `history` and confirm the final snapshot records the low overload
+      threshold and overload end reason.
+- [ ] Run `pending` and confirm denied or unavailable Firebase sync leaves the
+      completed session pending locally.
 - [ ] Local OFF control remains available.
 
-After recording the result, restore the original threshold through the same
-approved path and verify the restored value. If a safe low-threshold test
-cannot be arranged, mark this phase **NOT RUN** and create a follow-up test
-plan; do not increase the physical load.
+After recording the result, restore the original threshold while the relay is
+OFF and no session is active. For the default threshold, run
+`setthreshold 2000`, then run `config` and verify the restored value. If the
+recorded original value was not `2000 W`, restore that recorded value instead.
+If a safe low-threshold test cannot be arranged, mark this phase **NOT RUN**
+and create a follow-up test plan; do not increase the physical load.
 
 ## Phase 6 - Cleanup And Restore
 

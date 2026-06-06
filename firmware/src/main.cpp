@@ -13,9 +13,13 @@
 #include "time_sync.h"
 
 #include <ctype.h>
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 static constexpr const char* TEST_DEVICE_NAME = "Test Load";
+static constexpr float SERIAL_THRESHOLD_MIN_W = 1.0f;
+static constexpr float SERIAL_THRESHOLD_MAX_W = 5000.0f;
 
 static unsigned long lastSensorUpdateMs = 0;
 static unsigned long lastSessionUpdateMs = 0;
@@ -62,7 +66,87 @@ static void printLiveData() {
 }
 
 static void printHelp() {
-  Serial.println("Serial commands: on | off | toggle | status | time | history | count | pending | sync | clearhistory | wificreds | clearwifi | restart | checkpoint | clearcheckpoint | recoverystatus | help");
+  Serial.println("Serial commands: on | off | toggle | status | config | setthreshold <watts> | time | history | count | pending | sync | clearhistory | wificreds | clearwifi | restart | checkpoint | clearcheckpoint | recoverystatus | help");
+}
+
+static void printConfig() {
+  char revisionText[24];
+  snprintf(revisionText, sizeof(revisionText), "%llu", appConfig.configRevision);
+
+  Serial.println("[config] ---- Voltix runtime config ----");
+  Serial.print("[config] overloadThreshold=");
+  Serial.print(appConfig.overloadThresholdW, 2);
+  Serial.println("W");
+  Serial.print("[config] tariff=");
+  Serial.println(appConfig.tariffPerKwh, 2);
+  Serial.print("[config] loadPowerThreshold=");
+  Serial.print(appConfig.loadPowerThresholdW, 2);
+  Serial.println("W");
+  Serial.print("[config] loadCurrentThreshold=");
+  Serial.print(appConfig.loadCurrentThresholdA, 3);
+  Serial.println("A");
+  Serial.print("[config] checkpointIntervalSec=");
+  Serial.println(appConfig.checkpointIntervalSec);
+  Serial.print("[config] configRevision=");
+  Serial.println(revisionText);
+  Serial.print("[config] configSource=");
+  Serial.println(appConfig.configSource[0] == '\0' ? "UNKNOWN" : appConfig.configSource);
+  Serial.print("[config] pendingSync=");
+  Serial.println(appConfig.configPendingSync ? "true" : "false");
+}
+
+static void setSerialOverloadThreshold(const char* valueText) {
+  while (*valueText != '\0' && isspace(static_cast<unsigned char>(*valueText))) {
+    valueText++;
+  }
+
+  if (*valueText == '\0') {
+    Serial.println("[config] ERROR: usage setthreshold <watts>");
+    return;
+  }
+
+  char* parseEnd = nullptr;
+  const float thresholdW = strtof(valueText, &parseEnd);
+  while (parseEnd != nullptr && *parseEnd != '\0' && isspace(static_cast<unsigned char>(*parseEnd))) {
+    parseEnd++;
+  }
+
+  if (parseEnd == valueText || parseEnd == nullptr || *parseEnd != '\0' || !isfinite(thresholdW)) {
+    Serial.println("[config] ERROR: threshold must be a numeric watt value");
+    return;
+  }
+
+  if (thresholdW < SERIAL_THRESHOLD_MIN_W || thresholdW > SERIAL_THRESHOLD_MAX_W) {
+    Serial.print("[config] ERROR: threshold must be between ");
+    Serial.print(SERIAL_THRESHOLD_MIN_W, 0);
+    Serial.print("W and ");
+    Serial.print(SERIAL_THRESHOLD_MAX_W, 0);
+    Serial.println("W");
+    return;
+  }
+
+  if (sessionIsActive() || relayIsOn() || sessionRecoveryIsActive()) {
+    Serial.println("[config] ERROR: setthreshold requires idle session and relay OFF");
+    return;
+  }
+
+  appConfig.overloadThresholdW = thresholdW;
+  const uint64_t millisRevision = static_cast<uint64_t>(millis());
+  const uint64_t nextRevision = appConfig.configRevision + 1ULL;
+  appConfig.configRevision = nextRevision > millisRevision ? nextRevision : millisRevision;
+  appConfig.configPendingSync = true;
+  strlcpy(appConfig.configSource, "SERIAL", sizeof(appConfig.configSource));
+
+  if (!saveLocalConfig()) {
+    Serial.print("[config] WARN: overloadThreshold runtime set to ");
+    Serial.print(appConfig.overloadThresholdW, 2);
+    Serial.println("W but local persistence failed");
+    return;
+  }
+
+  Serial.print("[config] overloadThreshold set to ");
+  Serial.print(appConfig.overloadThresholdW, 2);
+  Serial.println("W");
 }
 
 static void printStatus() {
@@ -203,6 +287,21 @@ static void processSerialCommand(char* rawCommand) {
   if (strcmp(command, "status") == 0) {
     Serial.println("[serial] OK: printing status");
     printStatus();
+    return;
+  }
+
+  if (strcmp(command, "config") == 0) {
+    Serial.println("[serial] OK: printing runtime config");
+    printConfig();
+    return;
+  }
+
+  static constexpr const char* SET_THRESHOLD_COMMAND = "setthreshold";
+  const size_t setThresholdLength = strlen(SET_THRESHOLD_COMMAND);
+  if (strncmp(command, SET_THRESHOLD_COMMAND, setThresholdLength) == 0 &&
+      (command[setThresholdLength] == '\0' ||
+       isspace(static_cast<unsigned char>(command[setThresholdLength])))) {
+    setSerialOverloadThreshold(command + setThresholdLength);
     return;
   }
 
