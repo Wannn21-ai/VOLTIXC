@@ -96,6 +96,23 @@ Live writes should update only the relevant child (`system` or `device`) so one
 publisher does not erase sibling data. Publishing frequency and stale-data
 thresholds must be finalized with the web integration and RTDB usage budget.
 
+The current transitional firmware uses one PATCH to the helper-derived
+`/devices/{deviceId}/live` parent. This updates final `system` and `device`
+children atomically without adding extra blocking HTTP calls, while continuing
+to update the legacy `session` sibling used by the current web dashboard.
+
+Two conflicting fields remain compatibility-first until a coordinated web
+migration:
+
+- `system.timestamp` remains the legacy runtime value; final Unix epoch
+  milliseconds are also published as `system.timestampUnixMs`.
+- `system.relay` remains the legacy boolean; final `ON` / `OFF` text is also
+  published as `system.relayState`.
+
+All other non-conflicting final fields are published alongside their legacy
+aliases. Later migration should switch the canonical field names only after
+web readers are updated and verified.
+
 ## Current-To-Final Live Migration
 
 Current firmware behavior is intentionally unchanged by Issue #21:
@@ -103,7 +120,7 @@ Current firmware behavior is intentionally unchanged by Issue #21:
 | Current development contract | Final contract |
 | --- | --- |
 | Hardcoded `/devices/esp32-voltix-001/live` | Templated `/devices/{deviceId}/live` derived from provisioned identity |
-| One PATCH containing `system`, `device`, and `session` | Separate canonical `live/system` and `live/device` payloads |
+| One PATCH containing `system`, `device`, and `session` | Transitional parent PATCH now populates final children; later remove compatibility fields/session sibling |
 | `system.timestamp = millis()` | Unix epoch milliseconds |
 | `system.systemMode` | `system.mode` |
 | `system.relay` boolean | `system.relay` string `ON` / `OFF` |

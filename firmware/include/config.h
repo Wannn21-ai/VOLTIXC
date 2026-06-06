@@ -4,6 +4,7 @@ namespace Config {
 static constexpr const char* PROJECT_NAME = "Voltix";
 static constexpr const char* DEVICE_ID = "esp32-voltix-001";
 static constexpr const char* DEFAULT_DEVICE_NAME = "Voltix-ESP32";
+static constexpr const char* FIRMWARE_VERSION = "development";
 
 // Transitional runtime paths. Keep these unchanged until the coordinated
 // migration adopts the final helpers in firebase_paths.h.

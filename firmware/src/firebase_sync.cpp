@@ -28,6 +28,7 @@ static bool pendingStartAck = false;
 static char pendingStartCommandId[48] = "";
 static unsigned long lastLiveLogMs = 0;
 static unsigned long lastPollLogMs = 0;
+static bool missingLiveDeviceIdLogged = false;
 
 static String configJsonPath(const String& configPath) {
   return configPath + ".json";
@@ -354,23 +355,45 @@ void firebaseBegin() {
 }
 
 void firebasePublishLive() {
-  StaticJsonDocument<1024> doc;
+  if (Config::DEVICE_ID == nullptr || Config::DEVICE_ID[0] == '\0') {
+    if (!missingLiveDeviceIdLogged) {
+      missingLiveDeviceIdLogged = true;
+      Serial.println("[live] skipped: missing deviceId");
+    }
+    return;
+  }
+  missingLiveDeviceIdLogged = false;
+
+  StaticJsonDocument<1536> doc;
   JsonObject system = doc.createNestedObject("system");
+  // Compatibility fields remain until web readers migrate relay/timestamp.
   system["timestamp"] = millis();
   system["internet"] = networkIsConnected();
   system["relay"] = relayIsOn();
   system["systemMode"] = systemModeToString(systemMode);
   system["sessionState"] = sessionStateToString(sessionData.state);
   system["deviceId"] = Config::DEVICE_ID;
+  // Final live/system fields that do not conflict with compatibility readers.
+  system["timestampUnixMs"] = timeIsSynced() ? getUnixMs() : static_cast<uint64_t>(0);
+  system["mode"] = systemModeToString(systemMode);
+  system["relayState"] = relayIsOn() ? "ON" : "OFF";
+  system["wifiStatus"] = networkIsPortalActive() ? "AP_MODE" : (networkIsConnected() ? "CONNECTED" : "DISCONNECTED");
+  system["activeSsid"] = networkIsConnected() ? WiFi.SSID() : "";
+  system["firmwareVersion"] = Config::FIRMWARE_VERSION;
 
   JsonObject device = doc.createNestedObject("device");
+  device["connected"] = sensorData.valid;
   device["voltage"] = sensorData.voltage;
   device["current"] = sensorData.current;
   device["power"] = sensorData.power;
   device["apparent"] = sensorData.voltage * sensorData.current;
   device["frequency"] = sensorData.frequency;
+  device["pf"] = sensorData.powerFactor;
   device["powerFactor"] = sensorData.powerFactor;
   device["energy"] = sensorData.energy;
+  device["cost"] = sessionData.cost;
+  device["duration"] = sessionData.durationMs / 1000UL;
+  device["overload"] = sessionData.state == SessionState::OVERLOAD;
   device["loadDetected"] = sensorData.loadDetected;
 
   JsonObject session = doc.createNestedObject("session");
@@ -384,9 +407,17 @@ void firebasePublishLive() {
   session["cost"] = serialized(String(sessionData.cost, 4));
   session["endReason"] = endReasonToString(sessionData.endReason);
 
+  if (doc.overflowed()) {
+    if (shouldLog(lastLiveLogMs)) {
+      Serial.println("[live] skipped: payload overflow");
+    }
+    return;
+  }
+
   String payload;
   serializeJson(doc, payload);
-  httpRequest("PATCH", "/devices/esp32-voltix-001/live.json", payload, nullptr, shouldLog(lastLiveLogMs));
+  const String livePath = configJsonPath(FirebasePaths::pathLiveRoot(String(Config::DEVICE_ID)));
+  httpRequest("PATCH", livePath.c_str(), payload, nullptr, shouldLog(lastLiveLogMs));
 }
 
 void firebaseReadConfig() {
