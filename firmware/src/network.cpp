@@ -14,21 +14,40 @@
 #include <WiFi.h>
 
 namespace {
-constexpr const char* PREF_NAMESPACE = "voltix";
-constexpr const char* PREF_KEY_WIFI_SSID = "wifi_ssid";
-constexpr const char* PREF_KEY_WIFI_PASS = "wifi_pass";
-constexpr const char* PREF_KEY_TARIFF = "tariff";
-constexpr const char* PREF_KEY_CURRENCY = "currency";
-constexpr const char* PREF_KEY_OVERLOAD_THRESHOLD = "overloadThreshold";
-constexpr const char* PREF_KEY_OVERLOAD_WARNING = "overloadWarningPercent";
-constexpr const char* PREF_KEY_LOAD_POWER = "loadPowerThreshold";
-constexpr const char* PREF_KEY_LOAD_CURRENT = "loadCurrentThreshold";
-constexpr const char* PREF_KEY_LOAD_REMOVED_DELAY = "loadRemovedDelaySec";
-constexpr const char* PREF_KEY_OFFLINE_TIMEOUT = "offlineTimeoutSec";
-constexpr const char* PREF_KEY_CHECKPOINT_INTERVAL = "checkpointIntervalSec";
-constexpr const char* PREF_KEY_CONFIG_REVISION = "configRevision";
-constexpr const char* PREF_KEY_CONFIG_PENDING_SYNC = "configPendingSync";
-constexpr const char* PREF_KEY_CONFIG_SOURCE = "configSource";
+constexpr size_t NVS_KEY_MAX_LENGTH = 15;
+constexpr char PREF_NAMESPACE[] = "voltix";
+constexpr char PREF_KEY_WIFI_SSID[] = "wifi_ssid";
+constexpr char PREF_KEY_WIFI_PASS[] = "wifi_pass";
+constexpr char PREF_KEY_TARIFF[] = "tariff";
+constexpr char PREF_KEY_CURRENCY[] = "currency";
+constexpr char PREF_KEY_OVERLOAD_THRESHOLD[] = "ovrThr";
+constexpr char PREF_KEY_OVERLOAD_WARNING[] = "ovrWarn";
+constexpr char PREF_KEY_LOAD_POWER[] = "ldPow";
+constexpr char PREF_KEY_LOAD_CURRENT[] = "ldCur";
+constexpr char PREF_KEY_LOAD_REMOVED_DELAY[] = "ldRmSec";
+constexpr char PREF_KEY_OFFLINE_TIMEOUT[] = "offSec";
+constexpr char PREF_KEY_CHECKPOINT_INTERVAL[] = "chkSec";
+constexpr char PREF_KEY_CONFIG_REVISION[] = "cfgRev";
+constexpr char PREF_KEY_CONFIG_PENDING_SYNC[] = "cfgPend";
+constexpr char PREF_KEY_CONFIG_SOURCE[] = "cfgSrc";
+constexpr char PREF_KEY_LEGACY_CONFIG_REVISION[] = "configRevision";
+constexpr char PREF_KEY_LEGACY_CONFIG_SOURCE[] = "configSource";
+
+static_assert(sizeof(PREF_NAMESPACE) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences namespace is too long");
+static_assert(sizeof(PREF_KEY_WIFI_SSID) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_WIFI_PASS) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_TARIFF) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_CURRENCY) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_OVERLOAD_THRESHOLD) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_OVERLOAD_WARNING) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_LOAD_POWER) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_LOAD_CURRENT) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_LOAD_REMOVED_DELAY) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_OFFLINE_TIMEOUT) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_CHECKPOINT_INTERVAL) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_CONFIG_REVISION) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_CONFIG_PENDING_SYNC) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_CONFIG_SOURCE) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
 constexpr const char* SETUP_AP_SSID = "Voltix-Setup";
 constexpr const char* SETUP_AP_PASSWORD = "12345678";
 constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000UL;
@@ -100,6 +119,17 @@ String configRevisionText() {
   char buffer[24];
   snprintf(buffer, sizeof(buffer), "%llu", appConfig.configRevision);
   return String(buffer);
+}
+
+bool configWriteSucceeded(size_t written, const char* field, const char* key) {
+  if (written > 0) {
+    return true;
+  }
+  Serial.print("[config] Preferences write failed field=");
+  Serial.print(field);
+  Serial.print(" key=");
+  Serial.println(key);
+  return false;
 }
 
 float requestFloatOrCurrent(const char* name, float currentValue, float fallbackValue, bool allowZero = false) {
@@ -863,10 +893,19 @@ void loadLocalConfig() {
   if (prefs.isKey(PREF_KEY_LOAD_REMOVED_DELAY)) appConfig.loadRemovedDelaySec = prefs.getULong(PREF_KEY_LOAD_REMOVED_DELAY, appConfig.loadRemovedDelaySec);
   if (prefs.isKey(PREF_KEY_OFFLINE_TIMEOUT)) appConfig.offlineTimeoutSec = prefs.getULong(PREF_KEY_OFFLINE_TIMEOUT, appConfig.offlineTimeoutSec);
   if (prefs.isKey(PREF_KEY_CHECKPOINT_INTERVAL)) appConfig.checkpointIntervalSec = prefs.getULong(PREF_KEY_CHECKPOINT_INTERVAL, appConfig.checkpointIntervalSec);
-  if (prefs.isKey(PREF_KEY_CONFIG_REVISION)) appConfig.configRevision = prefs.getULong64(PREF_KEY_CONFIG_REVISION, appConfig.configRevision);
+  if (prefs.isKey(PREF_KEY_CONFIG_REVISION)) {
+    appConfig.configRevision = prefs.getULong64(PREF_KEY_CONFIG_REVISION, appConfig.configRevision);
+  } else if (prefs.isKey(PREF_KEY_LEGACY_CONFIG_REVISION)) {
+    appConfig.configRevision = prefs.getULong64(PREF_KEY_LEGACY_CONFIG_REVISION, appConfig.configRevision);
+  }
   if (prefs.isKey(PREF_KEY_CONFIG_PENDING_SYNC)) appConfig.configPendingSync = prefs.getBool(PREF_KEY_CONFIG_PENDING_SYNC, appConfig.configPendingSync);
   if (prefs.isKey(PREF_KEY_CONFIG_SOURCE)) {
     const String source = prefs.getString(PREF_KEY_CONFIG_SOURCE, appConfig.configSource);
+    if (source.length() > 0) {
+      strlcpy(appConfig.configSource, source.c_str(), sizeof(appConfig.configSource));
+    }
+  } else if (prefs.isKey(PREF_KEY_LEGACY_CONFIG_SOURCE)) {
+    const String source = prefs.getString(PREF_KEY_LEGACY_CONFIG_SOURCE, appConfig.configSource);
     if (source.length() > 0) {
       strlcpy(appConfig.configSource, source.c_str(), sizeof(appConfig.configSource));
     }
@@ -881,28 +920,29 @@ void loadLocalConfig() {
   Serial.println(configRevisionText());
 }
 
-void saveLocalConfig() {
+bool saveLocalConfig() {
   Preferences prefs;
   if (!prefs.begin(PREF_NAMESPACE, false)) {
     Serial.println("[network] Failed to open Preferences for config save");
-    return;
+    return false;
   }
 
-  prefs.putFloat(PREF_KEY_TARIFF, appConfig.tariffPerKwh >= 0.0f ? appConfig.tariffPerKwh : Config::DEFAULT_TARIFF);
-  prefs.putString(PREF_KEY_CURRENCY, appConfig.currency[0] == '\0' ? Config::DEFAULT_CURRENCY : appConfig.currency);
-  prefs.putFloat(PREF_KEY_OVERLOAD_THRESHOLD, appConfig.overloadThresholdW > 0.0f ? appConfig.overloadThresholdW : Config::OVERLOAD_THRESHOLD_W);
-  prefs.putFloat(PREF_KEY_OVERLOAD_WARNING, appConfig.overloadWarningPercent > 0.0f ? appConfig.overloadWarningPercent : 90.0f);
-  prefs.putFloat(PREF_KEY_LOAD_POWER, appConfig.loadPowerThresholdW >= 0.0f ? appConfig.loadPowerThresholdW : Config::LOAD_POWER_THRESHOLD_W);
-  prefs.putFloat(PREF_KEY_LOAD_CURRENT, appConfig.loadCurrentThresholdA >= 0.0f ? appConfig.loadCurrentThresholdA : Config::LOAD_CURRENT_THRESHOLD_A);
-  prefs.putULong(PREF_KEY_LOAD_REMOVED_DELAY, appConfig.loadRemovedDelaySec);
-  prefs.putULong(PREF_KEY_OFFLINE_TIMEOUT, appConfig.offlineTimeoutSec);
-  prefs.putULong(PREF_KEY_CHECKPOINT_INTERVAL, appConfig.checkpointIntervalSec > 0 ? appConfig.checkpointIntervalSec : 30UL);
-  prefs.putULong64(PREF_KEY_CONFIG_REVISION, appConfig.configRevision);
-  prefs.putBool(PREF_KEY_CONFIG_PENDING_SYNC, appConfig.configPendingSync);
-  prefs.putString(PREF_KEY_CONFIG_SOURCE, appConfig.configSource[0] == '\0' ? "LOCAL" : appConfig.configSource);
+  bool saved = true;
+  saved = configWriteSucceeded(prefs.putFloat(PREF_KEY_TARIFF, appConfig.tariffPerKwh >= 0.0f ? appConfig.tariffPerKwh : Config::DEFAULT_TARIFF), "tariff", PREF_KEY_TARIFF) && saved;
+  saved = configWriteSucceeded(prefs.putString(PREF_KEY_CURRENCY, appConfig.currency[0] == '\0' ? Config::DEFAULT_CURRENCY : appConfig.currency), "currency", PREF_KEY_CURRENCY) && saved;
+  saved = configWriteSucceeded(prefs.putFloat(PREF_KEY_OVERLOAD_THRESHOLD, appConfig.overloadThresholdW > 0.0f ? appConfig.overloadThresholdW : Config::OVERLOAD_THRESHOLD_W), "overloadThreshold", PREF_KEY_OVERLOAD_THRESHOLD) && saved;
+  saved = configWriteSucceeded(prefs.putFloat(PREF_KEY_OVERLOAD_WARNING, appConfig.overloadWarningPercent > 0.0f ? appConfig.overloadWarningPercent : 90.0f), "overloadWarningPercent", PREF_KEY_OVERLOAD_WARNING) && saved;
+  saved = configWriteSucceeded(prefs.putFloat(PREF_KEY_LOAD_POWER, appConfig.loadPowerThresholdW >= 0.0f ? appConfig.loadPowerThresholdW : Config::LOAD_POWER_THRESHOLD_W), "loadPowerThreshold", PREF_KEY_LOAD_POWER) && saved;
+  saved = configWriteSucceeded(prefs.putFloat(PREF_KEY_LOAD_CURRENT, appConfig.loadCurrentThresholdA >= 0.0f ? appConfig.loadCurrentThresholdA : Config::LOAD_CURRENT_THRESHOLD_A), "loadCurrentThreshold", PREF_KEY_LOAD_CURRENT) && saved;
+  saved = configWriteSucceeded(prefs.putULong(PREF_KEY_LOAD_REMOVED_DELAY, appConfig.loadRemovedDelaySec), "loadRemovedDelaySec", PREF_KEY_LOAD_REMOVED_DELAY) && saved;
+  saved = configWriteSucceeded(prefs.putULong(PREF_KEY_OFFLINE_TIMEOUT, appConfig.offlineTimeoutSec), "offlineTimeoutSec", PREF_KEY_OFFLINE_TIMEOUT) && saved;
+  saved = configWriteSucceeded(prefs.putULong(PREF_KEY_CHECKPOINT_INTERVAL, appConfig.checkpointIntervalSec > 0 ? appConfig.checkpointIntervalSec : 30UL), "checkpointIntervalSec", PREF_KEY_CHECKPOINT_INTERVAL) && saved;
+  saved = configWriteSucceeded(prefs.putULong64(PREF_KEY_CONFIG_REVISION, appConfig.configRevision), "configRevision", PREF_KEY_CONFIG_REVISION) && saved;
+  saved = configWriteSucceeded(prefs.putBool(PREF_KEY_CONFIG_PENDING_SYNC, appConfig.configPendingSync), "configPendingSync", PREF_KEY_CONFIG_PENDING_SYNC) && saved;
+  saved = configWriteSucceeded(prefs.putString(PREF_KEY_CONFIG_SOURCE, appConfig.configSource[0] == '\0' ? "LOCAL" : appConfig.configSource), "configSource", PREF_KEY_CONFIG_SOURCE) && saved;
   prefs.end();
 
-  Serial.print("[config] Local config saved tariff=");
+  Serial.print(saved ? "[config] Local config saved tariff=" : "[config] Local config save incomplete tariff=");
   Serial.print(appConfig.tariffPerKwh, 2);
   Serial.print(" overload=");
   Serial.print(appConfig.overloadThresholdW, 1);
@@ -910,4 +950,5 @@ void saveLocalConfig() {
   Serial.print(configRevisionText());
   Serial.print(" pendingSync=");
   Serial.println(appConfig.configPendingSync ? "true" : "false");
+  return saved;
 }

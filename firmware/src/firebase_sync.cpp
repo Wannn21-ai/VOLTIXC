@@ -220,7 +220,13 @@ static void logHttp(const char* method, const char* path, int statusCode, bool o
   Serial.print(" status=");
   Serial.print(statusCode);
   Serial.print(" ");
-  Serial.println(ok ? "OK" : "FAIL");
+  if (ok) {
+    Serial.println("OK");
+  } else if (statusCode == 401 || statusCode == 403) {
+    Serial.println("AUTH_REQUIRED (local operation continues)");
+  } else {
+    Serial.println("FAIL");
+  }
 }
 
 static bool httpRequest(const char* method, const char* path, const String& payload, String* response, bool forceLog, int* statusOut = nullptr) {
@@ -724,6 +730,7 @@ void firebasePollCommand() {
     return;
   }
 
+  // Transitional fallback remains until final command device auth is available.
   String response;
   const bool forceLog = shouldLog(lastPollLogMs);
   if (!httpRequest("GET", "/devices/esp32-voltix-001/commands/current.json", "", &response, forceLog)) {

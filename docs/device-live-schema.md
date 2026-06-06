@@ -152,6 +152,12 @@ uses that cache while offline. Invalid or incomplete remote config must not
 erase a valid cache. Web changes are applied when the paired device reconnects,
 using the established revision/pending-sync strategy during implementation.
 
+Config persistence uses short stable Preferences/NVS aliases because ESP32 NVS
+keys are limited to 15 characters. The previous overlong config keys were
+rejected by NVS and therefore cannot be migrated. The previously valid
+`configRevision` and `configSource` keys remain read-only migration fallbacks;
+all new writes use `cfgRev` and `cfgSrc`.
+
 Firmware config source priority is:
 
 1. final `/devices/{deviceId}/config`;

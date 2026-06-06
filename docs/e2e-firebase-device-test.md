@@ -196,10 +196,13 @@ electrical setup.
 - [ ] Confirm Serial identifies the expected `<deviceId>`.
 - [ ] Confirm config logs show the final device config path was attempted and a
       valid config was applied or a safe cached/default config was retained.
+- [ ] Confirm config save reports `Local config saved` with no `KEY_TOO_LONG`
+      errors, then reboot and confirm the same cached values are loaded.
 - [ ] Confirm live logs/path evidence targets `/devices/<deviceId>/live` with
       final `system` and `device` children.
 - [ ] If Firebase denies a write, confirm OLED/local monitoring remains usable
-      and no session data is lost.
+      and no session data is lost. `AUTH_REQUIRED (local operation continues)`
+      is expected until product-grade device authentication is provisioned.
 - [ ] Confirm overload behavior and thresholds remain unchanged.
 
 ## Safe Command-Path Verification
