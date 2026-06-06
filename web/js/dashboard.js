@@ -90,6 +90,7 @@ const SessionState = Object.freeze({
 
 // ================= STATE — FIREBASE DATA =================
 let voltage = 0, current = 0, firebasePower = 0, firebaseTimestamp = 0;
+let firebaseSystemReceivedAtMs = 0;
 let firebasePF = 0, firebaseFreq = 0, firebaseApparent = 0;
 let firebaseEnergy = 0, firebaseCost = 0;
 let firebaseOverload = false;
@@ -888,6 +889,7 @@ if (selectedDevice) {
   const liveBase = `devices/${selectedDevice.id}/live`;
 
   onValue(ref(db, `${liveBase}/system`), snapshot => {
+    firebaseSystemReceivedAtMs = Date.now();
     const sys = snapshot.val() || {};
     firebaseWifiStatus = String(sys.wifiStatus || "");
     firebaseActiveSsid = String(sys.activeSsid || "");
@@ -954,12 +956,15 @@ if (selectedDevice) {
 // a Promise that was never caught, breaking the entire update cycle.
 // ================================================================
 async function updateMeters() {
-  const now  = Math.floor(Date.now() / 1000);
-  const diff = now - firebaseTimestamp;
+  const nowMs = Date.now();
+  const now = Math.floor(nowMs / 1000);
+  const diff = Math.abs(now - firebaseTimestamp);
 
   // ── Hitung systemOnline ──────────────────────────────────
-  const dataFresh = firebaseTimestamp > 0 && diff <= STALE_THRESHOLD;
-  systemOnline = systemInternet && dataFresh;
+  const espTimestampFresh = firebaseTimestamp > 0 && diff <= STALE_THRESHOLD;
+  const listenerFresh = firebaseSystemReceivedAtMs > 0 &&
+    nowMs - firebaseSystemReceivedAtMs <= STALE_THRESHOLD * 1000;
+  systemOnline = systemInternet && (espTimestampFresh || listenerFresh);
   deviceOnline = systemOnline &&
     firebaseDeviceConnected !== false &&
     firebaseSessionState !== SessionState.WAITING_LOAD &&
