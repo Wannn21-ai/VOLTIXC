@@ -27,7 +27,6 @@ try {
 const historyRef  = ref(db, `users/${uid}/history`);
 const settingsRef = ref(db, `users/${uid}/settings`);
 const activeRef   = ref(db, `users/${uid}/activeSession`);
-const commandRef  = ref(db, "command/relay");
 
 // ================= SETTINGS =================
 const SETTING_DEFAULTS = {
@@ -106,6 +105,7 @@ let firebaseSessionState = null;
 let firebasePendingSync = 0;
 let systemInternet   = false;
 let firebaseDeviceConnected = null;
+let firebaseLiveDeviceAvailable = false;
 let firebaseWifiStatus = "";
 let firebaseActiveSsid = "";
 let firebaseFirmwareVersion = "";
@@ -150,22 +150,27 @@ function makeId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function sendRelayCommand(type, payload = {}) {
+async function sendRelayCommand(type) {
+  if (!selectedDevice?.id) {
+    showToast("Pair a device before sending a command", "error");
+    return false;
+  }
+
   try {
     const on = type === "START";
     const command = {
-      id: makeId("cmd"),
-      type,
-      uid,
-      createdAt: Date.now(),
-      ...payload
+      relay: on ? "ON" : "OFF",
+      startSession: on,
+      stopSession: !on,
+      resetAlarm: false,
+      updatedAt: Date.now()
     };
-    await set(commandRef, command);
+    await set(ref(db, `devices/${selectedDevice.id}/command`), command);
     console.log(`[Relay] Command ${on ? "ON" : "OFF"} → Firebase`);
     return true;
   } catch (e) {
-    console.error("[Relay] Gagal:", e);
-    showToast("Gagal kirim perintah relay", "error");
+    console.warn("[Relay] Command rejected:", e?.message || e);
+    showToast(readableFirebaseError(e, "Failed to send device command"), "error");
     return false;
   }
 }
@@ -467,10 +472,11 @@ function deriveSystemMode() {
   return firebaseOffline ? SystemMode.OFFLINE : SystemMode.ONLINE;
 }
 function deriveSessionState(webOverload) {
+  const hasSessionContext = isRunning || !!activeDevice || firebaseSessionActive || !!pendingDeviceName;
   const fromEsp = enumValue(SessionState, firebaseSessionState);
-  if (fromEsp) return fromEsp;
-  if (webOverload || firebaseOverload) return SessionState.OVERLOAD;
-  if (waitingForName || (firebaseRelay && !deviceOnline)) return SessionState.WAITING_LOAD;
+  if (hasSessionContext && fromEsp) return fromEsp;
+  if (hasSessionContext && (webOverload || firebaseOverload)) return SessionState.OVERLOAD;
+  if (pendingDeviceName || waitingForName || (firebaseRelay && !deviceOnline)) return SessionState.WAITING_LOAD;
   if ((isRunning || firebaseSessionActive) && deviceOnline) return SessionState.MONITORING;
   if (activeDevice && !firebaseRelay && !firebaseSessionActive) return SessionState.FINISHED;
   return SessionState.IDLE;
@@ -496,13 +502,16 @@ function clearDisplay() {
   setGauge(gaugeCurrent, 0, 0, 16);
 }
 function updateDisplay() {
-  const sessEnergy = getSessionEnergy();
-  const sessCost   = getSessionCost();
+  const monitoring = isRunning && !!activeDevice;
+  const shownEnergy = monitoring ? getSessionEnergy() : Math.max(0, firebaseEnergy);
+  const shownCost = monitoring
+    ? getSessionCost()
+    : Math.max(0, firebaseCost || shownEnergy * settings.tariff);
   if (valVoltage) valVoltage.textContent = voltage.toFixed(1);
   if (valCurrent) valCurrent.textContent = current.toFixed(2);
   if (valPower)   valPower.textContent   = firebasePower.toFixed(0);
-  if (valEnergy)  valEnergy.textContent  = sessEnergy.toFixed(3);
-  if (valCost)    valCost.textContent    = formatCost(sessCost);
+  if (valEnergy)  valEnergy.textContent  = shownEnergy.toFixed(3);
+  if (valCost)    valCost.textContent    = formatCost(shownCost);
   setGauge(gaugeVoltage, voltage, 190, 240);
   setGauge(gaugeCurrent, current, 0, 16);
   const elPF   = document.getElementById("val-pf");
@@ -529,6 +538,7 @@ function setDeviceBadge(state) {
   if (!badgeStatus) return;
   const map = {
     connected: ["badge online",  "● Connected"],
+    live:      ["badge online",  "● Live"],
     overload:  ["badge offline", "⚠ Overload!"],
     idle:      ["badge idle",    "● Idle"],
     offline:   ["badge offline", "● Offline"],
@@ -604,8 +614,6 @@ async function resetMonitoring() {
   pendingStartCommandAt = null;
   pendingRelayConfirmed = false;
   await saveActiveSession(null);
-  voltage = current = firebasePower = 0;
-  clearDisplay();
   if (subDuration)    subDuration.textContent    = "Duration: 00:00:00";
   if (valDeviceName)  valDeviceName.textContent  = "—";
   if (activeDevLabel) activeDevLabel.textContent = "No active device";
@@ -796,12 +804,14 @@ btnSaveDev.addEventListener("click", async () => {
     pendingStartCommandAt = Date.now();
     pendingRelayConfirmed = false;
     sessionState = SessionState.WAITING_LOAD;
-    await sendRelayCommand("START", {
-      sessionId: pendingSessionId,
-      deviceName: name,
-      tariff: settings.tariff,
-      threshold: settings.overloadThreshold
-    });
+    const sent = await sendRelayCommand("START");
+    if (!sent) {
+      pendingDeviceName = null;
+      pendingSessionId = null;
+      pendingStartCommandAt = null;
+      pendingRelayConfirmed = false;
+      sessionState = SessionState.IDLE;
+    }
   }
 });
 
@@ -827,13 +837,10 @@ if (btnStop) {
     if (!isRunning || !activeDevice) {
       showToast("Tidak ada sesi yang berjalan", "error"); return;
     }
+    const sent = await sendRelayCommand("STOP");
+    if (!sent) return;
     // State migration point: MONITORING -> FINISHED; ESP32 keeps the source of truth.
     sessionState = SessionState.FINISHED;
-    const sent = await sendRelayCommand("STOP", {
-      sessionId: activeDevice.id,
-      reason: "USER_STOP"
-    });
-    if (!sent) return;
     if (btnStop) btnStop.disabled = true;
     showToast("Menunggu ESP32 menyimpan history...", "");
   });
@@ -906,6 +913,7 @@ if (selectedDevice) {
 
   onValue(ref(db, `${liveBase}/device`), snapshot => {
     const dev = snapshot.val() || {};
+    firebaseLiveDeviceAvailable = snapshot.exists();
     firebaseDeviceConnected = typeof dev.connected === "boolean" ? dev.connected : null;
     voltage          = Number(dev.voltage || 0);
     current          = Number(dev.current || 0);
@@ -958,7 +966,8 @@ async function updateMeters() {
     current >= settings.loadCurrentThreshold &&
     firebasePower >= settings.loadPowerThreshold;
 
-  const webOverload = deviceOnline && firebasePower >= settings.overloadThreshold;
+  const webOverload = (isRunning || firebaseSessionActive || !!pendingDeviceName) &&
+    deviceOnline && firebasePower >= settings.overloadThreshold;
   systemMode = deriveSystemMode();
   sessionState = deriveSessionState(webOverload);
 
@@ -1051,7 +1060,8 @@ async function updateMeters() {
   }
 
   // ── Device baru terdeteksi ─────────────────────────────
-  if (!prevDeviceConnected && deviceOnline) {
+  const sessionDeviceOnline = deviceOnline && (firebaseRelay || firebaseSessionActive || isRunning);
+  if (!prevDeviceConnected && sessionDeviceOnline) {
     // State migration point: WAITING_LOAD -> MONITORING.
     deviceConnectTime   = Date.now();
     deviceConnectEnergy = firebaseEnergy;
@@ -1106,7 +1116,7 @@ async function updateMeters() {
       await resetMonitoring();
     }
   }
-  prevDeviceConnected = deviceOnline;
+  prevDeviceConnected = sessionDeviceOnline;
 
   // ── Overload ───────────────────────────────────────────
   if (webOverload && !prevOverload) {
@@ -1123,10 +1133,17 @@ async function updateMeters() {
   prevOverload = webOverload;
 
   // ── Update UI ──────────────────────────────────────────
-  if (!activeDevice) { clearDisplay(); setDeviceBadge("idle"); return; }
+  const passiveLiveAvailable = systemOnline && firebaseLiveDeviceAvailable;
   if (!systemOnline) { setDeviceBadge("unknown"); return; }
-  if (!deviceOnline) { setDeviceBadge("offline"); clearDisplay(); return; }
-  if (!webOverload)  setDeviceBadge("connected");
+  if (!activeDevice && !passiveLiveAvailable) { clearDisplay(); setDeviceBadge("idle"); return; }
+  if (activeDevice && !deviceOnline) { setDeviceBadge("offline"); clearDisplay(); return; }
+  if (!activeDevice) {
+    const passiveName = selectedDevice?.nickname || selectedDevice?.name ||
+      (deviceNameFromEsp !== "—" ? deviceNameFromEsp : "Paired Device");
+    if (valDeviceName) valDeviceName.textContent = passiveName;
+    if (activeDevLabel) activeDevLabel.textContent = `Live telemetry: ${passiveName}`;
+  }
+  if (!webOverload) setDeviceBadge(activeDevice ? "connected" : "live");
   updateDisplay();
 
   // ── Update chart power over time ──────────────────────
