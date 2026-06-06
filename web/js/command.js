@@ -1,7 +1,20 @@
-import { auth, db, ref, get, set, DEVICE_ID } from "./firebase-config.js";
+import { auth, db, ref, get, set } from "./firebase-config.js";
 import { getCurrentDevice } from "./user-state.js";
 
 const LOCAL_FETCH_TIMEOUT_MS = 1500;
+let lastHistoryReadState = { kind: "ok", message: "" };
+
+function isPermissionDenied(error) {
+  return error?.code === "PERMISSION_DENIED" || error?.code === "database/permission-denied";
+}
+
+function setHistoryReadState(kind, message = "") {
+  lastHistoryReadState = { kind, message };
+}
+
+export function getHistoryReadState() {
+  return { ...lastHistoryReadState };
+}
 
 function toTimestampMs(value) {
   const n = Number(value || 0);
@@ -36,18 +49,22 @@ function historyIdentity(session) {
   return `key:${session._key || Math.random().toString(36).slice(2)}`;
 }
 
-function normalizeFirebaseHistory(raw) {
+function normalizeFirebaseHistory(raw, source = "firebase", deviceId = "") {
   if (!raw) return [];
-  return Object.entries(raw).map(([key, val]) => ({
-    ...val,
-    _key: key,
-    _source: "firebase",
-    id: val.id || val.sessionId || key,
-    sessionId: val.sessionId || val.id || key,
-    duration: formatDuration(val.durationSec ?? val.duration),
-    cost: val.costText || formatCost(val.cost),
-    timestamp: Number(val.timestamp || val.endTime || 0)
-  }));
+  return Object.entries(raw)
+    .filter(([, val]) => val && typeof val === "object")
+    .map(([key, val]) => ({
+      ...val,
+      _key: key,
+      _source: source,
+      id: val.id || val.sessionId || key,
+      sessionId: val.sessionId || val.id || key,
+      deviceId: val.deviceId || deviceId,
+      duration: formatDuration(val.durationSec ?? val.duration),
+      cost: val.cost ?? val.costText ?? 0,
+      costText: val.costText || formatCost(val.cost),
+      timestamp: toTimestampMs(val.endTime || val.timestamp || val.startTime)
+    }));
 }
 
 function normalizeLocalHistory(entries) {
@@ -75,37 +92,25 @@ function normalizeLocalHistory(entries) {
   });
 }
 
-async function getEspHistoryUrl(uid) {
-  try {
-    const snap = await get(ref(db, `devices/${DEVICE_ID}/live/system`));
-    const sys = snap.exists() ? snap.val() : {};
-    const ip = sys.ip || sys.localIp || "";
-    if (ip) {
-      localStorage.setItem(`sem_esp_ip_${uid}`, ip);
-      return `http://${ip}/history`;
-    }
-  } catch {}
+async function getEspHistoryUrl(uid, deviceId) {
+  if (deviceId) {
+    try {
+      const snap = await get(ref(db, `devices/${deviceId}/live/system`));
+      const sys = snap.exists() ? snap.val() : {};
+      const ip = sys.ip || sys.localIp || "";
+      if (ip) {
+        localStorage.setItem(`sem_esp_ip_${uid}`, ip);
+        return `http://${ip}/history`;
+      }
+    } catch {}
+  }
 
   const cachedIp = localStorage.getItem(`sem_esp_ip_${uid}`);
   return cachedIp ? `http://${cachedIp}/history` : "";
 }
 
-async function getDeviceId(uid) {
-  try {
-    const snap = await get(ref(db, `devices/${DEVICE_ID}/live/system`));
-    const sys = snap.exists() ? snap.val() : {};
-    const deviceId = sys.deviceId || sys.deviceID || "";
-    if (deviceId) {
-      localStorage.setItem(`sem_device_id_${uid}`, deviceId);
-      return deviceId;
-    }
-  } catch {}
-
-  return localStorage.getItem(`sem_device_id_${uid}`) || DEVICE_ID;
-}
-
 function normalizeCompletedSession(session, sessionId, deviceId, uid) {
-  const timestamp = Number(session.timestamp || session.endTime || Date.now());
+  const timestamp = toTimestampMs(session.endTime || session.timestamp || session.startTime) || Date.now();
   const sourcePath = `/devices/${deviceId}/completedSessions/${sessionId}`;
   return {
     ...session,
@@ -114,8 +119,8 @@ function normalizeCompletedSession(session, sessionId, deviceId, uid) {
     deviceId: session.deviceId || deviceId,
     name: session.name || "Device",
     duration: formatDuration(session.durationSec ?? session.duration),
-    power: Number(session.power || 0),
-    energy: Number(session.energy || 0),
+    power: Number(session.powerAvg ?? session.power ?? 0),
+    energy: Number(session.energyKwh ?? session.energy ?? 0),
     cost: Number(session.cost || 0),
     costText: session.costText || formatCost(session.cost),
     date: session.date || formatDate(timestamp),
@@ -131,11 +136,6 @@ function normalizeCompletedSession(session, sessionId, deviceId, uid) {
 
 const activeImports = new Map();
 
-async function countUserHistory(uid) {
-  const snap = await get(ref(db, `users/${uid}/history`));
-  return snap.exists() ? Object.keys(snap.val() || {}).length : 0;
-}
-
 async function importCompletedSessions(uid) {
   let currentDevice;
   try {
@@ -146,12 +146,12 @@ async function importCompletedSessions(uid) {
   if (!currentDevice) return 0;
 
   const deviceId = currentDevice.id;
-  console.log("[History Import] currentUser.uid", uid);
   try {
+    const finalHistorySnap = await get(ref(db, `devices/${deviceId}/history`));
+    if (finalHistorySnap.exists()) return 0;
+
     const queueSnap = await get(ref(db, `devices/${deviceId}/completedSessions`));
     const sessions = queueSnap.val() || {};
-    const entries = Object.entries(sessions);
-    console.log("[History Import] completedSessions count", entries.length);
 
     let copied = 0;
     for (const [key, session] of Object.entries(sessions)) {
@@ -161,21 +161,15 @@ async function importCompletedSessions(uid) {
 
       const userHistoryRef = ref(db, `users/${uid}/history/${sessionId}`);
       const existing = await get(userHistoryRef);
-      if (existing.exists()) {
-        console.log("[History Import] skipped duplicate session id", sessionId);
-        continue;
-      }
+      if (existing.exists()) continue;
 
       await set(userHistoryRef, normalizeCompletedSession(session, sessionId, deviceId, uid));
-      console.log("[History Import] copied session id", sessionId);
       copied++;
     }
 
-    const userHistoryCount = await countUserHistory(uid);
-    console.log("[History Import] user history count after import", userHistoryCount);
     return copied;
   } catch (e) {
-    console.error("[History Import] Firebase error:", e);
+    if (!isPermissionDenied(e)) console.warn("[History Import] skipped:", e?.message || e);
     return 0;
   }
 }
@@ -193,8 +187,8 @@ export async function importCompletedSessionsForCurrentUser(user = auth.currentU
   return task;
 }
 
-async function fetchLocalHistory(uid) {
-  const url = await getEspHistoryUrl(uid);
+async function fetchLocalHistory(uid, deviceId) {
+  const url = await getEspHistoryUrl(uid, deviceId);
   if (!url) return [];
 
   const controller = new AbortController();
@@ -211,30 +205,63 @@ async function fetchLocalHistory(uid) {
   }
 }
 
-async function fetchFirebaseHistory(uid) {
+async function fetchHistoryPath(path, source, deviceId = "") {
   try {
-    const snap = await get(ref(db, `users/${uid}/history`));
-    return snap.exists() ? normalizeFirebaseHistory(snap.val()) : [];
+    const snap = await get(ref(db, path));
+    return {
+      sessions: snap.exists() ? normalizeFirebaseHistory(snap.val(), source, deviceId) : [],
+      denied: false
+    };
   } catch (e) {
-    console.warn("[History] Firebase history unavailable:", e?.message || e);
-    return [];
+    if (!isPermissionDenied(e)) console.warn(`[History] ${source} unavailable:`, e?.message || e);
+    return { sessions: [], denied: isPermissionDenied(e) };
   }
 }
 
 export async function loadDeviceHistory(uid) {
-  await importCompletedSessionsForCurrentUser(uid);
+  setHistoryReadState("ok");
+  let currentDevice = null;
+  let deviceLookupDenied = false;
+  try {
+    currentDevice = await getCurrentDevice(uid);
+  } catch (error) {
+    if (isPermissionDenied(error)) {
+      deviceLookupDenied = true;
+      setHistoryReadState("permission", "Access denied for this device history");
+    }
+  }
 
-  const [local, firebase] = await Promise.all([
-    fetchLocalHistory(uid),
-    fetchFirebaseHistory(uid)
+  const deviceId = currentDevice?.id || "";
+  const [local, finalHistory, completedSessions, userHistory] = await Promise.all([
+    fetchLocalHistory(uid, deviceId),
+    deviceId
+      ? fetchHistoryPath(`devices/${deviceId}/history`, "device-history", deviceId)
+      : Promise.resolve({ sessions: [], denied: false }),
+    deviceId
+      ? fetchHistoryPath(`devices/${deviceId}/completedSessions`, "completed-sessions", deviceId)
+      : Promise.resolve({ sessions: [], denied: false }),
+    fetchHistoryPath(`users/${uid}/history`, "user-history", deviceId)
   ]);
+
+  const noHistory = local.length === 0 &&
+    finalHistory.sessions.length === 0 &&
+    completedSessions.sessions.length === 0 &&
+    userHistory.sessions.length === 0;
+  if (!deviceId && !deviceLookupDenied && noHistory) {
+    setHistoryReadState("no-device", "Pair a device to view its history");
+  } else if (noHistory && (deviceLookupDenied || finalHistory.denied || userHistory.denied)) {
+    setHistoryReadState("permission", "Access denied for this device history");
+  }
+
+  if (deviceId && finalHistory.sessions.length === 0) {
+    await importCompletedSessionsForCurrentUser(uid);
+  }
 
   const merged = new Map();
   local.forEach(session => merged.set(historyIdentity(session), session));
-  firebase.forEach(session => {
-    const key = historyIdentity(session);
-    merged.set(key, session);
-  });
+  userHistory.sessions.forEach(session => merged.set(historyIdentity(session), session));
+  completedSessions.sessions.forEach(session => merged.set(historyIdentity(session), session));
+  finalHistory.sessions.forEach(session => merged.set(historyIdentity(session), session));
 
   return [...merged.values()].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 }

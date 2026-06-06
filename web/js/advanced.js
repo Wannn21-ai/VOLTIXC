@@ -158,20 +158,20 @@ function metadataRow(label, value) {
 function renderSession(session) {
   selectedSession = session;
   const name = firstValue(session, ["name", "deviceName"]) || "Device";
-  const dateTime = formatDate(firstValue(session, ["timestamp", "endTime", "end_ts", "dateTime", "date"]));
+  const dateTime = formatDate(firstValue(session, ["endTime", "timestamp", "end_ts", "dateTime", "date"]));
   const duration = durationSeconds(session);
-  const energy = numeric(session, ["energy", "energyKwh", "sessionEnergy", "kwh"]);
+  const energy = numeric(session, ["energyKwh", "energy", "sessionEnergy", "kwh"]);
   const cost = costOf(session);
-  const avgPower = numeric(session, ["avgPower", "powerAvg", "averagePower", "power"]);
-  const maxPower = numeric(session, ["maxPower", "powerMax", "peakPower"]);
-  const avgVoltage = numeric(session, ["avgVoltage", "voltageAvg", "voltage"]);
-  const minVoltage = numeric(session, ["minVoltage", "voltageMin"]);
-  const maxVoltage = numeric(session, ["maxVoltage", "voltageMax"]);
-  const avgCurrent = numeric(session, ["avgCurrent", "currentAvg", "current"]);
-  const maxCurrent = numeric(session, ["maxCurrent", "currentMax"]);
-  const pf = numeric(session, ["pf", "powerFactor", "powerFactorAvg", "avgPowerFactor"]);
-  const frequency = numeric(session, ["frequency", "freq", "frequencyAvg", "avgFrequency"]);
-  const apparent = numeric(session, ["apparent", "apparentPower", "apparentPowerAvg", "avgApparentPower"]);
+  const avgPower = numeric(session, ["powerAvg", "avgPower", "averagePower", "power"]);
+  const maxPower = numeric(session, ["powerMax", "maxPower", "peakPower"]);
+  const avgVoltage = numeric(session, ["voltageAvg", "avgVoltage", "voltage"]);
+  const minVoltage = numeric(session, ["voltageMin", "minVoltage"]);
+  const maxVoltage = numeric(session, ["voltageMax", "maxVoltage"]);
+  const avgCurrent = numeric(session, ["currentAvg", "avgCurrent", "current"]);
+  const maxCurrent = numeric(session, ["currentMax", "maxCurrent"]);
+  const pf = numeric(session, ["pfAvg", "avgPowerFactor", "powerFactorAvg", "pf", "powerFactor"]);
+  const frequency = numeric(session, ["frequencyAvg", "avgFrequency", "frequency", "freq"]);
+  const apparent = numeric(session, ["apparentAvg", "avgApparentPower", "apparentPowerAvg", "apparent", "apparentPower"]);
   const threshold = numeric(session, ["threshold", "overloadThreshold"]);
   const mode = modeInfo(session);
   const reason = reasonInfo(session);
@@ -260,11 +260,12 @@ async function loadSelectedSession() {
   if (!selectedKey) return null;
   if (cachedSession?._key === selectedKey) return cachedSession;
 
-  const snapshot = await get(ref(db, `users/${uid}/history/${selectedKey}`));
-  if (snapshot.exists()) return { ...snapshot.val(), _key: selectedKey };
-
   const allHistory = await loadDeviceHistory(uid);
-  return allHistory.find(item => item._key === selectedKey) || null;
+  const finalFirst = allHistory.find(item => item._key === selectedKey);
+  if (finalFirst) return finalFirst;
+
+  const snapshot = await get(ref(db, `users/${uid}/history/${selectedKey}`));
+  return snapshot.exists() ? { ...snapshot.val(), _key: selectedKey } : null;
 }
 
 try {
@@ -281,10 +282,10 @@ btnExport.addEventListener("click", () => {
   const fields = [
     ["Name", firstValue(selectedSession, ["name", "deviceName"]) || "Device"],
     ["Duration", formatDuration(durationSeconds(selectedSession))],
-    ["Energy (kWh)", numeric(selectedSession, ["energy", "energyKwh", "sessionEnergy", "kwh"])],
+    ["Energy (kWh)", numeric(selectedSession, ["energyKwh", "energy", "sessionEnergy", "kwh"])],
     ["Cost", costOf(selectedSession)],
-    ["Average Power (W)", numeric(selectedSession, ["avgPower", "powerAvg", "averagePower", "power"])],
-    ["Max Power (W)", numeric(selectedSession, ["maxPower", "powerMax", "peakPower"])],
+    ["Average Power (W)", numeric(selectedSession, ["powerAvg", "avgPower", "averagePower", "power"])],
+    ["Max Power (W)", numeric(selectedSession, ["powerMax", "maxPower", "peakPower"])],
     ["Mode", modeInfo(selectedSession).label],
     ["End Reason", reasonInfo(selectedSession).label],
     ["Sync Status", syncInfo(selectedSession).label],

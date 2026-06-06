@@ -3,7 +3,8 @@ import {
   startStatusWatcher, loadAndApplySettings
 } from "./auth-guard.js";
 import { db, ref, set, onValue } from "./firebase-config.js";
-import { loadDeviceHistory } from "./local-history.js";
+import { getHistoryReadState, loadDeviceHistory } from "./local-history.js";
+import { getCurrentDevice } from "./user-state.js";
 
 const user = await requireAuth();
 renderShell("history", "HISTORY");
@@ -44,7 +45,7 @@ function toNumber(value) {
 }
 
 function energyOf(session) {
-  return toNumber(firstValue(session, ["energy", "energyKwh", "sessionEnergy", "kwh"]));
+  return toNumber(firstValue(session, ["energyKwh", "energy", "sessionEnergy", "kwh"]));
 }
 
 function costOf(session) {
@@ -64,7 +65,7 @@ function costOf(session) {
 }
 
 function powerOf(session) {
-  return toNumber(firstValue(session, ["avgPower", "powerAvg", "power", "maxPower", "powerMax"]));
+  return toNumber(firstValue(session, ["powerAvg", "avgPower", "power", "powerMax", "maxPower"]));
 }
 
 function durationSeconds(session) {
@@ -79,7 +80,7 @@ function durationSeconds(session) {
 }
 
 function timestampOf(session) {
-  const raw = toNumber(firstValue(session, ["timestamp", "endTime", "end_ts", "startTime", "start_ts"]));
+  const raw = toNumber(firstValue(session, ["endTime", "timestamp", "end_ts", "startTime", "start_ts"]));
   if (raw > 0) return raw > 1000000000000 ? raw : raw * 1000;
   const parsed = Date.parse(firstValue(session, ["dateTime", "date"]) || "");
   return Number.isFinite(parsed) ? parsed : 0;
@@ -226,11 +227,18 @@ function render() {
   countEl.textContent = `${data.length} of ${historyData.length} session${historyData.length !== 1 ? "s" : ""}`;
 
   if (data.length === 0) {
+    const readState = getHistoryReadState();
+    const title = readState.kind === "permission"
+      ? "Access denied for this device history"
+      : readState.kind === "no-device"
+        ? "No device paired"
+        : "No sessions found";
+    const subtitle = readState.message || "Adjust the filters or start monitoring a device from the Dashboard";
     listEl.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">◷</div>
-        <div class="empty-state-title">No sessions found</div>
-        <div class="empty-state-sub">Adjust the filters or start monitoring a device from the Dashboard</div>
+        <div class="empty-state-title">${escapeHtml(title)}</div>
+        <div class="empty-state-sub">${escapeHtml(subtitle)}</div>
       </div>`;
     return;
   }
@@ -276,7 +284,17 @@ async function refreshHistory() {
   render();
 }
 
-onValue(historyRef, refreshHistory);
+const historyWatchRefs = [historyRef];
+try {
+  const currentDevice = await getCurrentDevice(uid);
+  if (currentDevice?.id) {
+    historyWatchRefs.push(
+      ref(db, `devices/${currentDevice.id}/history`),
+      ref(db, `devices/${currentDevice.id}/completedSessions`)
+    );
+  }
+} catch {}
+historyWatchRefs.forEach(sourceRef => onValue(sourceRef, refreshHistory, refreshHistory));
 await refreshHistory();
 
 [searchInput, deviceFilter, modeFilter, statusFilter, dateFilter, sortSelect].forEach(control => {
