@@ -18,7 +18,6 @@ constexpr unsigned long OFFLINE_FINISHED_SUMMARY_MS = 2500UL;
 constexpr unsigned long MANUAL_OFFLINE_IDLE_TIMEOUT_MS = 90000UL;
 constexpr unsigned long TRYING_ONLINE_DISPLAY_MS = 5000UL;
 constexpr const char* PREF_NAMESPACE = "voltix";
-constexpr const char* PREF_OFFLINE_DEVICE_COUNTER = "offline_device_counter";
 constexpr const char* PREF_OFFLINE_DEVICE_COUNTER_NVS = "off_dev_count";
 constexpr const char* OFFLINE_SESSION_TAG = "Sesi Offline";
 
@@ -98,9 +97,6 @@ static unsigned long loadOfflineDeviceCounter() {
   }
 
   unsigned long counter = prefs.getULong(PREF_OFFLINE_DEVICE_COUNTER_NVS, 0UL);
-  if (counter == 0) {
-    counter = prefs.getULong(PREF_OFFLINE_DEVICE_COUNTER, 1UL);
-  }
   prefs.end();
   return counter == 0 ? 1UL : counter;
 }
@@ -630,7 +626,9 @@ void sessionUpdate() {
     return;
   }
 
-  if (sessionData.state == SessionState::MONITORING && !sensorData.loadDetected) {
+  if (sessionData.state == SessionState::MONITORING &&
+      sensorData.valid &&
+      !sensorData.loadDetected) {
     sessionStop(EndReason::LOAD_REMOVED);
     return;
   }
@@ -690,6 +688,9 @@ void sessionRecoveryUpdate() {
   }
 
   sensorUpdate();
+  if (!sensorData.valid) {
+    return;
+  }
   if (sensorData.loadDetected) {
     restoreSessionFromCheckpoint(recoveryCheckpoint, SessionState::MONITORING);
     relaySet(true);

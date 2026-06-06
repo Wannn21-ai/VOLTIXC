@@ -15,4 +15,4 @@ void clearWiFiCredentials();
 bool hasSavedWiFiCredentials();
 void printSavedWiFiStatus();
 void loadLocalConfig();
-void saveLocalConfig();
+bool saveLocalConfig();
