@@ -242,6 +242,32 @@ overload
 syncStatus
 ```
 
+The transitional firmware sync order is:
+
+1. save the completed record to LittleFS;
+2. PUT the record to final `/devices/{deviceId}/history/{historyId}`;
+3. PUT the same compatible record to transitional
+   `/devices/{deviceId}/completedSessions/{sessionId}`;
+4. mark the LittleFS record `SYNCED` only when both idempotent PUTs succeed.
+
+If either cloud write fails, the local record remains `PENDING` and is retried
+after connectivity returns. This keeps the current authenticated web import
+flow working from `completedSessions` while establishing final device history.
+Missing `deviceId` also leaves the local record pending.
+
+Final aliases are added where existing data is available: `energyKwh`,
+`powerAvg`, `powerMax`, `modeStart`, `modeEnd`, and `modePath`. `startTime` and
+`endTime` are added only when the completed record has a valid synced date/time.
+The current firmware does not track true voltage/current/power-factor/frequency
+or apparent-power averages, so those average fields are intentionally omitted
+rather than populated with end-of-session samples.
+
+Existing local status values remain `PENDING` and `SYNCED`; a failed cloud
+attempt stays `PENDING` rather than introducing a new status that older readers
+do not understand. Existing end-reason values are also preserved during this
+path-only migration. A later schema-normalization sprint may map them to new
+display labels without changing the stored local-first record.
+
 ## Stage A And Stage B Security
 
 Stage A may use a disposable development project and temporary simplified

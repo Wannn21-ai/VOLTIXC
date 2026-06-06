@@ -309,10 +309,74 @@ static void formatCostText(float cost, char* out, size_t outSize) {
   snprintf(out, outSize, "Rp %.0f", cost);
 }
 
-static String completedSessionPath(const char* sessionId) {
-  char path[128];
-  snprintf(path, sizeof(path), "/devices/%s/completedSessions/%s.json", Config::DEVICE_ID, sessionId);
-  return String(path);
+static String finalHistoryJsonPath(const char* historyId) {
+  return configJsonPath(FirebasePaths::pathDeviceHistory(String(Config::DEVICE_ID), String(historyId)));
+}
+
+static String completedSessionJsonPath(const char* sessionId) {
+  return configJsonPath(FirebasePaths::pathCompletedSession(String(Config::DEVICE_ID), String(sessionId)));
+}
+
+static bool pushHistoryPayload(const char* sessionId, const String& payload) {
+  if (Config::DEVICE_ID == nullptr || Config::DEVICE_ID[0] == '\0') {
+    Serial.println("[history] cloud sync skipped: missing deviceId");
+    return false;
+  }
+
+  int finalStatus = -1;
+  const String finalPath = finalHistoryJsonPath(sessionId);
+  const bool finalOk = httpRequest("PUT", finalPath.c_str(), payload, nullptr, true, &finalStatus);
+  if (finalOk) {
+    Serial.print("[history] Synced to final device history sessionId=");
+    Serial.println(sessionId);
+  } else {
+    Serial.print("[history] Final history sync failed, kept pending sessionId=");
+    Serial.print(sessionId);
+    Serial.print(" status=");
+    Serial.println(finalStatus);
+  }
+
+  int legacyStatus = -1;
+  const String legacyPath = completedSessionJsonPath(sessionId);
+  const bool legacyOk = httpRequest("PUT", legacyPath.c_str(), payload, nullptr, true, &legacyStatus);
+  if (legacyOk) {
+    Serial.print("[history] Legacy completedSessions compatibility synced sessionId=");
+    Serial.println(sessionId);
+  } else {
+    Serial.print("[history] Legacy completedSessions sync failed, kept pending sessionId=");
+    Serial.print(sessionId);
+    Serial.print(" status=");
+    Serial.println(legacyStatus);
+  }
+
+  return finalOk && legacyOk;
+}
+
+static void addFinalHistoryFields(JsonDocument& doc) {
+  doc["energyKwh"] = doc["energy"];
+  doc["powerAvg"] = doc["averagePower"];
+  doc["powerMax"] = doc["peakPower"];
+  doc["modeStart"] = doc["startMode"];
+  doc["modeEnd"] = doc["endMode"];
+
+  const char* startMode = doc["startMode"] | "";
+  const char* endMode = doc["endMode"] | "";
+  if (startMode[0] != '\0' && endMode[0] != '\0') {
+    doc["modePath"] = strcmp(startMode, endMode) == 0
+      ? String(startMode)
+      : String(startMode) + "->" + endMode;
+  }
+
+  const char* date = doc["date"] | "";
+  const uint64_t endTime = doc["timestamp"] | 0ULL;
+  const unsigned long durationSec = doc["durationSec"] | 0UL;
+  if (date[0] != '\0' && strcmp(date, "-") != 0 && endTime > 0) {
+    doc["endTime"] = endTime;
+    const uint64_t durationMs = static_cast<uint64_t>(durationSec) * 1000ULL;
+    if (endTime >= durationMs) {
+      doc["startTime"] = endTime - durationMs;
+    }
+  }
 }
 
 static bool isSessionActiveForLive() {
@@ -762,7 +826,7 @@ bool firebasePushCompletedSession(const CompletedSessionSnapshot& snapshot) {
   formatDuration(snapshot.durationSec, duration, sizeof(duration));
   formatCostText(snapshot.cost, costText, sizeof(costText));
 
-  StaticJsonDocument<1280> doc;
+  StaticJsonDocument<1536> doc;
   doc["id"] = snapshot.id;
   doc["sessionId"] = snapshot.sessionId;
   doc["deviceId"] = Config::DEVICE_ID;
@@ -801,22 +865,23 @@ bool firebasePushCompletedSession(const CompletedSessionSnapshot& snapshot) {
   doc["timestamp"] = snapshot.timestamp;
   doc["syncStatus"] = "SYNCED";
   doc["createdFrom"] = "ESP32";
+  addFinalHistoryFields(doc);
+
+  if (doc.overflowed()) {
+    Serial.print("[history] Cloud sync skipped: payload overflow sessionId=");
+    Serial.println(snapshot.sessionId);
+    return false;
+  }
 
   String payload;
   serializeJson(doc, payload);
-  const String path = completedSessionPath(snapshot.sessionId);
-  int statusCode = -1;
-  const bool ok = httpRequest("PUT", path.c_str(), payload, nullptr, true, &statusCode);
+  const bool ok = pushHistoryPayload(snapshot.sessionId, payload);
   if (ok) {
-    Serial.print("[firebase] Pending session queued sessionId=");
+    Serial.print("[history] Final and compatibility sync complete sessionId=");
     Serial.println(snapshot.sessionId);
   } else {
-    Serial.print("[firebase] Completed session push FAIL sessionId=");
-    Serial.print(snapshot.sessionId);
-    Serial.print(" status=");
-    Serial.println(statusCode);
-    Serial.print("[firebase] payload=");
-    Serial.println(payload);
+    Serial.print("[history] Cloud sync incomplete, local session kept pending sessionId=");
+    Serial.println(snapshot.sessionId);
   }
   return ok;
 }
@@ -828,21 +893,25 @@ bool firebasePushCompletedSession(JsonObject entry) {
     return false;
   }
 
+  StaticJsonDocument<1536> doc;
+  doc.set(entry);
+  addFinalHistoryFields(doc);
+
+  if (doc.overflowed()) {
+    Serial.print("[history] Cloud sync skipped: payload overflow sessionId=");
+    Serial.println(sessionId);
+    return false;
+  }
+
   String payload;
-  serializeJson(entry, payload);
-  const String path = completedSessionPath(sessionId);
-  int statusCode = -1;
-  const bool ok = httpRequest("PUT", path.c_str(), payload, nullptr, true, &statusCode);
+  serializeJson(doc, payload);
+  const bool ok = pushHistoryPayload(sessionId, payload);
   if (ok) {
-    Serial.print("[firebase] Pending session queued sessionId=");
+    Serial.print("[history] Final and compatibility sync complete sessionId=");
     Serial.println(sessionId);
   } else {
-    Serial.print("[firebase] Completed session push FAIL sessionId=");
-    Serial.print(sessionId);
-    Serial.print(" status=");
-    Serial.println(statusCode);
-    Serial.print("[firebase] payload=");
-    Serial.println(payload);
+    Serial.print("[history] Cloud sync incomplete, local session kept pending sessionId=");
+    Serial.println(sessionId);
   }
   return ok;
 }
