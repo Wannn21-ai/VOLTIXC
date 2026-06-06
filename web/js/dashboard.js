@@ -105,6 +105,10 @@ let firebaseSystemMode = null;
 let firebaseSessionState = null;
 let firebasePendingSync = 0;
 let systemInternet   = false;
+let firebaseDeviceConnected = null;
+let firebaseWifiStatus = "";
+let firebaseActiveSsid = "";
+let firebaseFirmwareVersion = "";
 let deviceNameFromEsp = "—";  // Device name dari ESP32 (untuk offline mode)
 
 // ================= STATE — WEB =================
@@ -835,45 +839,105 @@ if (btnStop) {
   });
 }
 
-// ================= FIREBASE LIVE LISTENER =================
-if (selectedDevice) onValue(ref(db, `devices/${selectedDevice.id}/live`), snapshot => {
-  const data = snapshot.val();
-  if (!data) return;
+// ================= FIREBASE LIVE LISTENERS =================
+function timestampSeconds(value) {
+  const timestamp = Number(value || 0);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return 0;
+  return timestamp > 1000000000000 ? Math.floor(timestamp / 1000) : timestamp;
+}
 
-  const sys = data.system || {};
-  systemInternet    = sys.internet === true;
-  firebaseTimestamp = sys.timestamp || 0;
-  firebaseRelay     = sys.relay     === true;
-  firebaseOffline   = sys.offline   === true;
-  firebaseSessionActive = sys.sessionActive === true;
-  firebaseSessionStartTs = sys.sessionStartTs || 0;
-  firebaseElapsedSec = sys.elapsedSec || 0;
-  firebaseSessionId = sys.sessionId || "";
-  firebaseSessionUid = sys.uid || "";
-  firebaseSystemMode = sys.systemMode || null;
-  firebaseSessionState = sys.sessionState || null;
-  firebasePendingSync = Number(sys.pendingSync || 0);
-  deviceNameFromEsp = sys.deviceName || "Device";  // Ambil nama device dari ESP32
+function liveTimestampSeconds(finalTimestamp, legacyTimestamp) {
+  if (finalTimestamp !== undefined && finalTimestamp !== null) {
+    return timestampSeconds(finalTimestamp);
+  }
+  const legacy = Number(legacyTimestamp || 0);
+  if (!Number.isFinite(legacy) || legacy <= 0) return 0;
+  // Transitional firmware used millis() here; the listener receive time keeps stale detection useful.
+  return legacy < 1500000000 ? Math.floor(Date.now() / 1000) : timestampSeconds(legacy);
+}
 
-  const dev = data.device || {};
-  voltage          = dev.voltage   || 0;
-  current          = dev.current   || 0;
-  firebasePower    = dev.power     || 0;
-  firebaseApparent = dev.apparent  || 0;
-  firebasePF       = dev.pf        || 0;
-  firebaseFreq     = dev.frequency || 0;
-  firebaseEnergy   = dev.energy    || 0;
-  firebaseCost     = dev.cost      || 0;
-  firebaseOverload = dev.overload  === true;
-  updateTimer();
+function relayIsOn(value) {
+  return value === true || String(value || "").toUpperCase() === "ON";
+}
 
+function updateLiveEnergyCheckpoint() {
   if (firebaseSessionState !== SessionState.WAITING_LOAD &&
       current >= settings.loadCurrentThreshold &&
       firebasePower >= settings.loadPowerThreshold &&
       firebaseEnergy > 0) {
     lastknownEnergy = firebaseEnergy;
   }
-});
+}
+
+function showLiveReadError(error) {
+  const state = document.getElementById("no-device-state");
+  if (!state) return;
+  state.style.display = "block";
+  state.querySelector(".empty-state-title").textContent = "Device live data unavailable";
+  state.querySelector(".empty-state-sub").textContent = readableFirebaseError(error);
+}
+
+if (selectedDevice) {
+  const liveBase = `devices/${selectedDevice.id}/live`;
+
+  onValue(ref(db, `${liveBase}/system`), snapshot => {
+    const sys = snapshot.val() || {};
+    firebaseWifiStatus = String(sys.wifiStatus || "");
+    firebaseActiveSsid = String(sys.activeSsid || "");
+    firebaseFirmwareVersion = String(sys.firmwareVersion || "");
+    systemInternet = sys.internet === true ||
+      ["CONNECTED", "ONLINE"].includes(firebaseWifiStatus.toUpperCase());
+    firebaseTimestamp = liveTimestampSeconds(sys.timestampUnixMs, sys.timestamp);
+    firebaseRelay = relayIsOn(sys.relayState ?? sys.relay);
+    firebaseOffline = sys.offline === true || String(sys.mode || sys.systemMode || "").toUpperCase() === "OFFLINE";
+    firebaseSessionActive = sys.sessionActive ?? firebaseSessionActive;
+    firebaseSessionStartTs = sys.sessionStartTs !== undefined
+      ? timestampSeconds(sys.sessionStartTs)
+      : firebaseSessionStartTs;
+    firebaseElapsedSec = Number(sys.elapsedSec ?? firebaseElapsedSec);
+    firebaseSessionId = sys.sessionId || firebaseSessionId;
+    firebaseSessionUid = sys.uid || firebaseSessionUid;
+    firebaseSystemMode = sys.mode || sys.systemMode || null;
+    firebaseSessionState = sys.sessionState || firebaseSessionState;
+    firebasePendingSync = Number(sys.pendingSync ?? firebasePendingSync);
+    deviceNameFromEsp = sys.deviceName || deviceNameFromEsp;
+    updateTimer();
+  }, showLiveReadError);
+
+  onValue(ref(db, `${liveBase}/device`), snapshot => {
+    const dev = snapshot.val() || {};
+    firebaseDeviceConnected = typeof dev.connected === "boolean" ? dev.connected : null;
+    voltage          = Number(dev.voltage || 0);
+    current          = Number(dev.current || 0);
+    firebasePower    = Number(dev.power || 0);
+    firebaseApparent = Number(dev.apparent ?? dev.apparentPower ?? 0);
+    firebasePF       = Number(dev.pf ?? dev.powerFactor ?? 0);
+    firebaseFreq     = Number(dev.frequency || 0);
+    firebaseEnergy   = Number(dev.energy ?? dev.energyKwh ?? 0);
+    firebaseCost     = Number(dev.cost || 0);
+    firebaseElapsedSec = Number(dev.duration ?? firebaseElapsedSec ?? 0);
+    firebaseOverload = dev.overload === true;
+    updateTimer();
+    updateLiveEnergyCheckpoint();
+  }, showLiveReadError);
+
+  // Transitional firmware still publishes active-session metadata here.
+  onValue(ref(db, `${liveBase}/session`), snapshot => {
+    const session = snapshot.val() || {};
+    firebaseSessionActive = session.active ?? firebaseSessionActive;
+    firebaseSessionStartTs = timestampSeconds(session.startTs ?? session.sessionStartTs ?? firebaseSessionStartTs);
+    firebaseElapsedSec = Number(session.elapsedSec ?? session.duration ?? firebaseElapsedSec);
+    firebaseSessionId = session.sessionId || session.id || firebaseSessionId;
+    firebaseSessionUid = session.uid || firebaseSessionUid;
+    firebaseSessionState = session.sessionState || firebaseSessionState;
+    deviceNameFromEsp = session.deviceName || session.name || deviceNameFromEsp;
+    updateTimer();
+  }, error => {
+    if (error?.code !== "PERMISSION_DENIED" && error?.code !== "database/permission-denied") {
+      console.warn("[Dashboard] Transitional live session unavailable:", error?.message || error);
+    }
+  });
+}
 
 // ================================================================
 // MAIN LOOP
@@ -889,6 +953,7 @@ async function updateMeters() {
   const dataFresh = firebaseTimestamp > 0 && diff <= STALE_THRESHOLD;
   systemOnline = systemInternet && dataFresh;
   deviceOnline = systemOnline &&
+    firebaseDeviceConnected !== false &&
     firebaseSessionState !== SessionState.WAITING_LOAD &&
     current >= settings.loadCurrentThreshold &&
     firebasePower >= settings.loadPowerThreshold;
