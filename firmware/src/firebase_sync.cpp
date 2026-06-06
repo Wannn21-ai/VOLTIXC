@@ -17,8 +17,11 @@
 #include <WiFiClientSecure.h>
 
 static constexpr unsigned long HTTP_LOG_INTERVAL_MS = 5000UL;
+static constexpr unsigned long FINAL_COMMAND_POLL_INTERVAL_MS = 5000UL;
+static constexpr uint64_t FINAL_COMMAND_MAX_AGE_MS = 5ULL * 60ULL * 1000ULL;
 
 static char lastProcessedCommandId[48] = "";
+static uint64_t lastProcessedFinalCommandAt = 0;
 static char ackId[48] = "";
 static char ackType[12] = "";
 static char ackStatus[12] = "DONE";
@@ -28,7 +31,10 @@ static bool pendingStartAck = false;
 static char pendingStartCommandId[48] = "";
 static unsigned long lastLiveLogMs = 0;
 static unsigned long lastPollLogMs = 0;
+static unsigned long lastFinalCommandPollMs = 0;
+static unsigned long lastFinalCommandLogMs = 0;
 static bool missingLiveDeviceIdLogged = false;
+static bool missingCommandDeviceIdLogged = false;
 
 static String configJsonPath(const String& configPath) {
   return configPath + ".json";
@@ -40,6 +46,10 @@ static String finalConfigJsonPath() {
 
 static String legacyConfigJsonPath() {
   return configJsonPath(String(Config::FIREBASE_DEVICE_CONFIG_PATH));
+}
+
+static String finalCommandJsonPath() {
+  return configJsonPath(FirebasePaths::pathDeviceCommand(String(Config::DEVICE_ID)));
 }
 
 static String configRevisionText(uint64_t revision) {
@@ -348,6 +358,137 @@ static bool publishPendingStartAckIfReady() {
   return true;
 }
 
+static bool readCommandTimestamp(JsonDocument& doc, uint64_t& updatedAt) {
+  if (doc["updatedAt"].is<uint64_t>()) {
+    updatedAt = doc["updatedAt"].as<uint64_t>();
+    return updatedAt > 0;
+  }
+  if (doc["updatedAt"].is<double>()) {
+    const double value = doc["updatedAt"].as<double>();
+    if (!isfinite(value) || value <= 0.0) {
+      return false;
+    }
+    updatedAt = static_cast<uint64_t>(value);
+    return true;
+  }
+  return false;
+}
+
+static bool validateFinalCommand(JsonDocument& doc, uint64_t& updatedAt) {
+  if (!doc["relay"].is<const char*>() ||
+      !doc["startSession"].is<bool>() ||
+      !doc["stopSession"].is<bool>() ||
+      !doc["resetAlarm"].is<bool>() ||
+      !readCommandTimestamp(doc, updatedAt)) {
+    Serial.println("[command] Invalid final command shape ignored");
+    return false;
+  }
+
+  const char* relay = doc["relay"].as<const char*>();
+  if (strcmp(relay, "ON") != 0 &&
+      strcmp(relay, "OFF") != 0 &&
+      strcmp(relay, "UNCHANGED") != 0) {
+    Serial.println("[command] Invalid relay command ignored");
+    return false;
+  }
+  return true;
+}
+
+static bool finalCommandIsStale(uint64_t updatedAt) {
+  if (updatedAt <= lastProcessedFinalCommandAt) {
+    return true;
+  }
+  if (timeIsSynced()) {
+    const uint64_t now = getUnixMs();
+    if (updatedAt < now && now - updatedAt > FINAL_COMMAND_MAX_AGE_MS) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static void processFinalCommand(JsonDocument& doc, uint64_t updatedAt) {
+  const char* relay = doc["relay"].as<const char*>();
+  const bool startRequested = doc["startSession"].as<bool>() || strcmp(relay, "ON") == 0;
+  const bool stopRequested = doc["stopSession"].as<bool>() || strcmp(relay, "OFF") == 0;
+  const bool resetRequested = doc["resetAlarm"].as<bool>();
+
+  // Mark a valid command before action so failed/busy commands cannot loop.
+  lastProcessedFinalCommandAt = updatedAt;
+
+  if (startRequested && stopRequested) {
+    Serial.println("[command] Conflicting final command ignored");
+    return;
+  }
+
+  if (resetRequested) {
+    Serial.println("[command] resetAlarm ignored: no existing reset runtime semantics");
+  }
+
+  if (startRequested) {
+    if (!sessionStart(appConfig.deviceName)) {
+      Serial.println("[command] Final START ignored: device busy");
+      return;
+    }
+    Serial.println("[command] Final START accepted");
+    return;
+  }
+
+  if (stopRequested) {
+    if (sessionIsActive()) {
+      sessionStop(EndReason::USER_STOP);
+    }
+    Serial.println("[command] Final STOP processed");
+    return;
+  }
+
+  if (!resetRequested) {
+    Serial.println("[command] Final command has no action");
+  }
+}
+
+static bool pollFinalCommand() {
+  const unsigned long now = millis();
+  if (lastFinalCommandPollMs > 0 && now - lastFinalCommandPollMs < FINAL_COMMAND_POLL_INTERVAL_MS) {
+    return false;
+  }
+  lastFinalCommandPollMs = now;
+
+  const String path = finalCommandJsonPath();
+  String response;
+  if (!httpRequest("GET", path.c_str(), "", &response, false)) {
+    return false;
+  }
+  if (response == "null" || response.length() == 0) {
+    return false;
+  }
+
+  StaticJsonDocument<384> doc;
+  const DeserializationError error = deserializeJson(doc, response);
+  if (error) {
+    if (shouldLog(lastFinalCommandLogMs)) {
+      Serial.print("[command] Final command parse FAIL ");
+      Serial.println(error.c_str());
+    }
+    return false;
+  }
+
+  uint64_t updatedAt = 0;
+  if (!validateFinalCommand(doc, updatedAt)) {
+    return false;
+  }
+  if (finalCommandIsStale(updatedAt)) {
+    if (shouldLog(lastFinalCommandLogMs)) {
+      Serial.println("[command] Ignored stale final command");
+    }
+    return false;
+  }
+
+  Serial.println("[command] Loaded from final device command path");
+  processFinalCommand(doc, updatedAt);
+  return true;
+}
+
 void firebaseBegin() {
   Serial.print("[firebase] REST initialized deviceId=");
   Serial.println(Config::DEVICE_ID);
@@ -503,6 +644,19 @@ bool firebasePushDeviceConfig() {
 
 void firebasePollCommand() {
   if (publishPendingStartAckIfReady()) {
+    return;
+  }
+
+  if (Config::DEVICE_ID == nullptr || Config::DEVICE_ID[0] == '\0') {
+    if (!missingCommandDeviceIdLogged) {
+      missingCommandDeviceIdLogged = true;
+      Serial.println("[command] skipped: missing deviceId");
+    }
+    return;
+  }
+  missingCommandDeviceIdLogged = false;
+
+  if (pollFinalCommand()) {
     return;
   }
 

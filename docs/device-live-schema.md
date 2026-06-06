@@ -183,6 +183,29 @@ relay/session command executes while unpaired. A later integration sprint must
 select and document an idempotent acknowledgement/clear strategy before
 migrating the current `commands/current` and `commands/lastAck` paths.
 
+The transitional firmware command priority is:
+
+1. valid final `/devices/{deviceId}/command`;
+2. legacy `/devices/{deviceId}/commands/current` when final command is missing
+   or unavailable;
+3. no action.
+
+Final command validation requires all documented fields, an allowed relay
+value, boolean action flags, and a positive numeric `updatedAt`. The firmware
+tracks the latest processed final `updatedAt` in memory and ignores duplicates
+or commands older than five minutes when device time is synced. It does not
+clear or acknowledge the final command because current production rules make
+that path owner/operator-writable, not device-writable.
+
+For safety and compatibility, final `relay: ON` follows the existing
+`sessionStart` path and `relay: OFF` follows the existing `sessionStop` path.
+No direct relay bypass is introduced. Conflicting START/STOP requests are
+ignored. `resetAlarm` is validated but remains a no-op until reset behavior is
+defined in the existing runtime.
+
+Final-path polling is rate-limited while the legacy fallback keeps its existing
+poll cadence. Permission/read failures leave local monitoring unaffected.
+
 ## Completed Session Contract
 
 On session stop/finalization:
