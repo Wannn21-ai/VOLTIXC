@@ -1,0 +1,102 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "devices": {
+      "$deviceId": {
+        "ownerUid": {
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+          ".write": false
+        },
+        "paired": {
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+          ".write": false
+        },
+        "name": {
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('ownerUid').val() === auth.uid"
+        },
+        "firmwareVersion": {
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+          ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
+        },
+        "lastSeen": {
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+          ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
+        },
+        "members": {
+          "$memberUid": {
+            ".read": "auth != null && auth.token.deviceRole !== 'hardware' && (data.parent().parent().child('ownerUid').val() === auth.uid || $memberUid === auth.uid)",
+            ".write": false
+          }
+        },
+        "deviceAuth": {
+          ".read": false,
+          ".write": false
+        },
+        "config": {
+          ".read": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()))",
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('ownerUid').val() === auth.uid"
+        },
+        "live": {
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+          ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
+        },
+        "command": {
+          ".read": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId",
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && (data.parent().child('ownerUid').val() === auth.uid || data.parent().child('members').child(auth.uid).child('role').val() === 'operator')"
+        },
+        "commandAck": {
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+          ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
+        },
+        "history": {
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+          "$historyId": {
+            ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
+          }
+        },
+        "completedSessions": {
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+          "$historyId": {
+            ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
+          }
+        },
+        "commands": {
+          "current": {
+            ".read": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId",
+            ".write": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId && !newData.exists()) || (auth.token.deviceRole !== 'hardware' && (data.parent().parent().child('ownerUid').val() === auth.uid || data.parent().parent().child('members').child(auth.uid).child('role').val() === 'operator')))"
+          },
+          "lastAck": {
+            ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().parent().child('members').child(auth.uid).exists()",
+            ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
+          }
+        }
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.token.deviceRole !== 'hardware' && auth.uid === $uid",
+        "profile": {
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['displayName', 'email', 'createdAt']) && newData.child('displayName').isString() && newData.child('email').isString() && newData.child('createdAt').isNumber()"
+        },
+        "settings": {
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && auth.uid === $uid"
+        },
+        "devices": {
+          "$deviceId": {
+            ".write": "auth != null && auth.token.deviceRole !== 'hardware' && (auth.token.pairingService === true || auth.token.inviteService === true || (auth.uid === $uid && root.child('devices').child($deviceId).child('ownerUid').val() === auth.uid && (!newData.exists() || newData.child('role').val() === 'owner')))",
+            ".validate": "!newData.exists() || (newData.hasChildren(['role', 'nickname', 'addedAt']) && (newData.child('role').val() === 'owner' || newData.child('role').val() === 'operator' || newData.child('role').val() === 'viewer') && newData.child('nickname').isString() && newData.child('addedAt').isNumber())"
+          }
+        },
+        "history": {
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && auth.uid === $uid",
+          "$historyId": {
+            ".validate": "!newData.exists() || (newData.child('deviceId').isString() && root.child('devices').child(newData.child('deviceId').val()).child('members').child(auth.uid).exists())"
+          }
+        }
+      }
+    }
+  }
+}
