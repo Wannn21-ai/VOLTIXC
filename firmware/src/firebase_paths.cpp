@@ -6,6 +6,10 @@ String pathDeviceRoot(const String& deviceId) {
   return String(DEVICE_ROOT_PREFIX) + deviceId;
 }
 
+String pathLiveRoot(const String& deviceId) {
+  return pathDeviceRoot(deviceId) + LIVE_ROOT_SUFFIX;
+}
+
 String pathLiveSystem(const String& deviceId) {
   return pathDeviceRoot(deviceId) + LIVE_SYSTEM_SUFFIX;
 }
