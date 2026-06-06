@@ -154,6 +154,9 @@ project, or use the future trusted pairing service.
 
 - [ ] Change only harmless seeded measurement values such as `voltage`,
       `current`, or `power`; confirm the Dashboard updates.
+- [ ] Confirm passive seeded live telemetry renders while the Dashboard remains
+      idle; it must not create an active session, write history, or send a
+      command automatically.
 - [ ] Confirm final fields `timestampUnixMs`, `relayState`, `mode`,
       `wifiStatus`, `activeSsid`, and `firmwareVersion` are accepted.
 - [ ] Confirm compatibility fields `timestamp`, boolean/string `relay`,
@@ -204,6 +207,11 @@ electrical setup.
 Production rules intentionally require an authenticated device claim to read
 the final command path. A permission denial from current unauthenticated
 firmware is expected and must not affect local monitoring.
+
+The authenticated owner/operator web command writer targets
+`/devices/<deviceId>/command`. Execute Start/Stop only with an approved hardware
+safety setup; Mode A passive seeded-data verification does not require a relay
+command.
 
 - [ ] Start with the relay physically and logically OFF.
 - [ ] Confirm no actionable command exists under `/devices/<deviceId>/command`.
