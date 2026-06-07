@@ -300,11 +300,11 @@ static bool httpRequest(const char* method, const char* path, const String& payl
   int statusCode = performHttpRequest(method, path, payload, response);
   if (statusCode == 401 && deviceAuthIsEnabled()) {
     deviceAuthHandleRtdbUnauthorized(statusCode);
-    Serial.println("[auth] RTDB 401; bounded re-auth and retry once");
+    Serial.println("[auth] RTDB 401; bounded refresh and retry once");
     if (deviceAuthEnsureAuthenticated(true)) {
       statusCode = performHttpRequest(method, path, payload, response);
       if (statusCode == 401) {
-        deviceAuthHandleRtdbUnauthorized(statusCode);
+        deviceAuthHandleRtdbUnauthorized(statusCode, true);
       }
     }
   }
@@ -605,6 +605,16 @@ void firebaseBegin() {
   } else {
     Serial.println("[firebase] Using RTDB REST with Web API key only; no database secret/service account");
   }
+}
+
+bool firebaseAuthenticateDevice() {
+  if (!deviceAuthIsEnabled()) {
+    return false;
+  }
+  Serial.println("[auth] boot/network-ready authentication attempt");
+  const bool authenticated = deviceAuthEnsureAuthenticated();
+  deviceAuthPrintStatus();
+  return authenticated;
 }
 
 void firebasePrintAuthStatus() {

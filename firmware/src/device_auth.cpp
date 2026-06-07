@@ -4,6 +4,7 @@
 #include "credentials.h"
 #include "device_auth_config.h"
 #include "network.h"
+#include "time_sync.h"
 
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
@@ -29,6 +30,14 @@ void clearTokens(const char* error, int statusCode) {
   authState.lastAuthError = error;
 }
 
+void invalidateIdToken(const char* error, int statusCode) {
+  authState.idToken = "";
+  authState.expiresAtMs = 0;
+  authState.authenticated = false;
+  authState.lastAuthHttpStatus = statusCode;
+  authState.lastAuthError = error;
+}
+
 bool tokenStillValid() {
   if (!authState.authenticated || authState.idToken.length() == 0) {
     return false;
@@ -41,6 +50,7 @@ bool authConfigurationComplete() {
       !configured(VOLTIX_DEVICE_SECRET) ||
       !configured(VOLTIX_TOKEN_BROKER_ROOT_CA) ||
       !configured(VOLTIX_IDENTITY_TOOLKIT_ROOT_CA) ||
+      !configured(VOLTIX_SECURE_TOKEN_ROOT_CA) ||
       !configured(VOLTIX_FIREBASE_RTDB_ROOT_CA) ||
       !configured(FIREBASE_API_KEY) ||
       VOLTIX_DEVICE_CREDENTIAL_VERSION < 1) {
@@ -55,9 +65,10 @@ bool authConfigurationComplete() {
   return true;
 }
 
-int postJson(
+int postBody(
   const String& url,
   const char* rootCa,
+  const char* contentType,
   const String& payload,
   String& response
 ) {
@@ -69,11 +80,74 @@ int postJson(
     return -1;
   }
   http.setTimeout(AUTH_HTTP_TIMEOUT_MS);
-  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Content-Type", contentType);
   const int statusCode = http.POST(payload);
   response = http.getString();
   http.end();
   return statusCode;
+}
+
+int postJson(
+  const String& url,
+  const char* rootCa,
+  const String& payload,
+  String& response
+) {
+  return postBody(url, rootCa, "application/json", payload, response);
+}
+
+String urlEncode(const String& value) {
+  static constexpr char HEX_DIGITS[] = "0123456789ABCDEF";
+  String encoded;
+  encoded.reserve(value.length() * 3);
+  for (size_t index = 0; index < value.length(); index++) {
+    const unsigned char c = static_cast<unsigned char>(value[index]);
+    if ((c >= 'a' && c <= 'z') ||
+        (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') ||
+        c == '-' || c == '_' || c == '.' || c == '~') {
+      encoded += static_cast<char>(c);
+    } else {
+      encoded += '%';
+      encoded += HEX_DIGITS[(c >> 4) & 0x0F];
+      encoded += HEX_DIGITS[c & 0x0F];
+    }
+  }
+  return encoded;
+}
+
+bool storeTokens(
+  JsonDocument& responseDoc,
+  const char* idTokenKey,
+  const char* refreshTokenKey,
+  const char* expiresInKey,
+  int statusCode
+) {
+  if (!responseDoc[idTokenKey].is<const char*>() ||
+      !responseDoc[refreshTokenKey].is<const char*>()) {
+    clearTokens("identity_response_invalid", statusCode);
+    return false;
+  }
+
+  unsigned long expiresInSec = 0;
+  if (responseDoc[expiresInKey].is<const char*>()) {
+    expiresInSec = strtoul(responseDoc[expiresInKey].as<const char*>(), nullptr, 10);
+  } else if (responseDoc[expiresInKey].is<unsigned long>()) {
+    expiresInSec = responseDoc[expiresInKey].as<unsigned long>();
+  }
+  if (expiresInSec <= TOKEN_REFRESH_MARGIN_SEC) {
+    clearTokens("identity_expiry_invalid", statusCode);
+    return false;
+  }
+
+  authState.idToken = responseDoc[idTokenKey].as<const char*>();
+  authState.refreshToken = responseDoc[refreshTokenKey].as<const char*>();
+  authState.expiresAtMs =
+    millis() + (expiresInSec - TOKEN_REFRESH_MARGIN_SEC) * 1000UL;
+  authState.authenticated = true;
+  authState.lastAuthHttpStatus = statusCode;
+  authState.lastAuthError = "none";
+  return true;
 }
 
 bool exchangeCustomToken(const String& customToken) {
@@ -93,6 +167,7 @@ bool exchangeCustomToken(const String& customToken) {
     requestPayload,
     response
   );
+  requestPayload = "";
   authState.lastAuthHttpStatus = statusCode;
   if (statusCode < 200 || statusCode >= 300) {
     clearTokens("identity_exchange_failed", statusCode);
@@ -102,29 +177,69 @@ bool exchangeCustomToken(const String& customToken) {
   DynamicJsonDocument responseDoc(4096);
   if (deserializeJson(responseDoc, response) ||
       !responseDoc["idToken"].is<const char*>() ||
-      !responseDoc["refreshToken"].is<const char*>()) {
+      !responseDoc["refreshToken"].is<const char*>() ||
+      !responseDoc["localId"].is<const char*>()) {
     clearTokens("identity_response_invalid", statusCode);
     return false;
   }
 
-  unsigned long expiresInSec = 0;
-  if (responseDoc["expiresIn"].is<const char*>()) {
-    expiresInSec = strtoul(responseDoc["expiresIn"].as<const char*>(), nullptr, 10);
-  } else if (responseDoc["expiresIn"].is<unsigned long>()) {
-    expiresInSec = responseDoc["expiresIn"].as<unsigned long>();
-  }
-  if (expiresInSec <= TOKEN_REFRESH_MARGIN_SEC) {
-    clearTokens("identity_expiry_invalid", statusCode);
+  const String expectedLocalId = String("device:") + Config::DEVICE_ID;
+  if (expectedLocalId != responseDoc["localId"].as<const char*>()) {
+    clearTokens("identity_mismatch", statusCode);
     return false;
   }
 
-  authState.idToken = responseDoc["idToken"].as<const char*>();
-  authState.refreshToken = responseDoc["refreshToken"].as<const char*>();
-  authState.expiresAtMs =
-    millis() + (expiresInSec - TOKEN_REFRESH_MARGIN_SEC) * 1000UL;
-  authState.authenticated = true;
-  authState.lastAuthError = "none";
-  return true;
+  const bool stored = storeTokens(
+    responseDoc,
+    "idToken",
+    "refreshToken",
+    "expiresIn",
+    statusCode
+  );
+  response = "";
+  responseDoc.clear();
+  return stored;
+}
+
+bool refreshWithStoredToken() {
+  if (authState.refreshToken.length() == 0) {
+    return false;
+  }
+
+  String requestPayload =
+    String("grant_type=refresh_token&refresh_token=") +
+    urlEncode(authState.refreshToken);
+  String response;
+  const String url =
+    String("https://securetoken.googleapis.com/v1/token?key=") +
+    FIREBASE_API_KEY;
+  const int statusCode = postBody(
+    url,
+    VOLTIX_SECURE_TOKEN_ROOT_CA,
+    "application/x-www-form-urlencoded",
+    requestPayload,
+    response
+  );
+  requestPayload = "";
+  authState.lastAuthHttpStatus = statusCode;
+  if (statusCode < 200 || statusCode >= 300) {
+    clearTokens("token_refresh_failed", statusCode);
+    return false;
+  }
+
+  DynamicJsonDocument responseDoc(4096);
+  if (deserializeJson(responseDoc, response)) {
+    clearTokens("token_refresh_response_invalid", statusCode);
+    return false;
+  }
+  const String expectedLocalId = String("device:") + Config::DEVICE_ID;
+  if (!responseDoc["user_id"].is<const char*>() ||
+      expectedLocalId != responseDoc["user_id"].as<const char*>()) {
+    clearTokens("token_refresh_identity_mismatch", statusCode);
+    return false;
+  }
+  response = "";
+  return storeTokens(responseDoc, "id_token", "refresh_token", "expires_in", statusCode);
 }
 
 bool signInThroughBroker() {
@@ -142,6 +257,7 @@ bool signInThroughBroker() {
     requestPayload,
     response
   );
+  requestPayload = "";
   authState.lastAuthHttpStatus = statusCode;
   if (statusCode < 200 || statusCode >= 300) {
     clearTokens("broker_request_failed", statusCode);
@@ -195,15 +311,22 @@ bool deviceAuthEnsureAuthenticated(bool forceRefresh) {
     clearTokens("wifi_offline", -1);
     return false;
   }
+  if (!timeIsSynced()) {
+    invalidateIdToken("time_not_ready", 0);
+    return false;
+  }
   authState.lastAuthAttemptMs = millis();
   if (!authConfigurationComplete()) {
     return false;
   }
 
   authState.authRefreshInProgress = true;
-  const bool authenticated = signInThroughBroker();
+  const bool hadRefreshToken = authState.refreshToken.length() > 0;
+  const bool authenticated = hadRefreshToken
+    ? refreshWithStoredToken()
+    : signInThroughBroker();
   authState.authRefreshInProgress = false;
-  Serial.print("[auth] sign-in ");
+  Serial.print(hadRefreshToken ? "[auth] refresh " : "[auth] sign-in ");
   Serial.println(authenticated ? "OK" : "FAIL (local operation continues)");
   return authenticated;
 }
@@ -215,11 +338,15 @@ String deviceAuthAppendAuthQuery(const String& url) {
   return url + (url.indexOf('?') >= 0 ? "&auth=" : "?auth=") + authState.idToken;
 }
 
-void deviceAuthHandleRtdbUnauthorized(int statusCode) {
+void deviceAuthHandleRtdbUnauthorized(int statusCode, bool retryExhausted) {
   if (!authState.enabled) {
     return;
   }
-  clearTokens("rtdb_unauthorized", statusCode);
+  if (retryExhausted) {
+    clearTokens("rtdb_unauthorized_after_retry", statusCode);
+  } else {
+    invalidateIdToken("rtdb_unauthorized", statusCode);
+  }
 }
 
 void deviceAuthPrintStatus() {
