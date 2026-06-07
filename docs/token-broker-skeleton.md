@@ -98,7 +98,7 @@ and uses Admin privileges to read `/devices/{deviceId}`. It requires:
 - `deviceAuth.enabled === true`.
 - `deviceAuth.revoked !== true`.
 - `deviceAuth.credentialVersion` exactly matches the request.
-- `deviceAuth.hashAlg === "sha256"`.
+- `deviceAuth.hashAlg === "sha256-pepper-v1"`.
 - `deviceAuth.secretHash` matches a freshly computed digest using a
   constant-time comparison.
 
@@ -113,8 +113,10 @@ sha256(`${DEVICE_AUTH_PEPPER}:${deviceId}:${credentialVersion}:${deviceSecret}`)
 ```
 
 The raw secret is accepted only over the deployed HTTPS endpoint and is never
-stored or returned. Raw secrets and hashes must not be stored in a
-client-readable RTDB path.
+stored or returned. The production target should prevent client reads of
+device-auth hashes; until separately reviewed rules hardening exists, do not
+treat `secretHash` as confidential or as a substitute for protecting the raw
+secret and server-only pepper.
 
 After verification and custom-token creation succeed, the broker updates
 `deviceAuth.lastTokenIssuedAt` and `deviceAuth.lastSeenAt`. Failed verification
@@ -147,7 +149,7 @@ resulting server-side record through a trusted Admin/operator path:
     "enabled": true,
     "revoked": false,
     "credentialVersion": 1,
-    "hashAlg": "sha256",
+    "hashAlg": "sha256-pepper-v1",
     "secretHash": "<helper-output>"
   }
 }
@@ -200,6 +202,8 @@ npm run test:token-broker
 
 The tests use mocked Firebase Admin services and placeholder values only. They
 do not contact Firebase or require real credentials. See
+[`token-broker-e2e-smoke-test.md`](token-broker-e2e-smoke-test.md) for the
+explicit lab provisioning and live E2E workflow, and see
 [`device-token-broker-pseudocode.md`](device-token-broker-pseudocode.md) and
 [`esp32-production-device-auth-plan.md`](esp32-production-device-auth-plan.md)
 for the broader design and rollout gates.

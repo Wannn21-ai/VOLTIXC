@@ -48,7 +48,7 @@ function enabledDevice(overrides = {}) {
       enabled: true,
       revoked: false,
       credentialVersion: body.credentialVersion,
-      hashAlg: "sha256",
+      hashAlg: "sha256-pepper-v1",
       secretHash: broker.computeDeviceSecretHash(
         body.deviceId,
         body.credentialVersion,
