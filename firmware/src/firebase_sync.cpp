@@ -1,6 +1,8 @@
 #include "firebase_sync.h"
 #include "config.h"
 #include "credentials.h"
+#include "device_auth.h"
+#include "device_auth_config.h"
 #include "firebase_paths.h"
 #include "network.h"
 #include "relay.h"
@@ -206,7 +208,7 @@ static String makeUrl(const char* jsonPath) {
   if (!path.startsWith("/")) {
     path = "/" + path;
   }
-  return normalizeBaseUrl() + path;
+  return deviceAuthAppendAuthQuery(normalizeBaseUrl() + path);
 }
 
 static void logHttp(const char* method, const char* path, int statusCode, bool ok, bool forceLog) {
@@ -229,6 +231,43 @@ static void logHttp(const char* method, const char* path, int statusCode, bool o
   }
 }
 
+static int performHttpRequest(
+  const char* method,
+  const char* path,
+  const String& payload,
+  String* response
+) {
+  WiFiClientSecure client;
+  if (deviceAuthIsEnabled()) {
+    client.setCACert(VOLTIX_FIREBASE_RTDB_ROOT_CA);
+  } else {
+    client.setInsecure();
+  }
+
+  HTTPClient http;
+  const String url = makeUrl(path);
+  if (!http.begin(client, url)) {
+    return -1;
+  }
+
+  http.setTimeout(3000);
+  http.addHeader("Content-Type", "application/json");
+  int statusCode = -1;
+  if (strcmp(method, "GET") == 0) {
+    statusCode = http.GET();
+  } else if (strcmp(method, "PUT") == 0) {
+    statusCode = http.PUT(payload);
+  } else if (strcmp(method, "PATCH") == 0) {
+    statusCode = http.PATCH(payload);
+  }
+
+  if (response != nullptr) {
+    *response = http.getString();
+  }
+  http.end();
+  return statusCode;
+}
+
 static bool httpRequest(const char* method, const char* path, const String& payload, String* response, bool forceLog, int* statusOut = nullptr) {
   if (!networkIsConnected()) {
     if (statusOut != nullptr) {
@@ -244,38 +283,36 @@ static bool httpRequest(const char* method, const char* path, const String& payl
     return false;
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
-
-  HTTPClient http;
-  const String url = makeUrl(path);
-  if (!http.begin(client, url)) {
+  if (deviceAuthIsEnabled() && !deviceAuthEnsureAuthenticated()) {
     if (statusOut != nullptr) {
       *statusOut = -1;
     }
-    logHttp(method, path, -1, false, true);
+    if (forceLog) {
+      Serial.print("[firebase] SKIP ");
+      Serial.print(method);
+      Serial.print(" ");
+      Serial.print(path);
+      Serial.println(" device auth unavailable (local operation continues)");
+    }
     return false;
   }
 
-  http.setTimeout(3000);
-  http.addHeader("Content-Type", "application/json");
-  int statusCode = -1;
-  if (strcmp(method, "GET") == 0) {
-    statusCode = http.GET();
-  } else if (strcmp(method, "PUT") == 0) {
-    statusCode = http.PUT(payload);
-  } else if (strcmp(method, "PATCH") == 0) {
-    statusCode = http.PATCH(payload);
+  int statusCode = performHttpRequest(method, path, payload, response);
+  if (statusCode == 401 && deviceAuthIsEnabled()) {
+    deviceAuthHandleRtdbUnauthorized(statusCode);
+    Serial.println("[auth] RTDB 401; bounded re-auth and retry once");
+    if (deviceAuthEnsureAuthenticated(true)) {
+      statusCode = performHttpRequest(method, path, payload, response);
+      if (statusCode == 401) {
+        deviceAuthHandleRtdbUnauthorized(statusCode);
+      }
+    }
   }
 
   const bool ok = statusCode >= 200 && statusCode < 300;
   if (statusOut != nullptr) {
     *statusOut = statusCode;
   }
-  if (response != nullptr) {
-    *response = http.getString();
-  }
-  http.end();
 
   logHttp(method, path, statusCode, ok, forceLog || !ok);
   return ok;
@@ -562,7 +599,16 @@ static bool pollFinalCommand() {
 void firebaseBegin() {
   Serial.print("[firebase] REST initialized deviceId=");
   Serial.println(Config::DEVICE_ID);
-  Serial.println("[firebase] Using RTDB REST with Web API key only; no database secret/service account");
+  deviceAuthBegin();
+  if (deviceAuthIsEnabled()) {
+    Serial.println("[firebase] Device auth scaffold enabled; tokens remain redacted");
+  } else {
+    Serial.println("[firebase] Using RTDB REST with Web API key only; no database secret/service account");
+  }
+}
+
+void firebasePrintAuthStatus() {
+  deviceAuthPrintStatus();
 }
 
 void firebasePublishLive() {
