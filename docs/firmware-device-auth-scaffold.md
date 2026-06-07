@@ -33,6 +33,7 @@ disabled and empty:
 #define VOLTIX_DEVICE_CREDENTIAL_VERSION 1
 #define VOLTIX_TOKEN_BROKER_ROOT_CA ""
 #define VOLTIX_IDENTITY_TOOLKIT_ROOT_CA ""
+#define VOLTIX_SECURE_TOKEN_ROOT_CA ""
 #define VOLTIX_FIREBASE_RTDB_ROOT_CA ""
 ```
 
@@ -46,8 +47,8 @@ Before enabling auth locally:
 2. Provision the exact device credential/version for
    `esp32-voltix-001`.
 3. Set the reviewed HTTPS broker URL and unique device secret locally.
-4. Set reviewed PEM root CA certificates for the broker, Identity Toolkit, and
-   Firebase RTDB.
+4. Set reviewed PEM root CA certificates for the broker, Identity Toolkit,
+   Secure Token refresh endpoint, and Firebase RTDB.
 5. Change only the ignored local definition to
    `VOLTIX_DEVICE_AUTH_ENABLED=1`.
 
@@ -75,9 +76,10 @@ The custom token exists only long enough to exchange it. Tokens and the device
 secret are never printed. ID and refresh tokens remain in volatile memory only;
 they are not written to LittleFS or Preferences.
 
-The scaffold currently tracks the refresh token but performs bounded broker
-re-sign-in when a token expires or RTDB returns `401`. A future reviewed change
-may add direct Secure Token refresh.
+The refresh token is used only from RAM against the certificate-validated
+Secure Token endpoint. An expired token or RTDB `401` triggers one refresh
+attempt. The original RTDB request is retried once only after refresh succeeds.
+Repeated failure clears auth state and returns to the bounded backoff.
 
 ## RTDB Request Behavior
 
@@ -122,3 +124,6 @@ Before any later live opt-in, re-check:
 - completed sessions save to LittleFS before cloud sync;
 - failed cloud sync remains pending;
 - Serial output contains no secrets or tokens.
+
+Follow [`firmware-device-auth-lab-checklist.md`](firmware-device-auth-lab-checklist.md)
+for the controlled one-device lab run and restore steps.

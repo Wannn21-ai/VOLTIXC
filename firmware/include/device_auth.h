@@ -18,6 +18,6 @@ void deviceAuthBegin();
 bool deviceAuthIsEnabled();
 bool deviceAuthEnsureAuthenticated(bool forceRefresh = false);
 String deviceAuthAppendAuthQuery(const String& url);
-void deviceAuthHandleRtdbUnauthorized(int statusCode);
+void deviceAuthHandleRtdbUnauthorized(int statusCode, bool retryExhausted = false);
 void deviceAuthPrintStatus();
 const DeviceAuthState& deviceAuthGetState();

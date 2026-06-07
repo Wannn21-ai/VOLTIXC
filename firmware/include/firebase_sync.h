@@ -4,6 +4,7 @@
 #include "state.h"
 
 void firebaseBegin();
+bool firebaseAuthenticateDevice();
 void firebasePrintAuthStatus();
 void firebasePublishLive();
 void firebaseReadConfig();

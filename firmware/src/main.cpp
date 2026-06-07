@@ -502,6 +502,7 @@ void loop() {
       Serial.println("[network] Manual offline unlocked, WiFi connected");
     }
     timeSyncBegin();
+    firebaseAuthenticateDevice();
     if (appConfig.configPendingSync) {
       Serial.println("[config] Syncing pending config to Firebase");
       if (firebasePushDeviceConfig()) {
