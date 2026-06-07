@@ -2,6 +2,7 @@
   "name": "voltix-web",
   "private": true,
   "scripts": {
-    "build:web": "node scripts/build-web.mjs"
+    "build:web": "node scripts/build-web.mjs",
+    "test:token-broker": "node --test test/device-token.test.js"
   }
 }
