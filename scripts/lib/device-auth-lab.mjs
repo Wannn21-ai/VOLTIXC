@@ -44,6 +44,50 @@ export function tokenFingerprint(token) {
   return createHash("sha256").update(token, "utf8").digest("hex").slice(0, 12);
 }
 
+export function decodeJwtPayload(token) {
+  if (typeof token !== "string") {
+    throw new Error("ID token was missing or malformed.");
+  }
+
+  const segments = token.split(".");
+  if (segments.length !== 3 ||
+      segments.some((segment) => !segment || !/^[A-Za-z0-9_-]+$/.test(segment))) {
+    throw new Error("ID token was missing or malformed.");
+  }
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(segments[1], "base64url").toString("utf8")
+    );
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error();
+    }
+    return payload;
+  } catch {
+    throw new Error("ID token was missing or malformed.");
+  }
+}
+
+export function verifyDeviceIdToken(
+  token,
+  deviceId,
+  credentialVersion
+) {
+  const payload = decodeJwtPayload(token);
+  const expectedSubject = `device:${deviceId}`;
+  const subjectMatches = payload.sub === expectedSubject ||
+    payload.user_id === expectedSubject;
+
+  if (!subjectMatches ||
+      payload.deviceId !== deviceId ||
+      payload.deviceRole !== "hardware" ||
+      payload.credentialVersion !== credentialVersion) {
+    throw new Error("ID token identity or claims did not match the lab device.");
+  }
+
+  return payload;
+}
+
 export function validateBrokerUrl(value) {
   let url;
   try {

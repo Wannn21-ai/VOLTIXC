@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import {
   DEVICE_AUTH_HASH_ALG,
   computeDeviceSecretHash,
+  decodeJwtPayload,
   validateBrokerUrl,
   validateDatabaseUrl,
+  verifyDeviceIdToken,
 } from "../scripts/lib/device-auth-lab.mjs";
 import { runProvision } from "../scripts/provision-device-auth.mjs";
 import { runSmoke } from "../scripts/smoke-device-token.mjs";
@@ -68,6 +70,20 @@ function jsonResponse(status, body) {
       return body;
     },
   };
+}
+
+function createIdToken(overrides = {}) {
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" }))
+    .toString("base64url");
+  const payload = Buffer.from(JSON.stringify({
+    sub: "device:esp32-voltix-001",
+    user_id: "device:esp32-voltix-001",
+    deviceId: "esp32-voltix-001",
+    deviceRole: "hardware",
+    credentialVersion: 1,
+    ...overrides,
+  })).toString("base64url");
+  return `${header}.${payload}.mock-signature`;
 }
 
 test("lab URL validation permits HTTPS and localhost HTTP only", () => {
@@ -205,7 +221,7 @@ test("smoke workflow fails before requests when env is missing", async () => {
 
 test("smoke workflow exchanges tokens, reads config, and redacts output", async () => {
   const customToken = "mock-custom-token-value-long";
-  const idToken = "mock-id-token-value-long-enough";
+  const idToken = createIdToken();
   const requests = [];
   const logs = [];
   const responses = [
@@ -213,7 +229,6 @@ test("smoke workflow exchanges tokens, reads config, and redacts output", async 
     jsonResponse(200, {
       idToken,
       expiresIn: "3600",
-      localId: "device:esp32-voltix-001",
     }),
     jsonResponse(200, { currency: "IDR" }),
   ];
@@ -244,8 +259,7 @@ test("smoke live patch requires opt-in and writes harmless marker only", async (
   const responses = [
     jsonResponse(200, { customToken: "mock-custom-token-value-long" }),
     jsonResponse(200, {
-      idToken: "mock-id-token-value-long-enough",
-      localId: "device:esp32-voltix-001",
+      idToken: createIdToken(),
     }),
     jsonResponse(200, {}),
     jsonResponse(200, {}),
@@ -286,21 +300,106 @@ test("smoke network errors are redacted before reporting", async () => {
   );
 });
 
-test("smoke rejects an unexpected Firebase Auth device identity", async () => {
+test("JWT helper accepts user_id when sub is absent", () => {
+  const idToken = createIdToken({ sub: undefined });
+  const payload = verifyDeviceIdToken(idToken, "esp32-voltix-001", 1);
+
+  assert.equal(payload.user_id, "device:esp32-voltix-001");
+});
+
+test("JWT helper accepts sub when user_id is absent", () => {
+  const idToken = createIdToken({ user_id: undefined });
+  const payload = verifyDeviceIdToken(idToken, "esp32-voltix-001", 1);
+
+  assert.equal(payload.sub, "device:esp32-voltix-001");
+});
+
+test("JWT helper rejects missing and malformed ID tokens", () => {
+  for (const token of [
+    undefined,
+    "",
+    "not-a-jwt",
+    "bad.payload.signature",
+    "a.W10.signature",
+  ]) {
+    assert.throws(
+      () => decodeJwtPayload(token),
+      /ID token was missing or malformed/
+    );
+  }
+});
+
+for (const [name, overrides] of [
+  ["subject", { sub: "device:some-other-device", user_id: null }],
+  ["deviceId", { deviceId: "some-other-device" }],
+  ["deviceRole", { deviceRole: "user" }],
+  ["credentialVersion", { credentialVersion: 2 }],
+]) {
+  test(`smoke rejects mismatched ID token ${name} before RTDB access`, async () => {
+    const requests = [];
+    const responses = [
+      jsonResponse(200, { customToken: "mock-custom-token-value-long" }),
+      jsonResponse(200, { idToken: createIdToken(overrides) }),
+    ];
+
+    await assert.rejects(
+      runSmoke({
+        env: SMOKE_ENV,
+        fetchImpl: async (url) => {
+          requests.push(url.toString());
+          return responses.shift();
+        },
+        log: () => {},
+      }),
+      /identity or claims did not match/
+    );
+    assert.equal(requests.length, 2);
+  });
+}
+
+test("smoke rejects a missing ID token before RTDB access", async () => {
+  const requests = [];
   const responses = [
     jsonResponse(200, { customToken: "mock-custom-token-value-long" }),
-    jsonResponse(200, {
-      idToken: "mock-id-token-value-long-enough",
-      localId: "device:some-other-device",
-    }),
+    jsonResponse(200, {}),
   ];
 
   await assert.rejects(
     runSmoke({
       env: SMOKE_ENV,
-      fetchImpl: async () => responses.shift(),
+      fetchImpl: async (url) => {
+        requests.push(url.toString());
+        return responses.shift();
+      },
       log: () => {},
     }),
-    /unexpected device identity/
+    /ID token was missing or malformed/
   );
+  assert.equal(requests.length, 2);
+});
+
+test("smoke rejects a malformed ID token before RTDB access", async () => {
+  const malformedToken = "not-a-valid-jwt";
+  const requests = [];
+  const responses = [
+    jsonResponse(200, { customToken: "mock-custom-token-value-long" }),
+    jsonResponse(200, { idToken: malformedToken }),
+  ];
+
+  await assert.rejects(
+    runSmoke({
+      env: SMOKE_ENV,
+      fetchImpl: async (url) => {
+        requests.push(url.toString());
+        return responses.shift();
+      },
+      log: () => {},
+    }),
+    (error) => {
+      assert.equal(error.message, "ID token was missing or malformed.");
+      assert.equal(error.message.includes(malformedToken), false);
+      return true;
+    }
+  );
+  assert.equal(requests.length, 2);
 });
