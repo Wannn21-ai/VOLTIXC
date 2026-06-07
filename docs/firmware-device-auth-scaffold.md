@@ -76,6 +76,16 @@ The custom token exists only long enough to exchange it. Tokens and the device
 secret are never printed. ID and refresh tokens remain in volatile memory only;
 they are not written to LittleFS or Preferences.
 
+The Identity Toolkit request is built from a validated JWT-shaped custom token
+with an exact checked payload length, so the custom token cannot be silently
+truncated by an undersized JSON document. The live Identity Toolkit response
+does not need to include `localId`. Firmware decodes the returned ID-token JWT
+payload and fails closed unless `sub` or `user_id`, `deviceId`, `deviceRole`,
+and `credentialVersion` match the configured hardware identity.
+The local decode does not independently verify the JWT signature; the ID token
+was received directly from Identity Toolkit over certificate-validated HTTPS,
+and RTDB performs authoritative signature/rules verification when it is used.
+
 The refresh token is used only from RAM against the certificate-validated
 Secure Token endpoint. An expired token or RTDB `401` triggers one refresh
 attempt. The original RTDB request is retried once only after refresh succeeds.
