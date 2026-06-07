@@ -4,6 +4,9 @@
   "scripts": {
     "build:web": "node scripts/build-web.mjs",
     "hash:device-secret": "node scripts/hash-device-secret.mjs",
+    "provision:device-auth": "node scripts/provision-device-auth.mjs",
+    "smoke:device-token": "node scripts/smoke-device-token.mjs",
+    "test:device-auth-lab": "node --test test/device-auth-lab.test.mjs",
     "test:token-broker": "node --test test/device-token.test.js"
   },
   "dependencies": {

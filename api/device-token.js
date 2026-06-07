@@ -139,7 +139,7 @@ async function verifyDeviceCredential(
       !deviceAuth || deviceAuth.enabled !== true ||
       deviceAuth.revoked === true ||
       deviceAuth.credentialVersion !== credentialVersion ||
-      deviceAuth.hashAlg !== "sha256") {
+      deviceAuth.hashAlg !== "sha256-pepper-v1") {
     return { verified: false };
   }
 
