@@ -507,15 +507,19 @@ String deviceAuthAppendAuthQuery(const String& url) {
   return url + (url.indexOf('?') >= 0 ? "&auth=" : "?auth=") + authState.idToken;
 }
 
-void deviceAuthHandleRtdbUnauthorized(int statusCode, bool retryExhausted) {
+void deviceAuthHandleRtdbUnauthorized(int statusCode) {
   if (!authState.enabled) {
     return;
   }
-  if (retryExhausted) {
-    clearTokens("rtdb_unauthorized_after_retry", statusCode);
-  } else {
-    invalidateIdToken("rtdb_unauthorized", statusCode);
+  invalidateIdToken("rtdb_unauthorized", statusCode);
+}
+
+void deviceAuthHandleRtdbPathUnauthorized(int statusCode) {
+  if (!authState.enabled) {
+    return;
   }
+  authState.lastAuthHttpStatus = statusCode;
+  authState.lastAuthError = "rtdb_path_unauthorized";
 }
 
 void deviceAuthPrintStatus() {

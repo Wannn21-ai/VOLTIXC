@@ -9,6 +9,7 @@ void firebasePrintAuthStatus();
 void firebasePublishLive();
 void firebaseReadConfig();
 bool firebasePushDeviceConfig();
+bool firebaseDeviceConfigPushBlocked();
 void firebasePollCommand();
 void firebaseAckCommand();
 bool firebasePushCompletedSession(const CompletedSessionSnapshot& snapshot);
