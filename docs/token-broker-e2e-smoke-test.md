@@ -167,8 +167,23 @@ It performs:
 
 1. `POST TOKEN_BROKER_URL` with the lab device credential.
 2. Identity Toolkit `accounts:signInWithCustomToken`.
-3. Verify Identity Toolkit returns `localId = device:esp32-voltix-001`.
+3. Decode the returned ID token JWT payload locally and fail closed unless:
+
+   ```text
+   sub or user_id = device:esp32-voltix-001
+   deviceId = esp32-voltix-001
+   deviceRole = hardware
+   credentialVersion = 1
+   ```
+
 4. Authenticated `GET /devices/esp32-voltix-001/config.json`.
+
+The live Identity Toolkit response may omit `localId`, so the smoke workflow
+does not depend on that response field. Firebase custom claims are expected as
+top-level ID-token payload fields. The local decode does not independently
+verify the JWT signature; the token was received directly from Identity Toolkit
+over HTTPS, and Firebase RTDB performs the authoritative signature and rules
+verification when the token is used for the config read.
 
 Expected output shape:
 
@@ -215,6 +230,8 @@ Run these deliberately one at a time, then restore the correct value:
 | Broker missing server env | Broker returns generic HTTP `503` |
 | Non-local HTTP broker URL | Smoke script refuses before request |
 | Owner/member mismatch | Provisioning refuses before write |
+| Missing/malformed ID token | Smoke script stops before RTDB access |
+| ID token subject/custom claim mismatch | Smoke script stops before RTDB access |
 
 The scripts report only the failed stage and HTTP status. They do not print
 response bodies that might contain tokens or sensitive service details.

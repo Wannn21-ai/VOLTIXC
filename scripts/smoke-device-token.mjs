@@ -9,6 +9,7 @@ import {
   tokenFingerprint,
   validateBrokerUrl,
   validateDatabaseUrl,
+  verifyDeviceIdToken,
 } from "./lib/device-auth-lab.mjs";
 
 const REQUIRED_ENV = [
@@ -62,9 +63,7 @@ export async function runSmoke({
     200,
     "Identity Toolkit"
   );
-  if (identityBody.localId !== `device:${deviceId}`) {
-    throw new Error("Identity Toolkit returned an unexpected device identity.");
-  }
+  verifyDeviceIdToken(identityBody.idToken, deviceId, credentialVersion);
   const idTokenFingerprint = tokenFingerprint(identityBody.idToken);
   log(`[smoke] Identity Toolkit: 200; ID token fp=${idTokenFingerprint}`);
 
