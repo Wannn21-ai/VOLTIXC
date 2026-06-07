@@ -10,6 +10,9 @@ const credentialsExample = await readFile(
 const authSource = await readFile("firmware/src/device_auth.cpp", "utf8");
 const firebaseSource = await readFile("firmware/src/firebase_sync.cpp", "utf8");
 const mainSource = await readFile("firmware/src/main.cpp", "utf8");
+const storageSource = await readFile("firmware/src/storage.cpp", "utf8");
+const sessionSource = await readFile("firmware/src/session.cpp", "utf8");
+const relaySource = await readFile("firmware/src/relay.cpp", "utf8");
 const checklist = await readFile(
   "docs/firmware-device-auth-lab-checklist.md",
   "utf8"
@@ -96,6 +99,35 @@ test("path-level RTDB denial preserves auth and blocks repeated config pushes", 
   assert.match(firebaseSource, /local config remains pending/);
   assert.match(mainSource, /!firebaseDeviceConfigPushBlocked\(\)/);
   assert.doesNotMatch(authSource, /rtdb_unauthorized_after_retry/);
+});
+
+test("fresh commands outrank optional sync work and report redacted latency", () => {
+  assert.match(firebaseSource, /FINAL_COMMAND_POLL_INTERVAL_MS = 500UL/);
+  assert.match(firebaseSource, /LEGACY_COMMAND_POLL_INTERVAL_MS = 5000UL/);
+  assert.match(firebaseSource, /legacyCommandPathDisabled = true/);
+  assert.match(firebaseSource, /Legacy commands\/current denied; fallback disabled/);
+  assert.match(mainSource, /now - lastFirebaseCommandMs >= 500UL/);
+  assert.match(mainSource, /const bool commandTransitionPending = firebaseCommandTransitionPending\(\)/);
+  assert.match(mainSource, /!commandTransitionPending[\s\S]*firebaseReadConfig\(\)/);
+  assert.match(mainSource, /!commandTransitionPending[\s\S]*storageSyncPendingHistoryToFirebase\(\)/);
+  assert.match(firebaseSource, /logCommandLatency\("START"/);
+  assert.match(firebaseSource, /logCommandLatency\("STOP"/);
+  assert.match(firebaseSource, /accepted ageMs=/);
+  assert.match(firebaseSource, /relayLatencyMs=/);
+  assert.match(firebaseSource, /relayLastToggleMs\(\)/);
+  assert.match(relaySource, /unsigned long relayLastToggleMs\(\)/);
+  assert.match(firebaseSource, /lastLoggedStaleFinalCommandAt/);
+});
+
+test("history final path succeeds independently and pending sync is budgeted", () => {
+  assert.match(firebaseSource, /return finalOk;/);
+  assert.match(firebaseSource, /legacyHistoryMirrorDisabled = true/);
+  assert.match(firebaseSource, /compatibility mirror disabled/);
+  assert.match(firebaseSource, /Legacy completedSessions mirror skipped/);
+  assert.match(storageSource, /budget=one/);
+  assert.match(storageSource, /break;/);
+  assert.match(sessionSource, /queued for background cloud sync/);
+  assert.doesNotMatch(sessionSource, /queued = firebasePushCompletedSession\(snapshot\)/);
 });
 
 test("lab checklist documents private opt-in, redaction, and local safety", () => {

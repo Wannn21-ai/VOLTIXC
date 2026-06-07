@@ -11,6 +11,7 @@ void firebaseReadConfig();
 bool firebasePushDeviceConfig();
 bool firebaseDeviceConfigPushBlocked();
 void firebasePollCommand();
+bool firebaseCommandTransitionPending();
 void firebaseAckCommand();
 bool firebasePushCompletedSession(const CompletedSessionSnapshot& snapshot);
 bool firebasePushCompletedSession(JsonObject entry);

@@ -348,7 +348,7 @@ static void processSerialCommand(char* rawCommand) {
     if (networkIsConnected()) {
       const bool ok = storageSyncPendingHistoryToFirebase();
       Serial.print("[serial] ");
-      Serial.println(ok ? "OK: pending history sync complete" : "WARN: pending history sync incomplete");
+      Serial.println(ok ? "OK: pending history sync cycle complete" : "WARN: pending history sync cycle incomplete");
     } else {
       Serial.println("[serial] ERROR: WiFi offline, cannot sync pending history");
     }
@@ -489,7 +489,6 @@ void loop() {
   const bool recoveryActive = sessionRecoveryIsActive();
   if (wasRecoveryActive && !recoveryActive && networkIsConnected() && !offlineModeBlocksAutoOnline()) {
     firebasePublishLive();
-    storageSyncPendingHistoryToFirebase();
   }
   wasRecoveryActive = recoveryActive;
 
@@ -503,25 +502,10 @@ void loop() {
     }
     timeSyncBegin();
     firebaseAuthenticateDevice();
-    if (appConfig.configPendingSync && !firebaseDeviceConfigPushBlocked()) {
-      Serial.println("[config] Syncing pending config to Firebase");
-      if (firebasePushDeviceConfig()) {
-        Serial.println("[config] Pending config sync OK");
-      } else {
-        Serial.println("[config] Pending config sync FAIL");
-      }
-    }
-    firebaseReadConfig();
+    firebasePollCommand();
     firebasePublishLive();
     if (restoredFromManualOffline) {
       Serial.println("[firebase] Live publish after manual offline unlock");
-      Serial.println("[history] Sync pending after manual offline unlock");
-      storageSyncPendingHistoryToFirebase();
-    } else if (timeIsSynced()) {
-      Serial.println("[main] WiFi connected, syncing pending local history");
-      storageSyncPendingHistoryToFirebase();
-    } else {
-      Serial.println("[time] NTP not ready, pending history sync deferred");
     }
     lastFirebaseConfigMs = now;
     lastFirebaseLiveMs = now;
@@ -573,7 +557,15 @@ void loop() {
   offlineModeUpdate();
 
   if (onlineServicesAllowed) {
+    if (lastFirebaseCommandMs == 0 || now - lastFirebaseCommandMs >= 500UL) {
+      lastFirebaseCommandMs = now;
+      firebasePollCommand();
+    }
+
+    const bool commandTransitionPending = firebaseCommandTransitionPending();
+
     if (appConfig.configPendingSync &&
+        !commandTransitionPending &&
         !firebaseDeviceConfigPushBlocked() &&
         (lastFirebaseConfigMs == 0 || now - lastFirebaseConfigMs >= 30000UL)) {
       lastFirebaseConfigMs = now;
@@ -585,7 +577,8 @@ void loop() {
       }
     }
 
-    if (lastFirebaseConfigMs == 0 || now - lastFirebaseConfigMs >= 30000UL) {
+    if (!commandTransitionPending &&
+        (lastFirebaseConfigMs == 0 || now - lastFirebaseConfigMs >= 30000UL)) {
       lastFirebaseConfigMs = now;
       firebaseReadConfig();
     }
@@ -595,12 +588,8 @@ void loop() {
       firebasePublishLive();
     }
 
-    if (lastFirebaseCommandMs == 0 || now - lastFirebaseCommandMs >= 1000UL) {
-      lastFirebaseCommandMs = now;
-      firebasePollCommand();
-    }
-
-    if (lastPendingHistorySyncMs == 0 || now - lastPendingHistorySyncMs >= 30000UL) {
+    if (!commandTransitionPending &&
+        (lastPendingHistorySyncMs == 0 || now - lastPendingHistorySyncMs >= 30000UL)) {
       lastPendingHistorySyncMs = now;
       storageSyncPendingHistoryToFirebase();
     }

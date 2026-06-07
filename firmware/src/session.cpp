@@ -286,14 +286,7 @@ static void finalizeRecoveredNoLoad() {
   sessionData.pendingSync = saved;
 
   if (saved) {
-    if (networkIsConnected()) {
-      queued = firebasePushCompletedSession(snapshot);
-      if (queued) {
-        sessionData.pendingSync = !storageMarkSessionQueued(snapshot.sessionId);
-      }
-    } else {
-      Serial.println("[recovery] WiFi offline, recovered session saved as pending sync");
-    }
+    Serial.println("[recovery] Recovered session queued for background cloud sync");
   }
   logHistoryOutcome(snapshot.sessionId, saved, queued, sessionData.pendingSync);
 
@@ -518,14 +511,7 @@ void sessionStop(EndReason reason) {
 
   if (saved) {
     storageClearActiveSessionCheckpoint();
-    if (networkIsConnected()) {
-      queued = firebasePushCompletedSession(snapshot);
-      if (queued) {
-        sessionData.pendingSync = !storageMarkSessionQueued(snapshot.sessionId);
-      }
-    } else {
-      Serial.println("[session] WiFi offline, final session saved as pending sync");
-    }
+    Serial.println("[session] Final session queued for background cloud sync");
   } else {
     Serial.println("[session] Local save failed, session remains unsynced");
   }

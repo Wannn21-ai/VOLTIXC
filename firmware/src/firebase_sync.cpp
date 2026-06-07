@@ -19,7 +19,8 @@
 #include <WiFiClientSecure.h>
 
 static constexpr unsigned long HTTP_LOG_INTERVAL_MS = 5000UL;
-static constexpr unsigned long FINAL_COMMAND_POLL_INTERVAL_MS = 5000UL;
+static constexpr unsigned long FINAL_COMMAND_POLL_INTERVAL_MS = 500UL;
+static constexpr unsigned long LEGACY_COMMAND_POLL_INTERVAL_MS = 5000UL;
 static constexpr uint64_t FINAL_COMMAND_MAX_AGE_MS = 5ULL * 60ULL * 1000ULL;
 
 static char lastProcessedCommandId[48] = "";
@@ -34,10 +35,14 @@ static char pendingStartCommandId[48] = "";
 static unsigned long lastLiveLogMs = 0;
 static unsigned long lastPollLogMs = 0;
 static unsigned long lastFinalCommandPollMs = 0;
+static unsigned long lastLegacyCommandPollMs = 0;
 static unsigned long lastFinalCommandLogMs = 0;
+static uint64_t lastLoggedStaleFinalCommandAt = 0;
 static bool missingLiveDeviceIdLogged = false;
 static bool missingCommandDeviceIdLogged = false;
 static bool configPushBlockedByRules = false;
+static bool legacyCommandPathDisabled = false;
+static bool legacyHistoryMirrorDisabled = false;
 
 static String configJsonPath(const String& configPath) {
   return configPath + ".json";
@@ -448,22 +453,41 @@ static bool pushHistoryPayload(const char* sessionId, const String& payload) {
     Serial.print(sessionId);
     Serial.print(" status=");
     Serial.println(finalStatus);
+    return false;
   }
 
-  int legacyStatus = -1;
-  const String legacyPath = completedSessionJsonPath(sessionId);
-  const bool legacyOk = httpRequest("PUT", legacyPath.c_str(), payload, nullptr, true, &legacyStatus);
-  if (legacyOk) {
-    Serial.print("[history] Legacy completedSessions compatibility synced sessionId=");
-    Serial.println(sessionId);
+  if (!legacyHistoryMirrorDisabled) {
+    int legacyStatus = -1;
+    bool legacyPathDenied = false;
+    const String legacyPath = completedSessionJsonPath(sessionId);
+    const bool legacyOk = httpRequest(
+      "PUT",
+      legacyPath.c_str(),
+      payload,
+      nullptr,
+      true,
+      &legacyStatus,
+      &legacyPathDenied
+    );
+    if (legacyOk) {
+      Serial.print("[history] Legacy completedSessions compatibility synced sessionId=");
+      Serial.println(sessionId);
+    } else if (legacyPathDenied) {
+      legacyHistoryMirrorDisabled = true;
+      Serial.print("[history] Legacy completedSessions denied; compatibility mirror disabled sessionId=");
+      Serial.println(sessionId);
+    } else {
+      Serial.print("[history] Legacy completedSessions mirror failed optional sessionId=");
+      Serial.print(sessionId);
+      Serial.print(" status=");
+      Serial.println(legacyStatus);
+    }
   } else {
-    Serial.print("[history] Legacy completedSessions sync failed, kept pending sessionId=");
-    Serial.print(sessionId);
-    Serial.print(" status=");
-    Serial.println(legacyStatus);
+    Serial.print("[history] Legacy completedSessions mirror skipped sessionId=");
+    Serial.println(sessionId);
   }
 
-  return finalOk && legacyOk;
+  return finalOk;
 }
 
 static void addFinalHistoryFields(JsonDocument& doc) {
@@ -585,7 +609,36 @@ static bool finalCommandIsStale(uint64_t updatedAt) {
   return false;
 }
 
+static unsigned long commandAgeMs(uint64_t updatedAt) {
+  if (!timeIsSynced()) {
+    return 0;
+  }
+  const uint64_t now = getUnixMs();
+  if (updatedAt == 0 || updatedAt > now) {
+    return 0;
+  }
+  const uint64_t age = now - updatedAt;
+  return age > 0xFFFFFFFFULL
+    ? 0xFFFFFFFFUL
+    : static_cast<unsigned long>(age);
+}
+
+static void logCommandLatency(
+  const char* action,
+  uint64_t updatedAt,
+  unsigned long receivedAtMs
+) {
+  Serial.print("[command] ");
+  Serial.print(action);
+  Serial.print(" accepted ageMs=");
+  Serial.print(commandAgeMs(updatedAt));
+  Serial.print(" relayLatencyMs=");
+  const unsigned long relayAtMs = relayLastToggleMs();
+  Serial.println(relayAtMs >= receivedAtMs ? relayAtMs - receivedAtMs : 0UL);
+}
+
 static void processFinalCommand(JsonDocument& doc, uint64_t updatedAt) {
+  const unsigned long receivedAtMs = millis();
   const char* relay = doc["relay"].as<const char*>();
   const bool startRequested = doc["startSession"].as<bool>() || strcmp(relay, "ON") == 0;
   const bool stopRequested = doc["stopSession"].as<bool>() || strcmp(relay, "OFF") == 0;
@@ -608,7 +661,7 @@ static void processFinalCommand(JsonDocument& doc, uint64_t updatedAt) {
       Serial.println("[command] Final START ignored: device busy");
       return;
     }
-    Serial.println("[command] Final START accepted");
+    logCommandLatency("START", updatedAt, receivedAtMs);
     return;
   }
 
@@ -616,7 +669,7 @@ static void processFinalCommand(JsonDocument& doc, uint64_t updatedAt) {
     if (sessionIsActive()) {
       sessionStop(EndReason::USER_STOP);
     }
-    Serial.println("[command] Final STOP processed");
+    logCommandLatency("STOP", updatedAt, receivedAtMs);
     return;
   }
 
@@ -653,13 +706,15 @@ static bool pollFinalCommand() {
 
   uint64_t updatedAt = 0;
   if (!validateFinalCommand(doc, updatedAt)) {
-    return false;
+    return true;
   }
   if (finalCommandIsStale(updatedAt)) {
-    if (shouldLog(lastFinalCommandLogMs)) {
+    if (updatedAt != lastLoggedStaleFinalCommandAt &&
+        shouldLog(lastFinalCommandLogMs)) {
+      lastLoggedStaleFinalCommandAt = updatedAt;
       Serial.println("[command] Ignored stale final command");
     }
-    return false;
+    return true;
   }
 
   Serial.println("[command] Loaded from final device command path");
@@ -881,9 +936,30 @@ void firebasePollCommand() {
   }
 
   // Transitional fallback remains until final command device auth is available.
+  const unsigned long now = millis();
+  if (legacyCommandPathDisabled ||
+      (lastLegacyCommandPollMs > 0 &&
+       now - lastLegacyCommandPollMs < LEGACY_COMMAND_POLL_INTERVAL_MS)) {
+    return;
+  }
+  lastLegacyCommandPollMs = now;
+
   String response;
   const bool forceLog = shouldLog(lastPollLogMs);
-  if (!httpRequest("GET", "/devices/esp32-voltix-001/commands/current.json", "", &response, forceLog)) {
+  bool pathUnauthorized = false;
+  if (!httpRequest(
+        "GET",
+        "/devices/esp32-voltix-001/commands/current.json",
+        "",
+        &response,
+        forceLog,
+        nullptr,
+        &pathUnauthorized
+      )) {
+    if (pathUnauthorized) {
+      legacyCommandPathDisabled = true;
+      Serial.println("[command] Legacy commands/current denied; fallback disabled");
+    }
     return;
   }
   if (response == "null" || response.length() == 0) {
@@ -954,6 +1030,12 @@ void firebasePollCommand() {
 
   setAck(id, type, "ERROR", "Unknown command type");
   firebaseAckCommand();
+}
+
+bool firebaseCommandTransitionPending() {
+  return pendingStartAck ||
+    sessionData.state == SessionState::WAITING_LOAD ||
+    sessionData.state == SessionState::FINISHING;
 }
 
 void firebaseAckCommand() {
@@ -1034,7 +1116,7 @@ bool firebasePushCompletedSession(const CompletedSessionSnapshot& snapshot) {
   serializeJson(doc, payload);
   const bool ok = pushHistoryPayload(snapshot.sessionId, payload);
   if (ok) {
-    Serial.print("[history] Final and compatibility sync complete sessionId=");
+    Serial.print("[history] Final history sync complete sessionId=");
     Serial.println(snapshot.sessionId);
   } else {
     Serial.print("[history] Cloud sync incomplete, local session kept pending sessionId=");
@@ -1064,7 +1146,7 @@ bool firebasePushCompletedSession(JsonObject entry) {
   serializeJson(doc, payload);
   const bool ok = pushHistoryPayload(sessionId, payload);
   if (ok) {
-    Serial.print("[history] Final and compatibility sync complete sessionId=");
+    Serial.print("[history] Final history sync complete sessionId=");
     Serial.println(sessionId);
   } else {
     Serial.print("[history] Cloud sync incomplete, local session kept pending sessionId=");
