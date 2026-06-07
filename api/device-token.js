@@ -1,9 +1,14 @@
 "use strict";
 
+const { createHash, timingSafeEqual } = require("node:crypto");
+
+const BROKER_APP_NAME = "voltix-device-token-broker";
 const REQUIRED_SERVER_ENV_VARS = [
   "FIREBASE_PROJECT_ID",
   "FIREBASE_CLIENT_EMAIL",
   "FIREBASE_PRIVATE_KEY",
+  "FIREBASE_DATABASE_URL",
+  "DEVICE_AUTH_PEPPER",
 ];
 
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/;
@@ -70,18 +75,92 @@ function missingServerEnvVars(env = process.env) {
   return REQUIRED_SERVER_ENV_VARS.filter((name) => !env[name]?.trim());
 }
 
+function computeDeviceSecretHash(
+  deviceId,
+  credentialVersion,
+  deviceSecret,
+  pepper
+) {
+  return createHash("sha256")
+    .update(`${pepper}:${deviceId}:${credentialVersion}:${deviceSecret}`, "utf8")
+    .digest("hex");
+}
+
+function constantTimeHashEqual(expectedHash, computedHash) {
+  if (typeof expectedHash !== "string" ||
+      !/^[0-9a-f]{64}$/i.test(expectedHash)) {
+    return false;
+  }
+
+  const expected = Buffer.from(expectedHash, "hex");
+  const computed = Buffer.from(computedHash, "hex");
+  return expected.length === computed.length && timingSafeEqual(expected, computed);
+}
+
+function normalizePrivateKey(privateKey) {
+  return privateKey.replace(/\\n/g, "\n");
+}
+
+function getFirebaseAdminServices(env = process.env) {
+  const { cert, getApps, initializeApp } = require("firebase-admin/app");
+  const { getAuth } = require("firebase-admin/auth");
+  const { getDatabase } = require("firebase-admin/database");
+
+  let app = getApps().find((candidate) => candidate.name === BROKER_APP_NAME);
+  if (!app) {
+    app = initializeApp({
+      credential: cert({
+        projectId: env.FIREBASE_PROJECT_ID.trim(),
+        clientEmail: env.FIREBASE_CLIENT_EMAIL.trim(),
+        privateKey: normalizePrivateKey(env.FIREBASE_PRIVATE_KEY),
+      }),
+      databaseURL: env.FIREBASE_DATABASE_URL.trim(),
+    }, BROKER_APP_NAME);
+  }
+
+  return {
+    auth: getAuth(app),
+    database: getDatabase(app),
+  };
+}
+
 async function verifyDeviceCredential(
   deviceId,
   deviceSecret,
-  credentialVersion
+  credentialVersion,
+  options
 ) {
-  void deviceId;
-  void deviceSecret;
-  void credentialVersion;
+  const snapshot = await options.database.ref(`/devices/${deviceId}`).get();
+  if (!snapshot.exists()) return { verified: false };
 
-  // Replace this fail-closed placeholder only after a reviewed credential
-  // store verifies enabled state, version, secret hash, and revocation state.
-  return { verified: false, reason: "not_implemented" };
+  const device = snapshot.val();
+  const deviceAuth = device?.deviceAuth;
+  if (typeof device?.ownerUid !== "string" || !device.ownerUid.trim() ||
+      !deviceAuth || deviceAuth.enabled !== true ||
+      deviceAuth.revoked === true ||
+      deviceAuth.credentialVersion !== credentialVersion ||
+      deviceAuth.hashAlg !== "sha256") {
+    return { verified: false };
+  }
+
+  const computedHash = computeDeviceSecretHash(
+    deviceId,
+    credentialVersion,
+    deviceSecret,
+    options.pepper
+  );
+  if (!constantTimeHashEqual(deviceAuth.secretHash, computedHash)) {
+    return { verified: false };
+  }
+
+  return {
+    verified: true,
+    deviceRecord: {
+      deviceId,
+      ownerUid: device.ownerUid,
+      credentialVersion,
+    },
+  };
 }
 
 function buildCustomClaims(deviceRecord) {
@@ -93,50 +172,80 @@ function buildCustomClaims(deviceRecord) {
   };
 }
 
-async function handler(request, response) {
-  if (request.method !== "POST") {
-    response.setHeader("Allow", "POST");
-    return sendJson(response, 405, { error: "method_not_allowed" });
-  }
+function createHandler(dependencies = {}) {
+  const env = dependencies.env || process.env;
+  const getAdminServices = dependencies.getAdminServices || getFirebaseAdminServices;
+  const now = dependencies.now || Date.now;
 
-  const validation = validateRequestBody(request.body);
-  if (!validation.ok) {
-    return sendJson(response, 400, { error: "invalid_request" });
-  }
+  return async function handler(request, response) {
+    if (request.method !== "POST") {
+      response.setHeader("Allow", "POST");
+      return sendJson(response, 405, { error: "method_not_allowed" });
+    }
 
-  if (missingServerEnvVars().length > 0) {
-    return sendJson(response, 503, { error: "broker_unavailable" });
-  }
+    const validation = validateRequestBody(request.body);
+    if (!validation.ok) {
+      return sendJson(response, 400, { error: "invalid_request" });
+    }
 
-  try {
-    const requestBody = validation.value;
-    const verification = await verifyDeviceCredential(
-      requestBody.deviceId,
-      requestBody.deviceSecret,
-      requestBody.credentialVersion
-    );
+    if (missingServerEnvVars(env).length > 0) {
+      return sendJson(response, 503, { error: "broker_unavailable" });
+    }
 
-    if (verification.reason === "not_implemented") {
-      return sendJson(response, 501, {
-        error: "credential_verification_not_implemented",
+    let services;
+    try {
+      services = await getAdminServices(env);
+    } catch {
+      return sendJson(response, 503, { error: "broker_unavailable" });
+    }
+
+    try {
+      const requestBody = validation.value;
+      const verification = await verifyDeviceCredential(
+        requestBody.deviceId,
+        requestBody.deviceSecret,
+        requestBody.credentialVersion,
+        {
+          database: services.database,
+          pepper: env.DEVICE_AUTH_PEPPER,
+        }
+      );
+
+      if (!verification.verified) {
+        return sendJson(response, 401, { error: "invalid_device_credential" });
+      }
+
+      const deviceRecord = verification.deviceRecord;
+      const customToken = await services.auth.createCustomToken(
+        `device:${deviceRecord.deviceId}`,
+        buildCustomClaims(deviceRecord)
+      );
+      const issuedAt = now();
+      await services.database
+        .ref(`/devices/${deviceRecord.deviceId}/deviceAuth`)
+        .update({
+          lastTokenIssuedAt: issuedAt,
+          lastSeenAt: issuedAt,
+        });
+
+      return sendJson(response, 200, {
+        customToken,
+        expiresInSec: 3600,
       });
+    } catch {
+      return sendJson(response, 500, { error: "internal_error" });
     }
-
-    if (!verification.verified) {
-      return sendJson(response, 401, { error: "invalid_device_credential" });
-    }
-
-    // Token signing intentionally remains unreachable until credential
-    // verification and its backing store have been implemented and reviewed.
-    return sendJson(response, 501, { error: "token_signing_not_implemented" });
-  } catch {
-    return sendJson(response, 500, { error: "internal_error" });
-  }
+  };
 }
 
-module.exports = handler;
+module.exports = createHandler();
 module.exports.REQUIRED_SERVER_ENV_VARS = REQUIRED_SERVER_ENV_VARS;
 module.exports.buildCustomClaims = buildCustomClaims;
+module.exports.computeDeviceSecretHash = computeDeviceSecretHash;
+module.exports.constantTimeHashEqual = constantTimeHashEqual;
+module.exports.createHandler = createHandler;
+module.exports.getFirebaseAdminServices = getFirebaseAdminServices;
 module.exports.missingServerEnvVars = missingServerEnvVars;
+module.exports.normalizePrivateKey = normalizePrivateKey;
 module.exports.validateRequestBody = validateRequestBody;
 module.exports.verifyDeviceCredential = verifyDeviceCredential;
