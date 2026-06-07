@@ -201,6 +201,7 @@ static void printStatus() {
   Serial.println("W");
   Serial.print("[status] recovery=");
   Serial.println(sessionRecoveryStatus());
+  firebasePrintAuthStatus();
 }
 
 static void printTimeStatus() {
