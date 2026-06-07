@@ -83,6 +83,13 @@ reviewed root CA is missing. There is no lab-insecure TLS opt-in.
 - [ ] A denied config PATCH remains pending locally and is not repeatedly sent
       again during the same boot.
 - [ ] RTDB denial logs show only sanitized paths without query strings.
+- [ ] Fresh web START/STOP normally reaches relay action within about `1-2`
+      seconds after RTDB receives the command; record redacted `ageMs` and
+      `relayLatencyMs` diagnostics.
+- [ ] Pending history sync processes at most one session per background cycle
+      and defers while START/load validation or session finishing is pending.
+- [ ] Final `/history/{sessionId}` success marks the local session synced even
+      when optional `completedSessions` mirroring is denied.
 - [ ] Serial contains no secret, token, API key, URL query, CA, private key,
       service-account value, or pepper.
 - [ ] Failed cloud history sync remains pending in LittleFS.

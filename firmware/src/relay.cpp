@@ -52,3 +52,7 @@ void relaySet(bool on) {
 bool relayIsOn() {
   return relayOn;
 }
+
+unsigned long relayLastToggleMs() {
+  return lastRelayToggleMs;
+}

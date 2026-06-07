@@ -563,10 +563,7 @@ bool storageSyncPendingHistoryToFirebase() {
     const char* sessionId = entry["sessionId"] | entry["id"] | "";
     Serial.print("[history] Pending sync upload sessionId=");
     Serial.print(sessionId[0] == '\0' ? "(unknown)" : sessionId);
-    Serial.print(" path=");
-    Serial.print(Config::FIREBASE_COMPLETED_SESSIONS_PATH);
-    Serial.print("/");
-    Serial.println(sessionId[0] == '\0' ? "(unknown)" : sessionId);
+    Serial.println(" budget=one");
 
     entry["syncStatus"] = "SYNCED";
     entry["pendingSync"] = false;
@@ -592,6 +589,7 @@ bool storageSyncPendingHistoryToFirebase() {
       Serial.print("[history] pendingSync=true syncStatus=PENDING sessionId=");
       Serial.println(sessionId[0] == '\0' ? "(unknown)" : sessionId);
     }
+    break;
   }
 
   bool saved = true;
@@ -605,6 +603,8 @@ bool storageSyncPendingHistoryToFirebase() {
   Serial.print(queued);
   Serial.print(" failed=");
   Serial.print(failed);
+  Serial.print(" remaining=");
+  Serial.print(pending - queued);
   Serial.print(" save=");
   Serial.println(saved ? "OK" : "FAIL");
 
