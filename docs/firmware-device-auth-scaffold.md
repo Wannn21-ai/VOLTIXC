@@ -100,10 +100,13 @@ All existing RTDB calls continue through the central Firebase REST helper.
 - Auth enabled without a valid token: attempt broker sign-in once; on failure,
   skip the cloud request, apply a bounded retry backoff, and continue local
   operation.
-- Authenticated RTDB `401`: clear auth state, re-sign-in once, and retry the
-  original request once.
-- Retry failure: stop retrying, mark auth unavailable, and continue local
-  operation.
+- Authenticated RTDB `401`: refresh/re-authenticate once and retry the original
+  request once.
+- Retry still denied on that path: preserve the newly valid auth session, mark
+  only the request/path denied, and continue later allowed RTDB requests.
+- Device config PATCH denied by owner-only rules: keep the local config pending
+  and block repeated config pushes for the current boot without affecting live,
+  config read, command polling, or local operation.
 
 There is no unbounded retry loop. Existing pending LittleFS history remains
 pending when cloud sync fails.
@@ -118,6 +121,8 @@ The existing Serial `status` command now includes:
 
 Diagnostics never print the broker URL, secret, custom token, ID token, refresh
 token, API key, or CA contents.
+RTDB authorization diagnostics include only the sanitized path before any query
+or fragment, so an `auth=<ID_TOKEN>` query can never be printed.
 
 ## Verification
 

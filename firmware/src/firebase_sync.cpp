@@ -37,6 +37,7 @@ static unsigned long lastFinalCommandPollMs = 0;
 static unsigned long lastFinalCommandLogMs = 0;
 static bool missingLiveDeviceIdLogged = false;
 static bool missingCommandDeviceIdLogged = false;
+static bool configPushBlockedByRules = false;
 
 static String configJsonPath(const String& configPath) {
   return configPath + ".json";
@@ -211,6 +212,43 @@ static String makeUrl(const char* jsonPath) {
   return deviceAuthAppendAuthQuery(normalizeBaseUrl() + path);
 }
 
+static String sanitizedLogPath(const char* path) {
+  String sanitized = path == nullptr ? "" : path;
+  const int queryIndex = sanitized.indexOf('?');
+  if (queryIndex >= 0) {
+    sanitized.remove(queryIndex);
+  }
+  const int fragmentIndex = sanitized.indexOf('#');
+  if (fragmentIndex >= 0) {
+    sanitized.remove(fragmentIndex);
+  }
+  if (sanitized.length() > 160) {
+    sanitized.remove(160);
+  }
+  for (size_t index = 0; index < sanitized.length(); index++) {
+    const char c = sanitized[index];
+    const bool safe =
+      (c >= 'a' && c <= 'z') ||
+      (c >= 'A' && c <= 'Z') ||
+      (c >= '0' && c <= '9') ||
+      c == '/' || c == '_' || c == '-' || c == '.';
+    if (!safe) {
+      sanitized.setCharAt(index, '_');
+    }
+  }
+  return sanitized.length() > 0 ? sanitized : "/";
+}
+
+static void logRtdbUnauthorized(
+  const char* prefix,
+  const char* path,
+  const char* suffix
+) {
+  Serial.print(prefix);
+  Serial.print(sanitizedLogPath(path));
+  Serial.println(suffix);
+}
+
 static void logHttp(const char* method, const char* path, int statusCode, bool ok, bool forceLog) {
   if (!forceLog && ok) {
     return;
@@ -218,7 +256,7 @@ static void logHttp(const char* method, const char* path, int statusCode, bool o
   Serial.print("[firebase] ");
   Serial.print(method);
   Serial.print(" ");
-  Serial.print(path);
+  Serial.print(sanitizedLogPath(path));
   Serial.print(" status=");
   Serial.print(statusCode);
   Serial.print(" ");
@@ -268,7 +306,18 @@ static int performHttpRequest(
   return statusCode;
 }
 
-static bool httpRequest(const char* method, const char* path, const String& payload, String* response, bool forceLog, int* statusOut = nullptr) {
+static bool httpRequest(
+  const char* method,
+  const char* path,
+  const String& payload,
+  String* response,
+  bool forceLog,
+  int* statusOut = nullptr,
+  bool* pathUnauthorizedOut = nullptr
+) {
+  if (pathUnauthorizedOut != nullptr) {
+    *pathUnauthorizedOut = false;
+  }
   if (!networkIsConnected()) {
     if (statusOut != nullptr) {
       *statusOut = -1;
@@ -277,7 +326,7 @@ static bool httpRequest(const char* method, const char* path, const String& payl
       Serial.print("[firebase] SKIP ");
       Serial.print(method);
       Serial.print(" ");
-      Serial.print(path);
+      Serial.print(sanitizedLogPath(path));
       Serial.println(" WiFi offline");
     }
     return false;
@@ -291,7 +340,7 @@ static bool httpRequest(const char* method, const char* path, const String& payl
       Serial.print("[firebase] SKIP ");
       Serial.print(method);
       Serial.print(" ");
-      Serial.print(path);
+      Serial.print(sanitizedLogPath(path));
       Serial.println(" device auth unavailable (local operation continues)");
     }
     return false;
@@ -300,13 +349,35 @@ static bool httpRequest(const char* method, const char* path, const String& payl
   int statusCode = performHttpRequest(method, path, payload, response);
   if (statusCode == 401 && deviceAuthIsEnabled()) {
     deviceAuthHandleRtdbUnauthorized(statusCode);
-    Serial.println("[auth] RTDB 401; bounded refresh and retry once");
+    logRtdbUnauthorized(
+      "[auth] RTDB 401 path=",
+      path,
+      "; retrying once"
+    );
     if (deviceAuthEnsureAuthenticated(true)) {
       statusCode = performHttpRequest(method, path, payload, response);
-      if (statusCode == 401) {
-        deviceAuthHandleRtdbUnauthorized(statusCode, true);
+      if (statusCode == 401 || statusCode == 403) {
+        deviceAuthHandleRtdbPathUnauthorized(statusCode);
+        if (pathUnauthorizedOut != nullptr) {
+          *pathUnauthorizedOut = true;
+        }
+        logRtdbUnauthorized(
+          "[auth] RTDB unauthorized after retry path=",
+          path,
+          "; auth session preserved"
+        );
       }
     }
+  } else if (statusCode == 403 && deviceAuthIsEnabled()) {
+    deviceAuthHandleRtdbPathUnauthorized(statusCode);
+    if (pathUnauthorizedOut != nullptr) {
+      *pathUnauthorizedOut = true;
+    }
+    logRtdbUnauthorized(
+      "[auth] RTDB path denied path=",
+      path,
+      "; auth session preserved"
+    );
   }
 
   const bool ok = statusCode >= 200 && statusCode < 300;
@@ -742,6 +813,10 @@ void firebaseReadConfig() {
 }
 
 bool firebasePushDeviceConfig() {
+  if (configPushBlockedByRules) {
+    return false;
+  }
+
   StaticJsonDocument<640> doc;
   doc["tariff"] = appConfig.tariffPerKwh;
   doc["currency"] = appConfig.currency[0] == '\0' ? Config::DEFAULT_CURRENCY : appConfig.currency;
@@ -760,12 +835,31 @@ bool firebasePushDeviceConfig() {
   String payload;
   serializeJson(doc, payload);
   const String path = finalConfigJsonPath();
-  const bool ok = httpRequest("PATCH", path.c_str(), payload, nullptr, true);
+  int statusCode = -1;
+  bool pathUnauthorized = false;
+  const bool ok = httpRequest(
+    "PATCH",
+    path.c_str(),
+    payload,
+    nullptr,
+    true,
+    &statusCode,
+    &pathUnauthorized
+  );
   if (ok) {
     appConfig.configPendingSync = false;
     saveLocalConfig();
+  } else if (pathUnauthorized) {
+    configPushBlockedByRules = true;
+    Serial.println(
+      "[config] Device config push blocked by rules; local config remains pending"
+    );
   }
   return ok;
+}
+
+bool firebaseDeviceConfigPushBlocked() {
+  return configPushBlockedByRules;
 }
 
 void firebasePollCommand() {

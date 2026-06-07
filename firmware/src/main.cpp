@@ -503,7 +503,7 @@ void loop() {
     }
     timeSyncBegin();
     firebaseAuthenticateDevice();
-    if (appConfig.configPendingSync) {
+    if (appConfig.configPendingSync && !firebaseDeviceConfigPushBlocked()) {
       Serial.println("[config] Syncing pending config to Firebase");
       if (firebasePushDeviceConfig()) {
         Serial.println("[config] Pending config sync OK");
@@ -573,7 +573,9 @@ void loop() {
   offlineModeUpdate();
 
   if (onlineServicesAllowed) {
-    if (appConfig.configPendingSync && (lastFirebaseConfigMs == 0 || now - lastFirebaseConfigMs >= 30000UL)) {
+    if (appConfig.configPendingSync &&
+        !firebaseDeviceConfigPushBlocked() &&
+        (lastFirebaseConfigMs == 0 || now - lastFirebaseConfigMs >= 30000UL)) {
       lastFirebaseConfigMs = now;
       Serial.println("[config] Syncing pending config to Firebase");
       if (firebasePushDeviceConfig()) {

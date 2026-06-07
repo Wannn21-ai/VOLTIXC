@@ -41,8 +41,8 @@ test("boot auth, RAM refresh, authenticated RTDB, and bounded retry are wired", 
   assert.match(authSource, /token_refresh_identity_mismatch/);
   assert.match(authSource, /token_refresh_claims_mismatch/);
   assert.match(firebaseSource, /deviceAuthAppendAuthQuery/);
-  assert.match(firebaseSource, /bounded refresh and retry once/);
-  assert.match(firebaseSource, /deviceAuthHandleRtdbUnauthorized\(statusCode, true\)/);
+  assert.match(firebaseSource, /retrying once/);
+  assert.match(firebaseSource, /deviceAuthHandleRtdbPathUnauthorized\(statusCode\)/);
 });
 
 test("Identity Toolkit exchange preserves full custom token and verifies JWT claims", () => {
@@ -73,6 +73,29 @@ test("auth diagnostics never print token or secret-bearing values", () => {
     serialText,
     /customToken|idToken|refreshToken|VOLTIX_DEVICE_SECRET|response/
   );
+});
+
+test("path-level RTDB denial preserves auth and blocks repeated config pushes", () => {
+  const pathDeniedStart = authSource.indexOf(
+    "void deviceAuthHandleRtdbPathUnauthorized"
+  );
+  const printStatusStart = authSource.indexOf("void deviceAuthPrintStatus");
+  const pathDeniedSource = authSource.slice(pathDeniedStart, printStatusStart);
+
+  assert.equal(pathDeniedStart >= 0 && printStatusStart > pathDeniedStart, true);
+  assert.match(pathDeniedSource, /rtdb_path_unauthorized/);
+  assert.doesNotMatch(pathDeniedSource, /clearTokens|invalidateIdToken/);
+  assert.match(firebaseSource, /sanitizedLogPath/);
+  assert.match(firebaseSource, /auth session preserved/);
+  assert.match(firebaseSource, /queryIndex/);
+  assert.match(firebaseSource, /fragmentIndex/);
+  assert.match(firebaseSource, /configPushBlockedByRules = true/);
+  assert.match(firebaseSource, /bool\* pathUnauthorizedOut = nullptr/);
+  assert.match(firebaseSource, /\*pathUnauthorizedOut = true/);
+  assert.match(firebaseSource, /else if \(pathUnauthorized\)/);
+  assert.match(firebaseSource, /local config remains pending/);
+  assert.match(mainSource, /!firebaseDeviceConfigPushBlocked\(\)/);
+  assert.doesNotMatch(authSource, /rtdb_unauthorized_after_retry/);
 });
 
 test("lab checklist documents private opt-in, redaction, and local safety", () => {

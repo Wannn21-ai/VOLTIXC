@@ -78,8 +78,11 @@ reviewed root CA is missing. There is no lab-insecure TLS opt-in.
 - [ ] Identity Toolkit failure prints only a redacted status such as
       `[auth] identity exchange HTTP 400`, never its response body or tokens.
 - [ ] An RTDB `401` triggers one refresh and one RTDB retry only.
-- [ ] A repeated `401` produces `rtdb_unauthorized_after_retry` and local
-      operation continues.
+- [ ] A repeated path-level `401` produces `rtdb_path_unauthorized`, preserves
+      authenticated status, and later allowed live/command requests continue.
+- [ ] A denied config PATCH remains pending locally and is not repeatedly sent
+      again during the same boot.
+- [ ] RTDB denial logs show only sanitized paths without query strings.
 - [ ] Serial contains no secret, token, API key, URL query, CA, private key,
       service-account value, or pepper.
 - [ ] Failed cloud history sync remains pending in LittleFS.
