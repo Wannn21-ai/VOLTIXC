@@ -3,6 +3,10 @@
   "private": true,
   "scripts": {
     "build:web": "node scripts/build-web.mjs",
+    "hash:device-secret": "node scripts/hash-device-secret.mjs",
     "test:token-broker": "node --test test/device-token.test.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.10.0"
   }
 }
