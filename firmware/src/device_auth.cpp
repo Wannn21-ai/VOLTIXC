@@ -14,6 +14,13 @@ namespace {
 constexpr unsigned long AUTH_HTTP_TIMEOUT_MS = 8000UL;
 constexpr unsigned long AUTH_RETRY_BACKOFF_MS = 30000UL;
 constexpr unsigned long TOKEN_REFRESH_MARGIN_SEC = 300UL;
+constexpr size_t ID_TOKEN_PAYLOAD_JSON_CAPACITY = 2048;
+
+enum class IdentityTokenVerification {
+  VERIFIED,
+  MALFORMED,
+  MISMATCHED
+};
 
 DeviceAuthState authState;
 
@@ -116,6 +123,148 @@ String urlEncode(const String& value) {
   return encoded;
 }
 
+int base64UrlValue(char c) {
+  if (c >= 'A' && c <= 'Z') return c - 'A';
+  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+  if (c >= '0' && c <= '9') return c - '0' + 52;
+  if (c == '-') return 62;
+  if (c == '_') return 63;
+  return -1;
+}
+
+bool isBase64UrlSegment(const String& segment) {
+  if (segment.length() == 0 || segment.length() % 4 == 1) {
+    return false;
+  }
+  for (size_t index = 0; index < segment.length(); index++) {
+    if (base64UrlValue(segment[index]) < 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool splitJwt(
+  const String& token,
+  String* payloadSegment = nullptr
+) {
+  const int firstDot = token.indexOf('.');
+  const int secondDot = firstDot < 0 ? -1 : token.indexOf('.', firstDot + 1);
+  if (firstDot <= 0 ||
+      secondDot <= firstDot + 1 ||
+      secondDot >= static_cast<int>(token.length()) - 1 ||
+      token.indexOf('.', secondDot + 1) >= 0) {
+    return false;
+  }
+
+  const String header = token.substring(0, firstDot);
+  const String payload = token.substring(firstDot + 1, secondDot);
+  const String signature = token.substring(secondDot + 1);
+  if (!isBase64UrlSegment(header) ||
+      !isBase64UrlSegment(payload) ||
+      !isBase64UrlSegment(signature)) {
+    return false;
+  }
+  if (payloadSegment != nullptr) {
+    *payloadSegment = payload;
+  }
+  return true;
+}
+
+bool decodeBase64Url(const String& encoded, String& decoded) {
+  if (!isBase64UrlSegment(encoded)) {
+    return false;
+  }
+
+  const size_t expectedLength = (encoded.length() * 6) / 8;
+  decoded = "";
+  if (!decoded.reserve(expectedLength + 1)) {
+    return false;
+  }
+
+  uint32_t accumulator = 0;
+  int availableBits = 0;
+  for (size_t index = 0; index < encoded.length(); index++) {
+    accumulator = (accumulator << 6) |
+      static_cast<uint32_t>(base64UrlValue(encoded[index]));
+    availableBits += 6;
+    if (availableBits >= 8) {
+      availableBits -= 8;
+      const char decodedByte =
+        static_cast<char>((accumulator >> availableBits) & 0xFF);
+      if (decodedByte == '\0') {
+        return false;
+      }
+      decoded += decodedByte;
+    }
+  }
+
+  const uint32_t trailingMask =
+    availableBits == 0 ? 0 : (1UL << availableBits) - 1UL;
+  return decoded.length() == expectedLength &&
+    (accumulator & trailingMask) == 0;
+}
+
+IdentityTokenVerification verifyDeviceIdToken(const String& idToken) {
+  String payloadSegment;
+  if (!splitJwt(idToken, &payloadSegment)) {
+    return IdentityTokenVerification::MALFORMED;
+  }
+
+  String payloadJson;
+  if (!decodeBase64Url(payloadSegment, payloadJson)) {
+    return IdentityTokenVerification::MALFORMED;
+  }
+
+  DynamicJsonDocument payloadDoc(ID_TOKEN_PAYLOAD_JSON_CAPACITY);
+  if (deserializeJson(payloadDoc, payloadJson) ||
+      payloadDoc.overflowed() ||
+      !payloadDoc.is<JsonObject>()) {
+    return IdentityTokenVerification::MALFORMED;
+  }
+
+  const String expectedSubject = String("device:") + Config::DEVICE_ID;
+  const bool subjectMatches =
+    (payloadDoc["sub"].is<const char*>() &&
+     expectedSubject == payloadDoc["sub"].as<const char*>()) ||
+    (payloadDoc["user_id"].is<const char*>() &&
+     expectedSubject == payloadDoc["user_id"].as<const char*>());
+  const bool claimsMatch =
+    payloadDoc["deviceId"].is<const char*>() &&
+    String(Config::DEVICE_ID) == payloadDoc["deviceId"].as<const char*>() &&
+    payloadDoc["deviceRole"].is<const char*>() &&
+    String("hardware") == payloadDoc["deviceRole"].as<const char*>() &&
+    payloadDoc["credentialVersion"].is<int>() &&
+    payloadDoc["credentialVersion"].as<int>() ==
+      VOLTIX_DEVICE_CREDENTIAL_VERSION;
+
+  return subjectMatches && claimsMatch
+    ? IdentityTokenVerification::VERIFIED
+    : IdentityTokenVerification::MISMATCHED;
+}
+
+bool buildIdentityExchangePayload(
+  const String& customToken,
+  String& requestPayload
+) {
+  static constexpr const char* PREFIX = "{\"token\":\"";
+  static constexpr const char* SUFFIX = "\",\"returnSecureToken\":true}";
+  if (!splitJwt(customToken)) {
+    return false;
+  }
+
+  const size_t expectedLength =
+    strlen(PREFIX) + customToken.length() + strlen(SUFFIX);
+  requestPayload = "";
+  if (!requestPayload.reserve(expectedLength + 1)) {
+    return false;
+  }
+  requestPayload = PREFIX;
+  requestPayload += customToken;
+  requestPayload += SUFFIX;
+  return requestPayload.length() == expectedLength;
+}
+
 bool storeTokens(
   JsonDocument& responseDoc,
   const char* idTokenKey,
@@ -151,11 +300,11 @@ bool storeTokens(
 }
 
 bool exchangeCustomToken(const String& customToken) {
-  StaticJsonDocument<768> requestDoc;
-  requestDoc["token"] = customToken;
-  requestDoc["returnSecureToken"] = true;
   String requestPayload;
-  serializeJson(requestDoc, requestPayload);
+  if (!buildIdentityExchangePayload(customToken, requestPayload)) {
+    clearTokens("identity_request_build_failed", 0);
+    return false;
+  }
 
   const String url =
     String("https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=") +
@@ -170,6 +319,8 @@ bool exchangeCustomToken(const String& customToken) {
   requestPayload = "";
   authState.lastAuthHttpStatus = statusCode;
   if (statusCode < 200 || statusCode >= 300) {
+    Serial.print("[auth] identity exchange HTTP ");
+    Serial.println(statusCode);
     clearTokens("identity_exchange_failed", statusCode);
     return false;
   }
@@ -177,14 +328,18 @@ bool exchangeCustomToken(const String& customToken) {
   DynamicJsonDocument responseDoc(4096);
   if (deserializeJson(responseDoc, response) ||
       !responseDoc["idToken"].is<const char*>() ||
-      !responseDoc["refreshToken"].is<const char*>() ||
-      !responseDoc["localId"].is<const char*>()) {
+      !responseDoc["refreshToken"].is<const char*>()) {
     clearTokens("identity_response_invalid", statusCode);
     return false;
   }
 
-  const String expectedLocalId = String("device:") + Config::DEVICE_ID;
-  if (expectedLocalId != responseDoc["localId"].as<const char*>()) {
+  const IdentityTokenVerification verification =
+    verifyDeviceIdToken(responseDoc["idToken"].as<const char*>());
+  if (verification == IdentityTokenVerification::MALFORMED) {
+    clearTokens("identity_token_invalid", statusCode);
+    return false;
+  }
+  if (verification == IdentityTokenVerification::MISMATCHED) {
     clearTokens("identity_mismatch", statusCode);
     return false;
   }
@@ -236,6 +391,20 @@ bool refreshWithStoredToken() {
   if (!responseDoc["user_id"].is<const char*>() ||
       expectedLocalId != responseDoc["user_id"].as<const char*>()) {
     clearTokens("token_refresh_identity_mismatch", statusCode);
+    return false;
+  }
+  if (!responseDoc["id_token"].is<const char*>()) {
+    clearTokens("token_refresh_response_invalid", statusCode);
+    return false;
+  }
+  const IdentityTokenVerification verification =
+    verifyDeviceIdToken(responseDoc["id_token"].as<const char*>());
+  if (verification == IdentityTokenVerification::MALFORMED) {
+    clearTokens("token_refresh_token_invalid", statusCode);
+    return false;
+  }
+  if (verification == IdentityTokenVerification::MISMATCHED) {
+    clearTokens("token_refresh_claims_mismatch", statusCode);
     return false;
   }
   response = "";

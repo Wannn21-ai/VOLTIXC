@@ -75,6 +75,8 @@ reviewed root CA is missing. There is no lab-insecure TLS opt-in.
 - [ ] Wrong or revoked credential produces only a generic auth failure.
 - [ ] Missing root CA or auth value produces `configuration_missing`.
 - [ ] NTP not ready produces `time_not_ready` without sending credentials.
+- [ ] Identity Toolkit failure prints only a redacted status such as
+      `[auth] identity exchange HTTP 400`, never its response body or tokens.
 - [ ] An RTDB `401` triggers one refresh and one RTDB retry only.
 - [ ] A repeated `401` produces `rtdb_unauthorized_after_retry` and local
       operation continues.

@@ -37,10 +37,42 @@ test("boot auth, RAM refresh, authenticated RTDB, and bounded retry are wired", 
   assert.match(authSource, /application\/x-www-form-urlencoded/);
   assert.match(authSource, /time_not_ready/);
   assert.match(authSource, /identity_mismatch/);
+  assert.match(authSource, /identity_token_invalid/);
   assert.match(authSource, /token_refresh_identity_mismatch/);
+  assert.match(authSource, /token_refresh_claims_mismatch/);
   assert.match(firebaseSource, /deviceAuthAppendAuthQuery/);
   assert.match(firebaseSource, /bounded refresh and retry once/);
   assert.match(firebaseSource, /deviceAuthHandleRtdbUnauthorized\(statusCode, true\)/);
+});
+
+test("Identity Toolkit exchange preserves full custom token and verifies JWT claims", () => {
+  const exchangeStart = authSource.indexOf("bool exchangeCustomToken");
+  const refreshStart = authSource.indexOf("bool refreshWithStoredToken");
+  const exchangeSource = authSource.slice(exchangeStart, refreshStart);
+
+  assert.equal(exchangeStart >= 0 && refreshStart > exchangeStart, true);
+  assert.doesNotMatch(exchangeSource, /StaticJsonDocument<768>/);
+  assert.match(exchangeSource, /buildIdentityExchangePayload/);
+  assert.match(authSource, /requestPayload\.reserve\(expectedLength \+ 1\)/);
+  assert.match(authSource, /requestPayload\.length\(\) == expectedLength/);
+  assert.match(authSource, /identity_request_build_failed/);
+  assert.match(authSource, /identity exchange HTTP/);
+  assert.doesNotMatch(exchangeSource, /\["localId"\]/);
+  assert.match(authSource, /\["sub"\]/);
+  assert.match(authSource, /\["user_id"\]/);
+  assert.match(authSource, /\["deviceId"\]/);
+  assert.match(authSource, /\["deviceRole"\]/);
+  assert.match(authSource, /\["credentialVersion"\]/);
+});
+
+test("auth diagnostics never print token or secret-bearing values", () => {
+  const serialCalls = authSource.match(/Serial\.(?:print|println)\(([^;]+)\);/g) ?? [];
+  const serialText = serialCalls.join("\n");
+
+  assert.doesNotMatch(
+    serialText,
+    /customToken|idToken|refreshToken|VOLTIX_DEVICE_SECRET|response/
+  );
 });
 
 test("lab checklist documents private opt-in, redaction, and local safety", () => {
