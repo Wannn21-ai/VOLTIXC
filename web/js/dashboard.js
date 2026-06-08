@@ -151,7 +151,7 @@ function makeId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function sendRelayCommand(type) {
+async function sendRelayCommand(type, payload = {}) {
   if (!selectedDevice?.id) {
     showToast("Pair a device before sending a command", "error");
     return false;
@@ -159,14 +159,16 @@ async function sendRelayCommand(type) {
 
   try {
     const on = type === "START";
+    const commandTimestamp = Date.now();
     const command = {
-      relay: on ? "ON" : "OFF",
-      startSession: on,
-      stopSession: !on,
-      resetAlarm: false,
-      updatedAt: Date.now()
+      ...payload,
+      id: makeId("cmd"),
+      type,
+      uid,
+      createdAt: commandTimestamp,
+      updatedAt: commandTimestamp
     };
-    await set(ref(db, `devices/${selectedDevice.id}/command`), command);
+    await set(ref(db, `devices/${selectedDevice.id}/commands/current`), command);
     console.log(`[Relay] Command ${on ? "ON" : "OFF"} → Firebase`);
     return true;
   } catch (e) {
@@ -805,7 +807,12 @@ btnSaveDev.addEventListener("click", async () => {
     pendingStartCommandAt = Date.now();
     pendingRelayConfirmed = false;
     sessionState = SessionState.WAITING_LOAD;
-    const sent = await sendRelayCommand("START");
+    const sent = await sendRelayCommand("START", {
+      sessionId: pendingSessionId,
+      deviceName: pendingDeviceName,
+      tariff: settings.tariff,
+      overloadThreshold: settings.overloadThreshold
+    });
     if (!sent) {
       pendingDeviceName = null;
       pendingSessionId = null;
@@ -838,7 +845,10 @@ if (btnStop) {
     if (!isRunning || !activeDevice) {
       showToast("Tidak ada sesi yang berjalan", "error"); return;
     }
-    const sent = await sendRelayCommand("STOP");
+    const sent = await sendRelayCommand("STOP", {
+      sessionId: activeDevice.id,
+      reason: "USER_STOP"
+    });
     if (!sent) return;
     // State migration point: MONITORING -> FINISHED; ESP32 keeps the source of truth.
     sessionState = SessionState.FINISHED;

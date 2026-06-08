@@ -13,6 +13,7 @@ const mainSource = await readFile("firmware/src/main.cpp", "utf8");
 const storageSource = await readFile("firmware/src/storage.cpp", "utf8");
 const sessionSource = await readFile("firmware/src/session.cpp", "utf8");
 const relaySource = await readFile("firmware/src/relay.cpp", "utf8");
+const dashboardSource = await readFile("web/js/dashboard.js", "utf8");
 const checklist = await readFile(
   "docs/firmware-device-auth-lab-checklist.md",
   "utf8"
@@ -102,21 +103,36 @@ test("path-level RTDB denial preserves auth and blocks repeated config pushes", 
 });
 
 test("fresh commands outrank optional sync work and report redacted latency", () => {
-  assert.match(firebaseSource, /FINAL_COMMAND_POLL_INTERVAL_MS = 500UL/);
-  assert.match(firebaseSource, /LEGACY_COMMAND_POLL_INTERVAL_MS = 5000UL/);
-  assert.match(firebaseSource, /legacyCommandPathDisabled = true/);
-  assert.match(firebaseSource, /Legacy commands\/current denied; fallback disabled/);
+  assert.match(firebaseSource, /SINGULAR_COMMAND_FALLBACK_POLL_INTERVAL_MS = 5000UL/);
+  assert.match(firebaseSource, /singularCommandFallbackDisabled = true/);
+  assert.match(firebaseSource, /Primary commands\/current available; singular fallback disabled/);
   assert.match(mainSource, /now - lastFirebaseCommandMs >= 500UL/);
+  assert.match(mainSource, /bool commandPollRan = false/);
+  assert.match(mainSource, /else if \(commandPollRan/);
   assert.match(mainSource, /const bool commandTransitionPending = firebaseCommandTransitionPending\(\)/);
   assert.match(mainSource, /!commandTransitionPending[\s\S]*firebaseReadConfig\(\)/);
   assert.match(mainSource, /!commandTransitionPending[\s\S]*storageSyncPendingHistoryToFirebase\(\)/);
   assert.match(firebaseSource, /logCommandLatency\("START"/);
   assert.match(firebaseSource, /logCommandLatency\("STOP"/);
+  assert.match(firebaseSource, /const unsigned long ageAtReceiveMs = commandAgeMs/);
   assert.match(firebaseSource, /accepted ageMs=/);
   assert.match(firebaseSource, /relayLatencyMs=/);
+  assert.match(firebaseSource, /Serial\.print\(" source="\)/);
+  assert.match(firebaseSource, /"commands\/current"/);
+  assert.match(firebaseSource, /"singular-fallback"/);
   assert.match(firebaseSource, /relayLastToggleMs\(\)/);
   assert.match(relaySource, /unsigned long relayLastToggleMs\(\)/);
   assert.match(firebaseSource, /lastLoggedStaleFinalCommandAt/);
+  assert.doesNotMatch(firebaseSource, /Ignored stale final command/);
+});
+
+test("dashboard START and STOP cannot recreate the singular command node", () => {
+  assert.match(dashboardSource, /devices\/\$\{selectedDevice\.id\}\/commands\/current/);
+  assert.match(dashboardSource, /const commandTimestamp = Date\.now\(\)/);
+  assert.match(dashboardSource, /createdAt: commandTimestamp/);
+  assert.match(dashboardSource, /updatedAt: commandTimestamp/);
+  assert.doesNotMatch(dashboardSource, /devices\/\$\{selectedDevice\.id\}\/command`/);
+  assert.doesNotMatch(dashboardSource, /singularFallback|singular fallback used/);
 });
 
 test("history final path succeeds independently and pending sync is budgeted", () => {

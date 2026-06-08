@@ -28,7 +28,7 @@ call these helpers yet.
 | `/devices/{deviceId}/live/system` | Publish connectivity and runtime status. | Authenticated device |
 | `/devices/{deviceId}/live/device` | Publish current electrical measurements. | Authenticated device |
 | `/devices/{deviceId}/config` | Read/cache shared monitoring configuration. | Owner or authenticated device, per final policy |
-| `/devices/{deviceId}/command` | Read permitted command and safely acknowledge/clear it. | Owner/operator writes; device consumes |
+| `/devices/{deviceId}/commands/current` | Read permitted command and safely acknowledge/clear it. | Owner/operator writes; device consumes |
 | `/devices/{deviceId}/history/{historyId}` | Upload a completed record only after LittleFS save succeeds. | Authenticated device |
 
 The device must be paired and securely authenticated before it reads commands
@@ -172,45 +172,38 @@ and a document with no valid config fields is not cached.
 
 ## Command Contract
 
-Firmware consumes `/devices/{deviceId}/command` only when paired and online:
+The web writes fresh commands to `/devices/{deviceId}/commands/current`:
 
 ```json
 {
-  "relay": "UNCHANGED",
-  "startSession": false,
-  "stopSession": false,
-  "resetAlarm": false,
+  "id": "cmd_1780000000000_ab12cd",
+  "type": "START",
+  "uid": "<currentUser.uid>",
+  "createdAt": 1780000000000,
   "updatedAt": 1780000000000
 }
 ```
 
+`createdAt` and `updatedAt` are captured from `Date.now()` at click time.
+
 Commands must preserve existing safety/session validation. In particular, no
-relay/session command executes while unpaired. A later integration sprint must
-select and document an idempotent acknowledgement/clear strategy before
-migrating the current `commands/current` and `commands/lastAck` paths.
+relay/session command executes while unpaired. Firmware clears the current
+command after processing and writes its existing acknowledgement.
 
-The transitional firmware command priority is:
+Firmware command priority is:
 
-1. valid final `/devices/{deviceId}/command`;
-2. legacy `/devices/{deviceId}/commands/current` when final command is missing
-   or unavailable;
+1. `/devices/{deviceId}/commands/current`;
+2. legacy singular `/devices/{deviceId}/command` only while the primary path is
+   unavailable;
 3. no action.
 
-Final command validation requires all documented fields, an allowed relay
-value, boolean action flags, and a positive numeric `updatedAt`. The firmware
-tracks the latest processed final `updatedAt` in memory and ignores duplicates
-or commands older than five minutes when device time is synced. It does not
-clear or acknowledge the final command because current production rules make
-that path owner/operator-writable, not device-writable.
+Once `commands/current` is successfully read, firmware disables the singular
+fallback for the current boot. This prevents a retained stale singular command
+from delaying or shadowing fresh START/STOP commands.
 
-For safety and compatibility, final `relay: ON` follows the existing
-`sessionStart` path and `relay: OFF` follows the existing `sessionStop` path.
-No direct relay bypass is introduced. Conflicting START/STOP requests are
-ignored. `resetAlarm` is validated but remains a no-op until reset behavior is
-defined in the existing runtime.
-
-Final-path polling is rate-limited while the legacy fallback keeps its existing
-poll cadence. Permission/read failures leave local monitoring unaffected.
+For safety and compatibility, START follows the existing `sessionStart` path
+and STOP follows the existing `sessionStop` path. No direct relay bypass is
+introduced. Permission/read failures leave local monitoring unaffected.
 
 ## Completed Session Contract
 

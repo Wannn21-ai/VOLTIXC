@@ -19,8 +19,7 @@
 #include <WiFiClientSecure.h>
 
 static constexpr unsigned long HTTP_LOG_INTERVAL_MS = 5000UL;
-static constexpr unsigned long FINAL_COMMAND_POLL_INTERVAL_MS = 500UL;
-static constexpr unsigned long LEGACY_COMMAND_POLL_INTERVAL_MS = 5000UL;
+static constexpr unsigned long SINGULAR_COMMAND_FALLBACK_POLL_INTERVAL_MS = 5000UL;
 static constexpr uint64_t FINAL_COMMAND_MAX_AGE_MS = 5ULL * 60ULL * 1000ULL;
 
 static char lastProcessedCommandId[48] = "";
@@ -35,13 +34,12 @@ static char pendingStartCommandId[48] = "";
 static unsigned long lastLiveLogMs = 0;
 static unsigned long lastPollLogMs = 0;
 static unsigned long lastFinalCommandPollMs = 0;
-static unsigned long lastLegacyCommandPollMs = 0;
 static unsigned long lastFinalCommandLogMs = 0;
 static uint64_t lastLoggedStaleFinalCommandAt = 0;
 static bool missingLiveDeviceIdLogged = false;
 static bool missingCommandDeviceIdLogged = false;
 static bool configPushBlockedByRules = false;
-static bool legacyCommandPathDisabled = false;
+static bool singularCommandFallbackDisabled = false;
 static bool legacyHistoryMirrorDisabled = false;
 
 static String configJsonPath(const String& configPath) {
@@ -561,12 +559,13 @@ static bool publishPendingStartAckIfReady() {
 }
 
 static bool readCommandTimestamp(JsonDocument& doc, uint64_t& updatedAt) {
-  if (doc["updatedAt"].is<uint64_t>()) {
-    updatedAt = doc["updatedAt"].as<uint64_t>();
+  const char* timestampKey = doc["updatedAt"].isNull() ? "createdAt" : "updatedAt";
+  if (doc[timestampKey].is<uint64_t>()) {
+    updatedAt = doc[timestampKey].as<uint64_t>();
     return updatedAt > 0;
   }
-  if (doc["updatedAt"].is<double>()) {
-    const double value = doc["updatedAt"].as<double>();
+  if (doc[timestampKey].is<double>()) {
+    const double value = doc[timestampKey].as<double>();
     if (!isfinite(value) || value <= 0.0) {
       return false;
     }
@@ -582,7 +581,7 @@ static bool validateFinalCommand(JsonDocument& doc, uint64_t& updatedAt) {
       !doc["stopSession"].is<bool>() ||
       !doc["resetAlarm"].is<bool>() ||
       !readCommandTimestamp(doc, updatedAt)) {
-    Serial.println("[command] Invalid final command shape ignored");
+    Serial.println("[command] Invalid singular fallback shape ignored");
     return false;
   }
 
@@ -625,20 +624,24 @@ static unsigned long commandAgeMs(uint64_t updatedAt) {
 
 static void logCommandLatency(
   const char* action,
-  uint64_t updatedAt,
+  const char* source,
+  unsigned long ageAtReceiveMs,
   unsigned long receivedAtMs
 ) {
   Serial.print("[command] ");
   Serial.print(action);
   Serial.print(" accepted ageMs=");
-  Serial.print(commandAgeMs(updatedAt));
+  Serial.print(ageAtReceiveMs);
   Serial.print(" relayLatencyMs=");
   const unsigned long relayAtMs = relayLastToggleMs();
-  Serial.println(relayAtMs >= receivedAtMs ? relayAtMs - receivedAtMs : 0UL);
+  Serial.print(relayAtMs >= receivedAtMs ? relayAtMs - receivedAtMs : 0UL);
+  Serial.print(" source=");
+  Serial.println(source);
 }
 
 static void processFinalCommand(JsonDocument& doc, uint64_t updatedAt) {
   const unsigned long receivedAtMs = millis();
+  const unsigned long ageAtReceiveMs = commandAgeMs(updatedAt);
   const char* relay = doc["relay"].as<const char*>();
   const bool startRequested = doc["startSession"].as<bool>() || strcmp(relay, "ON") == 0;
   const bool stopRequested = doc["stopSession"].as<bool>() || strcmp(relay, "OFF") == 0;
@@ -648,7 +651,7 @@ static void processFinalCommand(JsonDocument& doc, uint64_t updatedAt) {
   lastProcessedFinalCommandAt = updatedAt;
 
   if (startRequested && stopRequested) {
-    Serial.println("[command] Conflicting final command ignored");
+    Serial.println("[command] Conflicting singular fallback ignored");
     return;
   }
 
@@ -658,10 +661,10 @@ static void processFinalCommand(JsonDocument& doc, uint64_t updatedAt) {
 
   if (startRequested) {
     if (!sessionStart(appConfig.deviceName)) {
-      Serial.println("[command] Final START ignored: device busy");
+      Serial.println("[command] Singular fallback START ignored: device busy");
       return;
     }
-    logCommandLatency("START", updatedAt, receivedAtMs);
+    logCommandLatency("START", "singular-fallback", ageAtReceiveMs, receivedAtMs);
     return;
   }
 
@@ -669,18 +672,20 @@ static void processFinalCommand(JsonDocument& doc, uint64_t updatedAt) {
     if (sessionIsActive()) {
       sessionStop(EndReason::USER_STOP);
     }
-    logCommandLatency("STOP", updatedAt, receivedAtMs);
+    logCommandLatency("STOP", "singular-fallback", ageAtReceiveMs, receivedAtMs);
     return;
   }
 
   if (!resetRequested) {
-    Serial.println("[command] Final command has no action");
+    Serial.println("[command] Singular fallback has no action");
   }
 }
 
 static bool pollFinalCommand() {
   const unsigned long now = millis();
-  if (lastFinalCommandPollMs > 0 && now - lastFinalCommandPollMs < FINAL_COMMAND_POLL_INTERVAL_MS) {
+  if (singularCommandFallbackDisabled ||
+      (lastFinalCommandPollMs > 0 &&
+       now - lastFinalCommandPollMs < SINGULAR_COMMAND_FALLBACK_POLL_INTERVAL_MS)) {
     return false;
   }
   lastFinalCommandPollMs = now;
@@ -698,7 +703,7 @@ static bool pollFinalCommand() {
   const DeserializationError error = deserializeJson(doc, response);
   if (error) {
     if (shouldLog(lastFinalCommandLogMs)) {
-      Serial.print("[command] Final command parse FAIL ");
+      Serial.print("[command] Singular fallback parse FAIL ");
       Serial.println(error.c_str());
     }
     return false;
@@ -712,12 +717,12 @@ static bool pollFinalCommand() {
     if (updatedAt != lastLoggedStaleFinalCommandAt &&
         shouldLog(lastFinalCommandLogMs)) {
       lastLoggedStaleFinalCommandAt = updatedAt;
-      Serial.println("[command] Ignored stale final command");
+      Serial.println("[command] Ignored stale singular command fallback");
     }
     return true;
   }
 
-  Serial.println("[command] Loaded from final device command path");
+  Serial.println("[command] Loaded from singular command fallback");
   processFinalCommand(doc, updatedAt);
   return true;
 }
@@ -931,19 +936,6 @@ void firebasePollCommand() {
   }
   missingCommandDeviceIdLogged = false;
 
-  if (pollFinalCommand()) {
-    return;
-  }
-
-  // Transitional fallback remains until final command device auth is available.
-  const unsigned long now = millis();
-  if (legacyCommandPathDisabled ||
-      (lastLegacyCommandPollMs > 0 &&
-       now - lastLegacyCommandPollMs < LEGACY_COMMAND_POLL_INTERVAL_MS)) {
-    return;
-  }
-  lastLegacyCommandPollMs = now;
-
   String response;
   const bool forceLog = shouldLog(lastPollLogMs);
   bool pathUnauthorized = false;
@@ -957,10 +949,14 @@ void firebasePollCommand() {
         &pathUnauthorized
       )) {
     if (pathUnauthorized) {
-      legacyCommandPathDisabled = true;
-      Serial.println("[command] Legacy commands/current denied; fallback disabled");
+      Serial.println("[command] Primary commands/current denied; trying singular fallback");
     }
+    pollFinalCommand();
     return;
+  }
+  if (!singularCommandFallbackDisabled) {
+    singularCommandFallbackDisabled = true;
+    Serial.println("[command] Primary commands/current available; singular fallback disabled");
   }
   if (response == "null" || response.length() == 0) {
     return;
@@ -978,6 +974,10 @@ void firebasePollCommand() {
   const char* type = doc["type"] | "";
   const char* uid = doc["uid"] | "";
   const char* commandSessionId = doc["sessionId"] | "";
+  uint64_t commandUpdatedAt = 0;
+  readCommandTimestamp(doc, commandUpdatedAt);
+  const unsigned long receivedAtMs = millis();
+  const unsigned long ageAtReceiveMs = commandAgeMs(commandUpdatedAt);
 
   if (id[0] == '\0' || type[0] == '\0') {
     Serial.println("[firebase] Command missing id/type");
@@ -1010,6 +1010,7 @@ void firebasePollCommand() {
       return;
     }
     sessionSetRemoteContext(uid, commandSessionId);
+    logCommandLatency("START", "commands/current", ageAtReceiveMs, receivedAtMs);
     pendingStartAck = true;
     strlcpy(pendingStartCommandId, id, sizeof(pendingStartCommandId));
     return;
@@ -1022,6 +1023,7 @@ void firebasePollCommand() {
     if (sessionIsActive()) {
       sessionStop(EndReason::USER_STOP);
     }
+    logCommandLatency("STOP", "commands/current", ageAtReceiveMs, receivedAtMs);
     setAck(id, type, "DONE", "STOP command processed");
     firebaseAckCommand();
     httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);

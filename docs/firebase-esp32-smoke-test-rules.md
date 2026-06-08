@@ -111,17 +111,17 @@ Firebase Console unattended while temporary rules are active.
   PATCH /devices/esp32-voltix-001/live.json status=200 OK
   ```
 
-- [ ] Confirm final command polling succeeds:
+- [ ] Confirm primary command polling succeeds:
 
   ```text
-  GET /devices/esp32-voltix-001/command.json status=200 OK
+  GET /devices/esp32-voltix-001/commands/current.json status=200 OK
   ```
 
 - [ ] Sign in to the web dashboard with Firebase Auth.
 - [ ] From the web dashboard, issue a safe Start command and verify it writes
-      only to `/devices/esp32-voltix-001/command`.
-- [ ] Confirm serial reports that the firmware loaded the final device command
-      path and applied the existing Start validation flow.
+      only to `/devices/esp32-voltix-001/commands/current`.
+- [ ] Confirm serial reports fresh command age/relay latency and applies the
+      existing Start validation flow.
 - [ ] Stop the test session through the existing safe flow.
 - [ ] Confirm serial/storage evidence shows the completed session was saved to
       LittleFS before either cloud history write.

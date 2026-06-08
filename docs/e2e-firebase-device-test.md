@@ -208,17 +208,19 @@ electrical setup.
 ## Safe Command-Path Verification
 
 Production rules intentionally require an authenticated device claim to read
-the final command path. A permission denial from current unauthenticated
+the primary command path. A permission denial from current unauthenticated
 firmware is expected and must not affect local monitoring.
 
 The authenticated owner/operator web command writer targets
-`/devices/<deviceId>/command`. Execute Start/Stop only with an approved hardware
-safety setup; Mode A passive seeded-data verification does not require a relay
-command.
+`/devices/<deviceId>/commands/current`. Execute Start/Stop only with an approved
+hardware safety setup; Mode A passive seeded-data verification does not require
+a relay command.
 
 - [ ] Start with the relay physically and logically OFF.
-- [ ] Confirm no actionable command exists under `/devices/<deviceId>/command`.
-- [ ] If a neutral command-read test is required in a disposable project, use:
+- [ ] Confirm no actionable command exists under
+      `/devices/<deviceId>/commands/current`.
+- [ ] If a neutral singular-fallback test is required in a disposable project,
+      write this only to `/devices/<deviceId>/command`:
 
   ```json
   {
@@ -230,9 +232,8 @@ command.
   }
   ```
 
-- [ ] Confirm the old timestamp is ignored as stale or produces no action.
-- [ ] Confirm Serial reports final-path read/validation behavior without relay
-      movement.
+- [ ] Confirm the old singular timestamp produces no action or repeated logs
+      after `commands/current` is available.
 - [ ] Confirm no unexpected START, STOP, reset, or relay toggle occurs.
 - [ ] Remove the neutral command fixture after the test.
 

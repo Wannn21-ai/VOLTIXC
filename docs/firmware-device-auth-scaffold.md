@@ -123,10 +123,11 @@ Diagnostics never print the broker URL, secret, custom token, ID token, refresh
 token, API key, or CA contents.
 RTDB authorization diagnostics include only the sanitized path before any query
 or fragment, so an `auth=<ID_TOKEN>` query can never be printed.
-Fresh final commands are polled before optional config/history work. Command
-diagnostics report only redacted timing values (`ageMs` and `relayLatencyMs`).
-The transitional legacy `commands/current` fallback is polled less frequently
-and disabled for the current boot after a rules denial.
+Fresh `commands/current` commands are polled before optional config/history
+work. Command diagnostics report only redacted timing values (`ageMs` captured
+at receipt and `relayLatencyMs`). The legacy singular `command` fallback is
+disabled for the current boot as soon as `commands/current` is available.
+Only one optional background task runs after each command poll.
 Pending history is synced one item per background cycle and deferred during
 command/session transitions. The final device history path is authoritative;
 the optional legacy `completedSessions` mirror is disabled for the current boot
