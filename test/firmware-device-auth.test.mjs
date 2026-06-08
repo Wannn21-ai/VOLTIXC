@@ -132,6 +132,7 @@ test("dashboard START and STOP cannot recreate the singular command node", () =>
   assert.match(dashboardSource, /createdAt: commandTimestamp/);
   assert.match(dashboardSource, /updatedAt: commandTimestamp/);
   assert.doesNotMatch(dashboardSource, /devices\/\$\{selectedDevice\.id\}\/command`/);
+  assert.doesNotMatch(dashboardSource, /activeSession/);
   assert.doesNotMatch(dashboardSource, /singularFallback|singular fallback used/);
 });
 
