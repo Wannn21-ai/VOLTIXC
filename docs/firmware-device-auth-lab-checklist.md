@@ -89,6 +89,9 @@ reviewed root CA is missing. There is no lab-insecure TLS opt-in.
 - [ ] Web writes START/STOP only to `commands/current`, with `createdAt` and
       `updatedAt` captured from `Date.now()` at click time; normal lab `ageMs`
       is about `0-2000`.
+- [ ] Browser console has no repeated `permission_denied` warnings for
+      `/users/{uid}/activeSession`; dashboard resumes from device live/session
+      state instead of writing a per-user active-session cache.
 - [ ] After `commands/current` is available, retained stale singular `command`
       data causes no repeated logs or fallback polling.
 - [ ] Pending history sync processes at most one session per background cycle

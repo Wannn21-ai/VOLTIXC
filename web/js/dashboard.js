@@ -26,7 +26,6 @@ try {
 // ================= FIREBASE PATHS =================
 const historyRef  = ref(db, `users/${uid}/history`);
 const settingsRef = ref(db, `users/${uid}/settings`);
-const activeRef   = ref(db, `users/${uid}/activeSession`);
 
 // ================= SETTINGS =================
 const SETTING_DEFAULTS = {
@@ -190,16 +189,6 @@ async function pushHistory(entry) {
 
 async function getSessionCount() {
   return (await getHistory()).length;
-}
-
-async function saveActiveSession(data) {
-  try { await set(activeRef, data); } catch {}
-}
-async function loadActiveSession() {
-  try {
-    const snap = await get(activeRef);
-    return snap.exists() ? snap.val() : null;
-  } catch { return null; }
 }
 
 // ================= ELEMENTS =================
@@ -616,7 +605,6 @@ async function resetMonitoring() {
   pendingSessionId = null;
   pendingStartCommandAt = null;
   pendingRelayConfirmed = false;
-  await saveActiveSession(null);
   if (subDuration)    subDuration.textContent    = "Duration: 00:00:00";
   if (valDeviceName)  valDeviceName.textContent  = "—";
   if (activeDevLabel) activeDevLabel.textContent = "No active device";
@@ -648,7 +636,6 @@ async function startMonitoring(name) {
   pendingStartCommandAt = null;
   pendingRelayConfirmed = false;
 
-  await saveActiveSession({ ...activeDevice, startTime, energyBaseline });
   if (valDeviceName)  valDeviceName.textContent  = name;
   if (activeDevLabel) activeDevLabel.textContent = `Monitoring: ${name}`;
   if (btnStop) {
@@ -704,7 +691,6 @@ async function alignActiveSessionFromEsp() {
       btnStop.disabled = false;
       btnStop.style.display = "inline-flex";
     }
-    await saveActiveSession({ ...activeDevice, startTime, energyBaseline });
     await renderDeviceTabs();
     return true;
   }
@@ -714,7 +700,6 @@ async function alignActiveSessionFromEsp() {
     startTime = espStartTime;
   }
   lastknownEnergy = firebaseEnergy;
-  await saveActiveSession({ ...activeDevice, startTime, energyBaseline });
   return true;
 }
 
@@ -1182,27 +1167,6 @@ function startMetersInterval() {
 // ================================================================
 // INIT
 // ================================================================
-const savedActive = await loadActiveSession();
-if (savedActive && savedActive.id) {
-  activeDevice        = { id: savedActive.id, name: savedActive.name };
-  startTime           = savedActive.startTime      || null;
-  energyBaseline      = savedActive.energyBaseline || 0;
-  lastknownEnergy     = energyBaseline;
-  deviceConnectTime   = savedActive.startTime      || null;
-  deviceConnectEnergy = savedActive.energyBaseline || 0;
-  isRunning           = !!startTime;
-  if (valDeviceName)  valDeviceName.textContent  = activeDevice.name;
-  if (activeDevLabel) activeDevLabel.textContent = `Monitoring: ${activeDevice.name}`;
-  if (btnStop) {
-    btnStop.disabled = false;
-    btnStop.style.display = "inline-flex";
-  }
-  if (startTime) {
-    clearInterval(timerInterval);
-    timerInterval = setInterval(updateTimer, 1000);
-  }
-}
-
 updateChartColors(lineChart, barChart, pieChart);
 pieChart.options.plugins.legend.labels.color = chartTickColor();
 pieChart.update("none");
