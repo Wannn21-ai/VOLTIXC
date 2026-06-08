@@ -85,7 +85,12 @@ reviewed root CA is missing. There is no lab-insecure TLS opt-in.
 - [ ] RTDB denial logs show only sanitized paths without query strings.
 - [ ] Fresh web START/STOP normally reaches relay action within about `1-2`
       seconds after RTDB receives the command; record redacted `ageMs` and
-      `relayLatencyMs` diagnostics.
+      `relayLatencyMs` diagnostics with `source=commands/current`.
+- [ ] Web writes START/STOP only to `commands/current`, with `createdAt` and
+      `updatedAt` captured from `Date.now()` at click time; normal lab `ageMs`
+      is about `0-2000`.
+- [ ] After `commands/current` is available, retained stale singular `command`
+      data causes no repeated logs or fallback polling.
 - [ ] Pending history sync processes at most one session per background cycle
       and defers while START/load validation or session finishing is pending.
 - [ ] Final `/history/{sessionId}` success marks the local session synced even

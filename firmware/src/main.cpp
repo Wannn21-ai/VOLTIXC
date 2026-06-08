@@ -557,14 +557,17 @@ void loop() {
   offlineModeUpdate();
 
   if (onlineServicesAllowed) {
+    bool commandPollRan = false;
     if (lastFirebaseCommandMs == 0 || now - lastFirebaseCommandMs >= 500UL) {
       lastFirebaseCommandMs = now;
       firebasePollCommand();
+      commandPollRan = true;
     }
 
     const bool commandTransitionPending = firebaseCommandTransitionPending();
 
-    if (appConfig.configPendingSync &&
+    if (commandPollRan &&
+        appConfig.configPendingSync &&
         !commandTransitionPending &&
         !firebaseDeviceConfigPushBlocked() &&
         (lastFirebaseConfigMs == 0 || now - lastFirebaseConfigMs >= 30000UL)) {
@@ -575,20 +578,17 @@ void loop() {
       } else {
         Serial.println("[config] Pending config sync FAIL");
       }
-    }
-
-    if (!commandTransitionPending &&
+    } else if (commandPollRan &&
+        !commandTransitionPending &&
         (lastFirebaseConfigMs == 0 || now - lastFirebaseConfigMs >= 30000UL)) {
       lastFirebaseConfigMs = now;
       firebaseReadConfig();
-    }
-
-    if (lastFirebaseLiveMs == 0 || now - lastFirebaseLiveMs >= 2000UL) {
+    } else if (commandPollRan &&
+        (lastFirebaseLiveMs == 0 || now - lastFirebaseLiveMs >= 2000UL)) {
       lastFirebaseLiveMs = now;
       firebasePublishLive();
-    }
-
-    if (!commandTransitionPending &&
+    } else if (commandPollRan &&
+        !commandTransitionPending &&
         (lastPendingHistorySyncMs == 0 || now - lastPendingHistorySyncMs >= 30000UL)) {
       lastPendingHistorySyncMs = now;
       storageSyncPendingHistoryToFirebase();

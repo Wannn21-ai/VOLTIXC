@@ -35,7 +35,7 @@ Use this short run sheet while executing the full
 - [ ] Serial shows expected device ID and config path behavior.
 - [ ] Firmware applies valid final config or retains safe cached/default config.
 - [ ] Live telemetry targets final system/device children.
-- [ ] Neutral/stale final command causes no action.
+- [ ] Neutral/stale singular command fallback causes no action.
 - [ ] OLED local monitoring works when Firebase writes are denied.
 - [ ] Overload behavior is unchanged.
 - [ ] Session stop saves LittleFS before cloud sync.
