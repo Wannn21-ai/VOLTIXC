@@ -10,7 +10,7 @@ bool storageWriteActiveSessionCheckpoint(const ActiveSessionCheckpoint& checkpoi
 bool storageReadActiveSessionCheckpoint(ActiveSessionCheckpoint& checkpoint);
 bool storageReadActiveSessionCheckpointJson(String& out);
 bool storageClearActiveSessionCheckpoint();
-bool storageReadHistoryJson(String& out);
+bool storagePrintHistoryJson(Print& output);
 int storageCountHistory();
 unsigned long storageNextOfflineDeviceCounterFromHistory();
 bool storageClearHistory();
