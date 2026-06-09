@@ -2,3 +2,4 @@
 
 void sensorBegin();
 void sensorUpdate();
+bool sensorAcInputPresent();
