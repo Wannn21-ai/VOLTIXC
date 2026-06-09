@@ -312,10 +312,10 @@ static void processSerialCommand(char* rawCommand) {
   }
 
   if (strcmp(command, "history") == 0) {
-    String historyJson;
-    if (storageReadHistoryJson(historyJson)) {
+    Serial.println("[serial] local history JSON follows");
+    if (storagePrintHistoryJson(Serial)) {
+      Serial.println();
       Serial.println("[serial] OK: local history JSON");
-      Serial.println(historyJson);
     } else {
       Serial.println("[serial] ERROR: failed to read local history");
     }

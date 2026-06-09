@@ -10,9 +10,12 @@
 #include <LittleFS.h>
 #include <string.h>
 
-static constexpr const char* HISTORY_PATH = "/history.json";
+static constexpr const char* LEGACY_HISTORY_PATH = "/history.json";
+static constexpr const char* HISTORY_DIR = "/history";
+static constexpr const char* HISTORY_MIGRATION_MARKER_PATH = "/history_migrated.ok";
 static constexpr const char* ACTIVE_SESSION_PATH = "/active_session.json";
-static constexpr size_t HISTORY_DOC_CAPACITY = 16384;
+static constexpr size_t LEGACY_HISTORY_DOC_CAPACITY = 16384;
+static constexpr size_t SESSION_DOC_CAPACITY = 2048;
 static constexpr size_t CHECKPOINT_DOC_CAPACITY = 1024;
 
 static bool mounted = false;
@@ -29,53 +32,120 @@ static void formatCostText(float cost, char* out, size_t outSize) {
   snprintf(out, outSize, "Rp %.0f", cost);
 }
 
-static bool loadHistory(DynamicJsonDocument& doc) {
+static void makeHistoryPath(const char* sessionId, char* out, size_t outSize) {
+  char safeId[64];
+  size_t safeIndex = 0;
+  for (size_t index = 0; sessionId != nullptr && sessionId[index] != '\0' && safeIndex < sizeof(safeId) - 1; index++) {
+    const char c = sessionId[index];
+    const bool safe =
+      (c >= 'a' && c <= 'z') ||
+      (c >= 'A' && c <= 'Z') ||
+      (c >= '0' && c <= '9') ||
+      c == '_' || c == '-';
+    safeId[safeIndex++] = safe ? c : '_';
+  }
+  safeId[safeIndex] = '\0';
+  snprintf(out, outSize, "%s/%s.json", HISTORY_DIR, safeId[0] == '\0' ? "unknown" : safeId);
+}
+
+static bool isHistorySessionFile(File& file) {
+  if (!file || file.isDirectory()) {
+    return false;
+  }
+  const String name = file.name();
+  return name.endsWith(".json");
+}
+
+static bool readSessionFile(File& file, DynamicJsonDocument& doc) {
   doc.clear();
-
-  if (!LittleFS.exists(HISTORY_PATH)) {
-    doc.to<JsonArray>();
-    return true;
-  }
-
-  File file = LittleFS.open(HISTORY_PATH, "r");
-  if (!file) {
-    Serial.println("[storage] Failed to open /history.json for read");
-    return false;
-  }
-
-  if (file.size() == 0) {
-    file.close();
-    doc.to<JsonArray>();
-    return true;
-  }
-
   const DeserializationError error = deserializeJson(doc, file);
-  file.close();
-
-  if (error) {
-    Serial.print("[storage] Failed to parse /history.json: ");
-    Serial.println(error.c_str());
+  if (error || !doc.is<JsonObject>()) {
+    Serial.print("[storage] Failed to parse session file ");
+    Serial.print(file.name());
+    Serial.print(": ");
+    Serial.println(error ? error.c_str() : "not an object");
     return false;
   }
-
-  if (!doc.is<JsonArray>()) {
-    Serial.println("[storage] /history.json is not a JSON array");
-    return false;
-  }
-
   return true;
 }
 
-static bool writeHistory(DynamicJsonDocument& doc) {
-  File file = LittleFS.open(HISTORY_PATH, "w");
+static bool writeSessionDocument(const char* path, JsonObjectConst entry) {
+  const String tempPath = String(path) + ".tmp";
+  File file = LittleFS.open(tempPath, "w");
   if (!file) {
-    Serial.println("[storage] Failed to open /history.json for write");
+    Serial.print("[storage] Failed to open session file for write ");
+    Serial.println(path);
     return false;
   }
-
-  const size_t written = serializeJson(doc, file);
+  const size_t written = serializeJson(entry, file);
   file.close();
+  if (written == 0) {
+    LittleFS.remove(tempPath);
+    return false;
+  }
+  if (!LittleFS.rename(tempPath, path)) {
+    LittleFS.remove(tempPath);
+    Serial.print("[storage] Failed to commit session file ");
+    Serial.println(path);
+    return false;
+  }
+  return true;
+}
+
+static bool writeMigrationMarker() {
+  File marker = LittleFS.open(HISTORY_MIGRATION_MARKER_PATH, "w");
+  if (!marker) {
+    return false;
+  }
+  const size_t written = marker.print("migrated");
+  marker.close();
   return written > 0;
+}
+
+static void migrateLegacyHistoryIfPossible() {
+  if (!LittleFS.exists(LEGACY_HISTORY_PATH) ||
+      LittleFS.exists(HISTORY_MIGRATION_MARKER_PATH)) {
+    return;
+  }
+
+  File file = LittleFS.open(LEGACY_HISTORY_PATH, "r");
+  if (!file) {
+    Serial.println("[storage] Legacy /history.json preserved; open failed");
+    return;
+  }
+
+  DynamicJsonDocument legacyDoc(LEGACY_HISTORY_DOC_CAPACITY);
+  const DeserializationError error = deserializeJson(legacyDoc, file);
+  file.close();
+  if (error || !legacyDoc.is<JsonArray>()) {
+    Serial.print("[storage] Legacy /history.json preserved; migration parse failed: ");
+    Serial.println(error ? error.c_str() : "not an array");
+    return;
+  }
+
+  int migrated = 0;
+  for (JsonObjectConst entry : legacyDoc.as<JsonArrayConst>()) {
+    const char* sessionId = entry["sessionId"] | entry["id"] | "";
+    if (sessionId[0] == '\0') {
+      Serial.println("[storage] Legacy migration incomplete; entry missing sessionId, /history.json preserved");
+      return;
+    }
+    char path[96];
+    makeHistoryPath(sessionId, path, sizeof(path));
+    if (LittleFS.exists(path) || writeSessionDocument(path, entry)) {
+      migrated++;
+      continue;
+    }
+    Serial.println("[storage] Legacy migration incomplete; /history.json preserved");
+    return;
+  }
+
+  if (writeMigrationMarker()) {
+    Serial.print("[storage] Legacy /history.json migrated and preserved entries=");
+    Serial.println(migrated);
+  } else {
+    Serial.println("[storage] Legacy migration complete but marker write failed; /history.json preserved");
+  }
 }
 
 static bool parseOfflineDeviceNumber(const char* name, unsigned long& number) {
@@ -164,6 +234,13 @@ bool storageBegin() {
   mounted = LittleFS.begin(true);
   Serial.print("[storage] LittleFS ");
   Serial.println(mounted ? "mounted" : "mount failed");
+  if (mounted) {
+    if (!LittleFS.exists(HISTORY_DIR) && !LittleFS.mkdir(HISTORY_DIR)) {
+      Serial.println("[storage] Failed to create /history directory");
+      return false;
+    }
+    migrateLegacyHistoryIfPossible();
+  }
   return mounted;
 }
 
@@ -176,26 +253,16 @@ bool storageAppendCompletedSession(const CompletedSessionSnapshot& snapshot) {
     return false;
   }
 
-  DynamicJsonDocument doc(HISTORY_DOC_CAPACITY);
-  if (!loadHistory(doc)) {
-    return false;
+  char path[96];
+  makeHistoryPath(snapshot.sessionId, path, sizeof(path));
+  if (LittleFS.exists(path)) {
+    Serial.print("[storage] Session already in history sessionId=");
+    Serial.println(snapshot.sessionId);
+    return true;
   }
 
-  JsonArray history = doc.as<JsonArray>();
-  for (JsonObjectConst existing : history) {
-    const char* existingSessionId = existing["sessionId"] | existing["id"] | "";
-    if (strcmp(existingSessionId, snapshot.sessionId) == 0) {
-      Serial.print("[storage] Session already in history sessionId=");
-      Serial.println(snapshot.sessionId);
-      return true;
-    }
-  }
-
-  JsonObject entry = history.createNestedObject();
-  if (entry.isNull()) {
-    Serial.println("[storage] Failed to append history entry, document is full");
-    return false;
-  }
+  DynamicJsonDocument doc(SESSION_DOC_CAPACITY);
+  JsonObject entry = doc.to<JsonObject>();
 
   char duration[16];
   char costText[24];
@@ -246,11 +313,16 @@ bool storageAppendCompletedSession(const CompletedSessionSnapshot& snapshot) {
   entry["pendingSync"] = true;
   entry["createdFrom"] = "ESP32";
 
-  const bool saved = writeHistory(doc);
+  if (doc.overflowed()) {
+    Serial.println("[storage] Failed to append history entry, session document is full");
+    return false;
+  }
+
+  const bool saved = writeSessionDocument(path, entry);
   Serial.print("[storage] Append history ");
   Serial.print(saved ? "OK" : "FAIL");
-  Serial.print(" count=");
-  Serial.println(saved ? history.size() : 0);
+  Serial.print(" sessionId=");
+  Serial.println(snapshot.sessionId);
   return saved;
 }
 
@@ -380,29 +452,41 @@ bool storageClearActiveSessionCheckpoint() {
   return removed;
 }
 
-bool storageReadHistoryJson(String& out) {
-  out = "[]";
+bool storagePrintHistoryJson(Print& output) {
   if (!mounted) {
     Serial.println("[storage] Cannot read history, LittleFS is not mounted");
     return false;
   }
 
-  if (!LittleFS.exists(HISTORY_PATH)) {
-    return true;
-  }
-
-  File file = LittleFS.open(HISTORY_PATH, "r");
-  if (!file) {
-    Serial.println("[storage] Failed to open /history.json for read");
+  File root = LittleFS.open(HISTORY_DIR);
+  if (!root || !root.isDirectory()) {
+    Serial.println("[storage] Failed to open /history directory");
     return false;
   }
 
-  out = file.readString();
-  file.close();
-  if (out.length() == 0) {
-    out = "[]";
+  bool first = true;
+  bool valid = true;
+  output.print("[");
+  File file = root.openNextFile();
+  while (file) {
+    if (isHistorySessionFile(file)) {
+      DynamicJsonDocument doc(SESSION_DOC_CAPACITY);
+      if (readSessionFile(file, doc)) {
+        if (!first) {
+          output.print(",");
+        }
+        serializeJson(doc, output);
+        first = false;
+      } else {
+        valid = false;
+      }
+    }
+    file.close();
+    file = root.openNextFile();
   }
-  return true;
+  root.close();
+  output.print("]");
+  return valid;
 }
 
 int storageCountHistory() {
@@ -411,12 +495,21 @@ int storageCountHistory() {
     return -1;
   }
 
-  DynamicJsonDocument doc(HISTORY_DOC_CAPACITY);
-  if (!loadHistory(doc)) {
+  File root = LittleFS.open(HISTORY_DIR);
+  if (!root || !root.isDirectory()) {
     return -1;
   }
-
-  return doc.as<JsonArray>().size();
+  int count = 0;
+  File file = root.openNextFile();
+  while (file) {
+    if (isHistorySessionFile(file)) {
+      count++;
+    }
+    file.close();
+    file = root.openNextFile();
+  }
+  root.close();
+  return count;
 }
 
 unsigned long storageNextOfflineDeviceCounterFromHistory() {
@@ -425,19 +518,27 @@ unsigned long storageNextOfflineDeviceCounterFromHistory() {
     return 1UL;
   }
 
-  DynamicJsonDocument doc(HISTORY_DOC_CAPACITY);
-  if (!loadHistory(doc)) {
+  unsigned long maxDeviceNumber = 0;
+  File root = LittleFS.open(HISTORY_DIR);
+  if (!root || !root.isDirectory()) {
     return 1UL;
   }
-
-  unsigned long maxDeviceNumber = 0;
-  for (JsonObjectConst entry : doc.as<JsonArrayConst>()) {
-    unsigned long number = 0;
-    const char* name = entry["name"] | entry["deviceName"] | "";
-    if (parseOfflineDeviceNumber(name, number) && number > maxDeviceNumber) {
-      maxDeviceNumber = number;
+  File file = root.openNextFile();
+  while (file) {
+    if (isHistorySessionFile(file)) {
+      DynamicJsonDocument doc(SESSION_DOC_CAPACITY);
+      if (readSessionFile(file, doc)) {
+        unsigned long number = 0;
+        const char* name = doc["name"] | doc["deviceName"] | "";
+        if (parseOfflineDeviceNumber(name, number) && number > maxDeviceNumber) {
+          maxDeviceNumber = number;
+        }
+      }
     }
+    file.close();
+    file = root.openNextFile();
   }
+  root.close();
 
   Serial.print("[offline] Scanned history max offline device=");
   Serial.println(maxDeviceNumber);
@@ -450,16 +551,41 @@ bool storageClearHistory() {
     return false;
   }
 
-  File file = LittleFS.open(HISTORY_PATH, "w");
-  if (!file) {
-    Serial.println("[storage] Failed to open /history.json for clear");
-    return false;
+  bool cleared = true;
+  while (true) {
+    File root = LittleFS.open(HISTORY_DIR);
+    if (!root || !root.isDirectory()) {
+      cleared = false;
+      break;
+    }
+    File file = root.openNextFile();
+    String path;
+    while (file) {
+      if (isHistorySessionFile(file)) {
+        path = file.path();
+        file.close();
+        break;
+      }
+      file.close();
+      file = root.openNextFile();
+    }
+    root.close();
+    if (path.length() == 0) {
+      break;
+    }
+    if (!LittleFS.remove(path)) {
+      cleared = false;
+      break;
+    }
   }
-
-  const size_t written = file.print("[]");
-  file.close();
-  Serial.println(written > 0 ? "[storage] History cleared" : "[storage] Clear history failed");
-  return written > 0;
+  if (LittleFS.exists(LEGACY_HISTORY_PATH) && !LittleFS.remove(LEGACY_HISTORY_PATH)) {
+    cleared = false;
+  }
+  if (LittleFS.exists(HISTORY_MIGRATION_MARKER_PATH) && !LittleFS.remove(HISTORY_MIGRATION_MARKER_PATH)) {
+    cleared = false;
+  }
+  Serial.println(cleared ? "[storage] History cleared" : "[storage] Clear history incomplete");
+  return cleared;
 }
 
 bool storageMarkSessionQueued(const char* sessionId) {
@@ -472,31 +598,26 @@ bool storageMarkSessionQueued(const char* sessionId) {
     return false;
   }
 
-  DynamicJsonDocument doc(HISTORY_DOC_CAPACITY);
-  if (!loadHistory(doc)) {
-    return false;
-  }
-
-  JsonArray history = doc.as<JsonArray>();
-  bool changed = false;
-  for (JsonObject entry : history) {
-    const char* entrySessionId = entry["sessionId"] | entry["id"] | "";
-    if (strcmp(entrySessionId, sessionId) == 0) {
-      entry["syncStatus"] = "SYNCED";
-      entry["pendingSync"] = false;
-      applySyncMetadata(entry);
-      changed = true;
-      break;
-    }
-  }
-
-  if (!changed) {
+  char path[96];
+  makeHistoryPath(sessionId, path, sizeof(path));
+  File file = LittleFS.open(path, "r");
+  if (!file) {
     Serial.print("[storage] No local history entry for sessionId=");
     Serial.println(sessionId);
     return false;
   }
+  DynamicJsonDocument doc(SESSION_DOC_CAPACITY);
+  const bool parsed = readSessionFile(file, doc);
+  file.close();
+  if (!parsed) {
+    return false;
+  }
 
-  const bool saved = writeHistory(doc);
+  JsonObject entry = doc.as<JsonObject>();
+  entry["syncStatus"] = "SYNCED";
+  entry["pendingSync"] = false;
+  applySyncMetadata(entry);
+  const bool saved = writeSessionDocument(path, entry);
   Serial.print("[storage] Mark synced ");
   Serial.print(sessionId);
   Serial.print(" ");
@@ -510,18 +631,29 @@ int storageCountPendingHistory() {
     return -1;
   }
 
-  DynamicJsonDocument doc(HISTORY_DOC_CAPACITY);
-  if (!loadHistory(doc)) {
+  File root = LittleFS.open(HISTORY_DIR);
+  if (!root || !root.isDirectory()) {
     return -1;
   }
-
   int count = 0;
-  for (JsonObjectConst entry : doc.as<JsonArrayConst>()) {
-    if (isPendingHistoryEntry(entry)) {
-      count++;
+  bool valid = true;
+  File file = root.openNextFile();
+  while (file) {
+    if (isHistorySessionFile(file)) {
+      DynamicJsonDocument doc(SESSION_DOC_CAPACITY);
+      if (readSessionFile(file, doc)) {
+        if (isPendingHistoryEntry(doc.as<JsonObjectConst>())) {
+          count++;
+        }
+      } else {
+        valid = false;
+      }
     }
+    file.close();
+    file = root.openNextFile();
   }
-  return count;
+  root.close();
+  return valid ? count : -1;
 }
 
 bool storageSyncPendingHistoryToFirebase() {
@@ -530,20 +662,9 @@ bool storageSyncPendingHistoryToFirebase() {
     return false;
   }
 
-  DynamicJsonDocument doc(HISTORY_DOC_CAPACITY);
-  if (!loadHistory(doc)) {
+  const int pending = storageCountPendingHistory();
+  if (pending < 0) {
     return false;
-  }
-
-  JsonArray history = doc.as<JsonArray>();
-  int pending = 0;
-  int queued = 0;
-  int failed = 0;
-
-  for (JsonObject entry : history) {
-    if (isPendingHistoryEntry(entry)) {
-      pending++;
-    }
   }
   Serial.print("[history] pending sync count=");
   Serial.println(pending);
@@ -554,12 +675,43 @@ bool storageSyncPendingHistoryToFirebase() {
     Serial.println(" queued=0 failed=0 save=SKIP WiFi offline");
     return pending == 0;
   }
+  if (pending == 0) {
+    Serial.println("[storage] Pending sync total=0 queued=0 failed=0 remaining=0 save=OK");
+    return true;
+  }
 
-  for (JsonObject entry : history) {
-    if (!isPendingHistoryEntry(entry)) {
+  File root = LittleFS.open(HISTORY_DIR);
+  if (!root || !root.isDirectory()) {
+    return false;
+  }
+
+  bool attempted = false;
+  bool pushed = false;
+  bool saved = true;
+  File file = root.openNextFile();
+  while (file) {
+    if (!isHistorySessionFile(file)) {
+      file.close();
+      file = root.openNextFile();
       continue;
     }
 
+    const String path = file.path();
+    DynamicJsonDocument doc(SESSION_DOC_CAPACITY);
+    if (!readSessionFile(file, doc)) {
+      file.close();
+      root.close();
+      return false;
+    }
+    file.close();
+
+    JsonObject entry = doc.as<JsonObject>();
+    if (!isPendingHistoryEntry(entry)) {
+      file = root.openNextFile();
+      continue;
+    }
+
+    attempted = true;
     const char* sessionId = entry["sessionId"] | entry["id"] | "";
     Serial.print("[history] Pending sync upload sessionId=");
     Serial.print(sessionId[0] == '\0' ? "(unknown)" : sessionId);
@@ -568,45 +720,34 @@ bool storageSyncPendingHistoryToFirebase() {
     entry["syncStatus"] = "SYNCED";
     entry["pendingSync"] = false;
     applySyncMetadata(entry);
-
-    const bool pushed = firebasePushCompletedSession(entry);
+    pushed = firebasePushCompletedSession(entry);
     Serial.print("[history] Firebase push ");
     Serial.print(pushed ? "OK" : "FAIL");
     Serial.print(" sessionId=");
     Serial.println(sessionId[0] == '\0' ? "(unknown)" : sessionId);
     if (pushed) {
-      queued++;
-      Serial.print("[history] pendingSync=false syncStatus=SYNCED sessionId=");
+      saved = writeSessionDocument(path.c_str(), entry);
+      Serial.print(saved
+        ? "[history] pendingSync=false syncStatus=SYNCED sessionId="
+        : "[history] Local sync mark failed; session file remains pending sessionId=");
       Serial.println(sessionId[0] == '\0' ? "(unknown)" : sessionId);
     } else {
-      entry["syncStatus"] = "PENDING";
-      entry["pendingSync"] = true;
-      entry.remove("syncedAt");
-      entry.remove("syncedDate");
-      entry.remove("syncedTime");
-      entry.remove("displayDate");
-      failed++;
       Serial.print("[history] pendingSync=true syncStatus=PENDING sessionId=");
       Serial.println(sessionId[0] == '\0' ? "(unknown)" : sessionId);
     }
     break;
   }
-
-  bool saved = true;
-  if (queued > 0) {
-    saved = writeHistory(doc);
-  }
+  root.close();
 
   Serial.print("[storage] Pending sync total=");
   Serial.print(pending);
   Serial.print(" queued=");
-  Serial.print(queued);
+  Serial.print(pushed && saved ? 1 : 0);
   Serial.print(" failed=");
-  Serial.print(failed);
+  Serial.print(attempted && !pushed ? 1 : 0);
   Serial.print(" remaining=");
-  Serial.print(pending - queued);
+  Serial.print(pending - (pushed && saved ? 1 : 0));
   Serial.print(" save=");
   Serial.println(saved ? "OK" : "FAIL");
-
-  return failed == 0 && saved;
+  return attempted && pushed && saved;
 }
