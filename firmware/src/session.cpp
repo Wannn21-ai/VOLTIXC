@@ -47,6 +47,7 @@ bool offlineReadyForNext = false;
 bool offlineManualLock = false;
 bool manualOfflineTryingOnline = false;
 bool offlineReadyLogged = false;
+bool acMissingDuringMonitoringLogged = false;
 OfflineEntryReason offlineReason = OfflineEntryReason::AUTO_NO_WIFI;
 unsigned long offlineFinishedAtMs = 0;
 unsigned long manualOfflineIdleStartedAtMs = 0;
@@ -319,6 +320,7 @@ static unsigned long currentLoadValidationTimeoutMs() {
 static void verifyLoadAndStartMonitoring() {
   const unsigned long now = millis();
   assignOfflineDeviceNameIfNeeded();
+  acMissingDuringMonitoringLogged = false;
   sessionData.state = SessionState::MONITORING;
   sessionData.endReason = EndReason::NONE;
   sessionData.startedAtMs = now;
@@ -416,6 +418,7 @@ static void handleLoadValidation() {
 void sessionBegin() {
   sessionData.state = SessionState::IDLE;
   sessionData.endReason = EndReason::NONE;
+  acMissingDuringMonitoringLogged = false;
   offlineDeviceCounter = loadOfflineDeviceCounter();
   const unsigned long historyCounter = storageNextOfflineDeviceCounterFromHistory();
   if (historyCounter > offlineDeviceCounter) {
@@ -613,12 +616,19 @@ void sessionUpdate() {
   }
 
   if (sessionData.state == SessionState::MONITORING &&
-      sensorData.valid &&
       !sensorData.loadDetected) {
-    sessionStop(EndReason::LOAD_REMOVED);
+    if (sensorAcInputPresent()) {
+      acMissingDuringMonitoringLogged = false;
+      Serial.println("[load] Load removed while AC present");
+      sessionStop(EndReason::LOAD_REMOVED);
+    } else if (!acMissingDuringMonitoringLogged) {
+      acMissingDuringMonitoringLogged = true;
+      Serial.println("[powerloss] AC missing during monitoring; keeping checkpoint for recovery");
+    }
     return;
   }
 
+  acMissingDuringMonitoringLogged = false;
 }
 
 bool sessionIsActive() {

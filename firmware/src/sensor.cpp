@@ -43,3 +43,7 @@ void sensorUpdate() {
     Serial.println("[sensor] Invalid PZEM reading");
   }
 }
+
+bool sensorAcInputPresent() {
+  return sensorData.valid && sensorData.voltage >= Config::AC_PRESENT_MIN_VOLTAGE;
+}
