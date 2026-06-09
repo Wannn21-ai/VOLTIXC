@@ -214,6 +214,9 @@ const btnSaveDev      = document.getElementById("btn-save-device");
 const gaugeVoltage    = document.getElementById("gauge-voltage");
 const gaugeCurrent    = document.getElementById("gauge-current");
 const overloadBanner  = document.getElementById("overload-banner");
+const valRelayStatus  = document.getElementById("val-relay-status");
+const valModeStatus   = document.getElementById("val-mode-status");
+const valDeviceLinkStatus = document.getElementById("val-device-link-status");
 
 // ================================================================
 // BANNER: OFFLINE ESP32
@@ -539,6 +542,25 @@ function setDeviceBadge(state) {
   const [cls, txt] = map[state] || map.unknown;
   badgeStatus.className = cls;
   badgeStatus.textContent = txt;
+}
+function setHeroStatus(el, value, state) {
+  if (!el) return;
+  el.textContent = value;
+  el.className = state ? `status-${state}` : "";
+}
+function updateHeroStatuses(systemOnline) {
+  const mode = systemMode || SystemMode.TRANSITION;
+  setHeroStatus(valRelayStatus, firebaseRelay ? "ON" : "OFF", firebaseRelay ? "online" : "offline");
+  setHeroStatus(
+    valModeStatus,
+    mode,
+    mode === SystemMode.ONLINE ? "online" : mode === SystemMode.OFFLINE ? "offline" : "transition"
+  );
+  setHeroStatus(
+    valDeviceLinkStatus,
+    systemOnline ? "ONLINE" : firebaseTimestamp > 0 ? "OFFLINE" : "WAITING",
+    systemOnline ? "online" : firebaseTimestamp > 0 ? "offline" : "transition"
+  );
 }
 async function updateSessionCount() {
   sessionCount = await getSessionCount();
@@ -1008,6 +1030,7 @@ async function updateMeters() {
 
   // ── Update status bar ──────────────────────────────────
   setSystemStatus(systemOnline);
+  updateHeroStatuses(systemOnline);
   if (systemOnline) {
     if (subWebStatus) subWebStatus.textContent = "Web: online";
   } else if (firebaseTimestamp > 0) {

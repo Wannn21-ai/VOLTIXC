@@ -3,190 +3,255 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Dashboard — Smart Energy Monitor</title>
+  <title>VOLTIX Energy Dashboard</title>
 
-  <!-- ═══════════════════════════════════════════════════════════════
-       Firebase Config — di-inject oleh Netlify saat build.
-       Nilai diambil dari Environment Variables di Netlify Dashboard.
-       JANGAN isi langsung di sini jika file ini di-commit ke GitHub.
-       Lihat netlify.toml untuk cara kerjanya.
-  ════════════════════════════════════════════════════════════════ -->
-  <meta name="firebase-api-key"            content="NETLIFY_ENV_FIREBASE_API_KEY"/>
-  <meta name="firebase-auth-domain"        content="NETLIFY_ENV_FIREBASE_AUTH_DOMAIN"/>
-  <meta name="firebase-database-url"       content="NETLIFY_ENV_FIREBASE_DATABASE_URL"/>
-  <meta name="firebase-project-id"         content="NETLIFY_ENV_FIREBASE_PROJECT_ID"/>
-  <meta name="firebase-storage-bucket"     content="NETLIFY_ENV_FIREBASE_STORAGE_BUCKET"/>
+  <meta name="firebase-api-key" content="NETLIFY_ENV_FIREBASE_API_KEY"/>
+  <meta name="firebase-auth-domain" content="NETLIFY_ENV_FIREBASE_AUTH_DOMAIN"/>
+  <meta name="firebase-database-url" content="NETLIFY_ENV_FIREBASE_DATABASE_URL"/>
+  <meta name="firebase-project-id" content="NETLIFY_ENV_FIREBASE_PROJECT_ID"/>
+  <meta name="firebase-storage-bucket" content="NETLIFY_ENV_FIREBASE_STORAGE_BUCKET"/>
   <meta name="firebase-messaging-sender-id" content="NETLIFY_ENV_FIREBASE_MESSAGING_SENDER_ID"/>
-  <meta name="firebase-app-id"             content="NETLIFY_ENV_FIREBASE_APP_ID"/>
+  <meta name="firebase-app-id" content="NETLIFY_ENV_FIREBASE_APP_ID"/>
 
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
-<body>
+<body class="dashboard-page">
   <div class="app-layout">
-    <!-- SIDEBAR -->
     <aside class="sidebar" id="sidebar"></aside>
-    <!-- MAIN -->
+
     <div class="main-content" id="main-content">
       <header class="topbar" id="topbar"></header>
-      <div class="page-content">
 
-        <!-- OVERLOAD BANNER -->
-      <div id="overload-banner" style="
-        display:none; align-items:center; gap:10px;
-        background:var(--red-dim); border:1px solid rgba(255,23,68,0.4);
-        border-radius:var(--radius-md); padding:12px 20px; margin-bottom:20px;
-        color:var(--red); font-weight:600; font-size:13px;
-        animation: pulse-red 1s infinite alternate;">
-      </div>
+      <main class="page-content dashboard-shell">
+        <div id="overload-banner" class="dashboard-alert dashboard-alert-overload"></div>
 
-        <!-- PAGE HEADER -->
-        <div class="page-header">
+        <header class="dashboard-heading">
           <div>
-            <div class="page-header-title">Dashboard</div>
-            <div class="page-header-sub" id="active-device-label">No active device</div>
+            <div class="dashboard-eyebrow">Smart energy command center</div>
+            <h1>Live Energy Dashboard</h1>
+            <p id="active-device-label">No active device</p>
           </div>
-          <div style="display:flex;gap:10px;align-items:center;">
-            <button id="btn-stop" class="btn btn-danger" style="display:none;">⏹ Stop Session</button>
-          </div>
-        </div>
-        <section class="card placeholder-card" id="no-device-state" style="display:none;margin-bottom:20px;">
+          <button id="btn-stop" class="btn btn-danger dashboard-stop-button">Stop Session</button>
+        </header>
+
+        <section class="card placeholder-card dashboard-empty" id="no-device-state">
           <div class="empty-state">
-            <div class="empty-state-icon">DEV</div>
+            <div class="empty-state-icon">V</div>
             <div class="empty-state-title">No device paired yet</div>
-            <div class="empty-state-sub">Pair your VOLTIX device to start monitoring.</div>
+            <div class="empty-state-sub">Pair your VOLTIX device to unlock live monitoring.</div>
             <a class="btn btn-primary" href="device.html">Open Device Page</a>
           </div>
         </section>
-        <!-- DEVICE TABS -->
+
         <div class="device-tabs" id="device-tabs"></div>
-        <!-- SECTION 1: LIVE ELECTRICAL READINGS -->
-        <div class="gauge-grid">
-          <div class="gauge-card">
-            <div class="gauge-label">Voltage</div>
-            <div class="gauge-wrap">
-              <svg class="gauge-svg" viewBox="0 0 180 100">
-                <path class="gauge-track" d="M 16,90 A 74,74 0 0,1 164,90"/>
-                <path class="gauge-fill" id="gauge-voltage" stroke="var(--cyan)" stroke-dasharray="232" stroke-dashoffset="232" d="M 16,90 A 74,74 0 0,1 164,90"/>
-              </svg>
-              <div class="gauge-value-wrap">
-                <div class="gauge-value" id="val-voltage">0</div>
-                <div class="gauge-unit">V</div>
+
+        <section class="dashboard-hero" aria-label="Live electrical readings">
+          <article class="power-focus-card">
+            <div class="power-focus-top">
+              <div>
+                <div class="dashboard-card-kicker">Live demand</div>
+                <div class="power-focus-label">Power</div>
+              </div>
+              <div class="badge idle" id="badge-device-status">Idle</div>
+            </div>
+
+            <div class="power-focus-reading">
+              <span id="val-power">0</span>
+              <small>W</small>
+            </div>
+
+            <div class="power-signal" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span><span></span>
+            </div>
+
+            <div class="hero-status-grid">
+              <div class="hero-status-item">
+                <span>Session</span>
+                <strong>Live telemetry</strong>
+              </div>
+              <div class="hero-status-item">
+                <span>Relay</span>
+                <strong id="val-relay-status">OFF</strong>
+              </div>
+              <div class="hero-status-item">
+                <span>Mode</span>
+                <strong id="val-mode-status">TRANSITION</strong>
+              </div>
+              <div class="hero-status-item">
+                <span>WiFi / Device</span>
+                <strong id="val-device-link-status">WAITING</strong>
               </div>
             </div>
-            <div style="width:100%;display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);font-family:var(--font-display);">
-              <span>190V</span><span>240V</span>
-            </div>
-          </div>
-          <div class="gauge-card">
-            <div class="gauge-label">Current</div>
-            <div class="gauge-wrap">
-              <svg class="gauge-svg" viewBox="0 0 180 100">
-                <path class="gauge-track" d="M 16,90 A 74,74 0 0,1 164,90"/>
-                <path class="gauge-fill" id="gauge-current" stroke="var(--green)" stroke-dasharray="232" stroke-dashoffset="232" d="M 16,90 A 74,74 0 0,1 164,90"/>
-              </svg>
-              <div class="gauge-value-wrap">
-                <div class="gauge-value" id="val-current">0.00</div>
-                <div class="gauge-unit">A</div>
+          </article>
+
+          <div class="hero-gauges">
+            <article class="gauge-card dashboard-gauge-card">
+              <div class="gauge-heading">
+                <div>
+                  <div class="dashboard-card-kicker">AC input</div>
+                  <div class="gauge-label">Voltage</div>
+                </div>
+                <span class="gauge-range">190-240 V</span>
               </div>
-            </div>
-            <div style="width:100%;display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);font-family:var(--font-display);">
-              <span>0A</span><span>16A</span>
-            </div>
-          </div>
-          <div class="gauge-card" style="justify-content:space-between;">
-            <div class="gauge-label">Power</div>
-            <div style="text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;">
-              <div style="font-family:var(--font-display);font-size:42px;font-weight:700;color:var(--amber);" id="val-power">0</div>
-              <div style="font-family:var(--font-display);font-size:14px;color:var(--text-secondary);">Watt</div>
-            </div>
-            <div class="badge idle" id="badge-device-status">● Idle</div>
-          </div>
-        </div>
-        <!-- SECTION 2: SESSION SUMMARY -->
-        <div class="stat-grid">
-          <div class="stat-card cyan">
-            <div class="stat-label">Energy</div>
-            <div><span class="stat-value" id="val-energy">0.000</span><span class="stat-unit">kWh</span></div>
-            <div class="stat-sub" id="sub-duration">Duration: 00:00:00</div>
-          </div>
-          <div class="stat-card amber">
-            <div class="stat-label">Estimated Cost</div>
-            <div><span class="stat-value" id="val-cost">0</span></div>
-            <div class="stat-sub" id="sub-tariff">Tariff: Rp 1,444.70/kWh</div>
-          </div>
-          <div class="stat-card green">
-            <div class="stat-label">Session Count</div>
-            <div><span class="stat-value" id="val-session-count">0</span><span class="stat-unit">sessions</span></div>
-            <div class="stat-sub">All devices total</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Device Name</div>
-            <div style="font-family:var(--font-display);font-size:20px;font-weight:700;color:var(--cyan);margin-top:6px;" id="val-device-name">—</div>
-            <div class="stat-sub" id="sub-web-status">Web: offline</div>
-          </div>
-        </div>
+              <div class="gauge-wrap">
+                <svg class="gauge-svg" viewBox="0 0 180 100" aria-hidden="true">
+                  <path class="gauge-track" d="M 16,90 A 74,74 0 0,1 164,90"/>
+                  <path class="gauge-fill" id="gauge-voltage" stroke="var(--cyan)" stroke-dasharray="232" stroke-dashoffset="232" d="M 16,90 A 74,74 0 0,1 164,90"/>
+                </svg>
+                <div class="gauge-value-wrap">
+                  <div class="gauge-value" id="val-voltage">0</div>
+                  <div class="gauge-unit">VOLT</div>
+                </div>
+              </div>
+              <div class="gauge-scale"><span>LOW</span><span>NOMINAL</span><span>HIGH</span></div>
+            </article>
 
-        <!-- SECTION 3: ADVANCED READINGS SUMMARY -->
-      <div class="chart-card chart-inner" style="margin-bottom:24px;">
-        <div class="section-card-header">
-          <div>
-            <div class="chart-card-title" style="margin-bottom:4px;">Advanced Readings</div>
-            <span style="font-size:11px;color:var(--text-muted);">For technical reference</span>
+            <article class="gauge-card dashboard-gauge-card">
+              <div class="gauge-heading">
+                <div>
+                  <div class="dashboard-card-kicker">Load draw</div>
+                  <div class="gauge-label">Current</div>
+                </div>
+                <span class="gauge-range">0-16 A</span>
+              </div>
+              <div class="gauge-wrap">
+                <svg class="gauge-svg" viewBox="0 0 180 100" aria-hidden="true">
+                  <path class="gauge-track" d="M 16,90 A 74,74 0 0,1 164,90"/>
+                  <path class="gauge-fill" id="gauge-current" stroke="var(--green)" stroke-dasharray="232" stroke-dashoffset="232" d="M 16,90 A 74,74 0 0,1 164,90"/>
+                </svg>
+                <div class="gauge-value-wrap">
+                  <div class="gauge-value" id="val-current">0.00</div>
+                  <div class="gauge-unit">AMPERE</div>
+                </div>
+              </div>
+              <div class="gauge-scale"><span>IDLE</span><span>ACTIVE</span><span>LIMIT</span></div>
+            </article>
           </div>
-          <a class="btn btn-ghost" href="advanced.html">View Advanced Readings</a>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;">
-          <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;">
-            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Power Factor</div>
-            <div style="font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--cyan);" id="val-pf">—</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">0 = poor · 1 = ideal</div>
-          </div>
-          <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;">
-            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Frequency</div>
-            <div style="font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--green);" id="val-freq">—</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Hz · standard: 50 Hz</div>
-          </div>
-          <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;">
-            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Apparent Power</div>
-            <div style="font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--amber);" id="val-apparent">—</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">VA · V × I</div>
-          </div>
-        </div>
-      </div>
+        </section>
 
-        <!-- SECTION 4: USAGE CHARTS -->
-        <div class="chart-grid chart-grid-three">
-          <div class="chart-card chart-inner">
-            <div class="chart-card-title">Device Usage (kWh)</div>
-            <div style="position:relative;height:220px;">
-              <canvas id="chart-bar" role="img" aria-label="Device usage bar chart"></canvas>
+        <section class="dashboard-section">
+          <div class="dashboard-section-heading">
+            <div>
+              <div class="dashboard-eyebrow">Current session</div>
+              <h2>Energy Summary</h2>
             </div>
           </div>
-          <div class="chart-card chart-inner">
-            <div class="chart-card-title">Energy Distribution</div>
-            <div style="position:relative;height:220px;">
-              <canvas id="chart-pie" role="img" aria-label="Energy distribution donut chart"></canvas>
+
+          <div class="dashboard-summary-grid">
+            <article class="summary-card cyan">
+              <span>Energy</span>
+              <strong><b id="val-energy">0.000</b><small>kWh</small></strong>
+              <p>Accumulated session use</p>
+            </article>
+            <article class="summary-card amber">
+              <span>Estimated Cost</span>
+              <strong><b id="val-cost">0</b></strong>
+              <p id="sub-tariff">Tariff: Rp 1,444.70/kWh</p>
+            </article>
+            <article class="summary-card green">
+              <span>Duration</span>
+              <strong class="summary-duration" id="sub-duration">Duration: 00:00:00</strong>
+              <p>Device reported elapsed time</p>
+            </article>
+            <article class="summary-card violet">
+              <span>Session Count</span>
+              <strong><b id="val-session-count">0</b><small>sessions</small></strong>
+              <p>Saved history total</p>
+            </article>
+            <article class="summary-card device-summary-card">
+              <span>Device Name</span>
+              <strong class="summary-device-name" id="val-device-name">-</strong>
+              <p id="sub-web-status">Web: offline</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="dashboard-section">
+          <div class="advanced-preview">
+            <div class="advanced-preview-copy">
+              <div class="dashboard-eyebrow">Technical snapshot</div>
+              <h2>Advanced Readings</h2>
+              <p>Quick power-quality indicators from the connected VOLTIX device.</p>
+              <a class="btn btn-ghost" href="advanced.html">Open Advanced View</a>
+            </div>
+            <div class="advanced-reading-grid">
+              <article class="advanced-reading-card cyan">
+                <span>Power Factor</span>
+                <strong id="val-pf">-</strong>
+                <p>Ideal range near 1.00</p>
+              </article>
+              <article class="advanced-reading-card green">
+                <span>Frequency</span>
+                <strong><b id="val-freq">-</b><small>Hz</small></strong>
+                <p>Nominal mains frequency</p>
+              </article>
+              <article class="advanced-reading-card amber">
+                <span>Apparent Power</span>
+                <strong><b id="val-apparent">-</b><small>VA</small></strong>
+                <p>Voltage multiplied by current</p>
+              </article>
             </div>
           </div>
-          <div class="chart-card chart-inner">
-            <div class="chart-card-title">Power Over Time (W)</div>
-            <div style="position:relative;height:220px;">
-              <canvas id="chart-line" role="img" aria-label="Realtime power chart"></canvas>
+        </section>
+
+        <section class="dashboard-section">
+          <div class="dashboard-section-heading">
+            <div>
+              <div class="dashboard-eyebrow">Analytics</div>
+              <h2>Energy Intelligence</h2>
             </div>
           </div>
-        </div>
-      </div>
+          <div class="dashboard-chart-grid">
+            <article class="chart-card chart-inner chart-card-wide">
+              <div class="chart-card-header">
+                <div>
+                  <div class="dashboard-card-kicker">Realtime</div>
+                  <div class="chart-card-title">Power Over Time</div>
+                </div>
+                <span class="chart-unit">WATTS</span>
+              </div>
+              <div class="chart-stage chart-stage-wide">
+                <canvas id="chart-line" role="img" aria-label="Realtime power chart"></canvas>
+              </div>
+            </article>
+            <article class="chart-card chart-inner">
+              <div class="chart-card-header">
+                <div>
+                  <div class="dashboard-card-kicker">History</div>
+                  <div class="chart-card-title">Device Usage</div>
+                </div>
+                <span class="chart-unit">kWh</span>
+              </div>
+              <div class="chart-stage">
+                <canvas id="chart-bar" role="img" aria-label="Device usage bar chart"></canvas>
+              </div>
+            </article>
+            <article class="chart-card chart-inner">
+              <div class="chart-card-header">
+                <div>
+                  <div class="dashboard-card-kicker">Share</div>
+                  <div class="chart-card-title">Energy Distribution</div>
+                </div>
+                <span class="chart-unit">TOTAL</span>
+              </div>
+              <div class="chart-stage">
+                <canvas id="chart-pie" role="img" aria-label="Energy distribution donut chart"></canvas>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
     </div>
   </div>
 
-  <!-- ADD DEVICE MODAL -->
   <div class="modal-overlay" id="modal-add-device">
     <div class="modal">
       <div class="modal-title">Add Device</div>
-      <div class="modal-sub">Give your device a name to start monitoring</div>
+      <div class="modal-sub">Give your device a name to start monitoring.</div>
       <div class="form-group">
-        <label class="form-label">Device Name</label>
+        <label class="form-label" for="input-device-name">Device Name</label>
         <input type="text" id="input-device-name" class="form-input" placeholder="e.g. Laptop, AC, Charger" maxlength="24"/>
       </div>
       <div class="modal-footer">
@@ -196,14 +261,7 @@
     </div>
   </div>
 
-  <button class="fab" id="fab-add">＋</button>
-
-  <style>
-@keyframes pulse-red {
-  from { box-shadow: 0 0 0 0 rgba(255,23,68,0.4); }
-  to   { box-shadow: 0 0 0 8px rgba(255,23,68,0); }
-}
-</style>
+  <button class="fab" id="fab-add" aria-label="Start a new monitoring session">+</button>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script type="module" src="js/dashboard.js"></script>
