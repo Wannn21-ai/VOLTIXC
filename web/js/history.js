@@ -29,6 +29,51 @@ const btnDeleteAll = document.getElementById("btn-delete-all");
 
 let historyData = [];
 let refreshToken = 0;
+let activeDeviceId = "";
+
+function deletePathForSession(session) {
+  if (!session || session._source === "local") return "";
+  const key = session._key;
+  if (!key) return "";
+
+  if (session._source === "device-history") {
+    const deviceId = session.deviceId || activeDeviceId;
+    return deviceId ? `devices/${deviceId}/history/${key}` : "";
+  }
+
+  if (session._source === "completed-sessions") {
+    const deviceId = session.deviceId || activeDeviceId;
+    return deviceId ? `devices/${deviceId}/completedSessions/${key}` : "";
+  }
+
+  if (session._source === "user-history") {
+    return `users/${uid}/history/${key}`;
+  }
+
+  return "";
+}
+
+function deleteAllPathsForSessions(sessions) {
+  const paths = new Set();
+  const deviceIds = new Set();
+
+  sessions.forEach(session => {
+    if (session?._source === "device-history" || session?._source === "completed-sessions") {
+      const deviceId = session.deviceId || activeDeviceId;
+      if (deviceId) deviceIds.add(deviceId);
+    }
+    if (session?._source === "user-history") {
+      paths.add(`users/${uid}/history`);
+    }
+  });
+
+  deviceIds.forEach(deviceId => {
+    paths.add(`devices/${deviceId}/history`);
+    paths.add(`devices/${deviceId}/completedSessions`);
+  });
+
+  return [...paths];
+}
 
 function firstValue(session, keys) {
   for (const key of keys) {
@@ -307,6 +352,7 @@ const historyWatchRefs = [historyRef];
 try {
   const currentDevice = await getCurrentDevice(uid);
   if (currentDevice?.id) {
+    activeDeviceId = currentDevice.id;
     historyWatchRefs.push(
       ref(db, `devices/${currentDevice.id}/history`),
       ref(db, `devices/${currentDevice.id}/completedSessions`)
@@ -346,9 +392,14 @@ listEl.addEventListener("click", async event => {
       showToast("Local ESP32 history tetap disimpan di LittleFS", "error");
       return;
     }
+    const deletePath = deletePathForSession(session);
+    if (!deletePath) {
+      showToast("Unable to resolve history source", "error");
+      return;
+    }
     if (!confirm("Delete this session?")) return;
     try {
-      await set(ref(db, `users/${uid}/history/${key}`), null);
+      await set(ref(db, deletePath), null);
       showToast("Session deleted", "");
     } catch {
       showToast("Failed to delete", "error");
@@ -382,10 +433,15 @@ btnDeleteAll.addEventListener("click", async () => {
     showToast("Nothing to delete", "error");
     return;
   }
-  if (!confirm("Delete ALL history? This cannot be undone.")) return;
+  const deletePaths = deleteAllPathsForSessions(historyData);
+  if (deletePaths.length === 0) {
+    showToast("Only local ESP32 history found; LittleFS kept untouched", "error");
+    return;
+  }
+  if (!confirm("Delete Firebase history? Local ESP32 LittleFS history will be kept.")) return;
   try {
-    await set(historyRef, null);
-    showToast("All history deleted", "");
+    await Promise.all(deletePaths.map(path => set(ref(db, path), null)));
+    showToast("Firebase history deleted", "");
   } catch {
     showToast("Failed to delete", "error");
   }
