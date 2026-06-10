@@ -171,13 +171,21 @@ function renderSession(session) {
   const maxCurrent = numeric(session, ["currentMax", "maxCurrent"]);
   const pf = numeric(session, ["pfAvg", "avgPowerFactor", "powerFactorAvg", "pf", "powerFactor"]);
   const frequency = numeric(session, ["frequencyAvg", "avgFrequency", "frequency", "freq"]);
-  const apparent = numeric(session, ["apparentAvg", "avgApparentPower", "apparentPowerAvg", "apparent", "apparentPower"]);
+  const apparentStored = numeric(session, ["apparentAvg", "avgApparentPower", "apparentPowerAvg", "apparent", "apparentPower"]);
+  const apparent = apparentStored || (avgVoltage > 0 && avgCurrent > 0 ? avgVoltage * avgCurrent : 0);
   const threshold = numeric(session, ["threshold", "overloadThreshold"]);
   const mode = modeInfo(session);
   const reason = reasonInfo(session);
   const sync = syncInfo(session);
   const tariff = numeric(session, ["tariff", "electricityCostPerKwh"]) || Number(settings.tariff || 0);
   const tariffAvailable = tariff > 0;
+  const sessionId = firstValue(session, ["sessionId", "id", "_key"]) || "-";
+  const deviceId = firstValue(session, ["deviceId"]) || "-";
+  const ownerUid = firstValue(session, ["uid"]) || "-";
+  const pendingSync = session.pendingSync === true ? "Yes" : session.pendingSync === false ? "No" : "Unknown";
+  const source = humanize(firstValue(session, ["createdFrom", "_source", "source"]), "Unknown");
+  const syncedAt = formatDate(firstValue(session, ["syncedAt", "syncedTimestamp"]));
+  const endReasonCode = firstValue(session, ["endReason", "status", "tag", "stopReason"]) || "COMPLETED";
 
   document.getElementById("detail-device-name").textContent = name;
   document.getElementById("detail-date").textContent = dateTime;
@@ -223,14 +231,20 @@ function renderSession(session) {
       ? "OFF"
       : "—";
   document.getElementById("detail-metadata").innerHTML = [
+    metadataRow("Session ID", sessionId),
+    metadataRow("Device ID", deviceId),
+    metadataRow("Owner UID", ownerUid),
     metadataRow("Start Time", startTime),
     metadataRow("End Time", endTime),
     metadataRow("Start Mode", startMode),
     metadataRow("End Mode", endMode),
-    metadataRow("End Reason", reason.label),
+    metadataRow("End Reason", `${reason.label} / ${endReasonCode}`),
     metadataRow("Overload Status", overloadInfo(session) ? "Overload detected" : "No overload"),
     metadataRow("Relay Final State", relayLabel),
     metadataRow("Sync Status", sync.label),
+    metadataRow("Pending Sync", pendingSync),
+    metadataRow("Created From", source),
+    metadataRow("Synced At", syncedAt),
   ].join("");
 
   const hours = [1, 5, 8, 24];

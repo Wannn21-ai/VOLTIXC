@@ -3,85 +3,89 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>History — Smart Energy Monitor</title>
-
-  <meta name="firebase-api-key"            content="NETLIFY_ENV_FIREBASE_API_KEY"/>
-  <meta name="firebase-auth-domain"        content="NETLIFY_ENV_FIREBASE_AUTH_DOMAIN"/>
-  <meta name="firebase-database-url"       content="NETLIFY_ENV_FIREBASE_DATABASE_URL"/>
-  <meta name="firebase-project-id"         content="NETLIFY_ENV_FIREBASE_PROJECT_ID"/>
-  <meta name="firebase-storage-bucket"     content="NETLIFY_ENV_FIREBASE_STORAGE_BUCKET"/>
+  <title>VOLTIX History</title>
+  <meta name="firebase-api-key" content="NETLIFY_ENV_FIREBASE_API_KEY"/>
+  <meta name="firebase-auth-domain" content="NETLIFY_ENV_FIREBASE_AUTH_DOMAIN"/>
+  <meta name="firebase-database-url" content="NETLIFY_ENV_FIREBASE_DATABASE_URL"/>
+  <meta name="firebase-project-id" content="NETLIFY_ENV_FIREBASE_PROJECT_ID"/>
+  <meta name="firebase-storage-bucket" content="NETLIFY_ENV_FIREBASE_STORAGE_BUCKET"/>
   <meta name="firebase-messaging-sender-id" content="NETLIFY_ENV_FIREBASE_MESSAGING_SENDER_ID"/>
-  <meta name="firebase-app-id"             content="NETLIFY_ENV_FIREBASE_APP_ID"/>
-
+  <meta name="firebase-app-id" content="NETLIFY_ENV_FIREBASE_APP_ID"/>
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
-<body>
+<body class="history-page">
   <div class="app-layout">
     <aside class="sidebar" id="sidebar"></aside>
     <div class="main-content" id="main-content">
       <header class="topbar" id="topbar"></header>
-      <div class="page-content">
-        <div class="page-header">
+      <main class="page-content history-shell">
+        <header class="history-page-header">
           <div>
-            <div class="page-header-title">History</div>
+            <div class="history-eyebrow">Energy archive</div>
+            <h1>Session History</h1>
             <div class="page-header-sub" id="history-count">0 sessions recorded</div>
           </div>
-          <div style="display:flex;gap:10px;">
-            <button class="btn btn-ghost" id="btn-export-all">↓ Export All CSV</button>
-            <button class="btn btn-danger" id="btn-delete-all">✕ Delete All</button>
+          <div class="history-header-actions">
+            <button class="btn btn-ghost" id="btn-export-all">Export All CSV</button>
+            <button class="btn btn-danger" id="btn-delete-all">Delete All</button>
           </div>
-        </div>
+        </header>
 
-        <section class="history-section">
+        <section class="history-section history-summary-section">
           <div class="history-section-heading">
             <div>
-              <div class="card-title">Overall History Summary</div>
-              <div class="history-section-sub">Totals from all loaded monitoring sessions</div>
+              <div class="history-eyebrow">Portfolio totals</div>
+              <h2>Usage Overview</h2>
+              <div class="history-section-sub">Combined metrics from all loaded VOLTIX sessions.</div>
             </div>
           </div>
           <div class="history-summary-grid">
             <div class="history-summary-card cyan">
               <div class="history-summary-label">Total Sessions</div>
               <div class="history-summary-value" id="summary-sessions">0</div>
+              <div class="history-summary-note">Completed records</div>
             </div>
-            <div class="history-summary-card">
+            <div class="history-summary-card violet">
               <div class="history-summary-label">Total Duration</div>
               <div class="history-summary-value" id="summary-duration">00:00:00</div>
+              <div class="history-summary-note">Device-reported runtime</div>
             </div>
             <div class="history-summary-card green">
               <div class="history-summary-label">Total Energy</div>
               <div class="history-summary-value"><span id="summary-energy">0.000</span><span class="history-summary-unit">kWh</span></div>
+              <div class="history-summary-note">Accumulated consumption</div>
             </div>
             <div class="history-summary-card amber">
               <div class="history-summary-label">Total Cost</div>
               <div class="history-summary-value" id="summary-cost">Rp 0</div>
+              <div class="history-summary-note">Estimated spend</div>
             </div>
-            <div class="history-summary-card">
+            <div class="history-summary-card red">
               <div class="history-summary-label">Average Power</div>
               <div class="history-summary-value"><span id="summary-power">0</span><span class="history-summary-unit">W</span></div>
+              <div class="history-summary-note">Across all sessions</div>
             </div>
           </div>
         </section>
 
-        <section class="history-section">
+        <section class="history-section history-browser-section">
           <div class="history-section-heading">
             <div>
-              <div class="card-title">Monitoring History</div>
-              <div class="history-section-sub">Search, filter, and sort completed sessions</div>
+              <div class="history-eyebrow">Session browser</div>
+              <h2>Completed Sessions</h2>
+              <div class="history-section-sub">Search, filter, sort, export, or inspect a completed report.</div>
             </div>
             <button class="btn btn-ghost" id="btn-reset-filters">Reset Filters</button>
           </div>
           <div class="history-controls">
             <div class="search-wrap history-search">
-              <span class="search-icon">⌕</span>
+              <span class="search-icon">S</span>
               <input type="text" class="search-input" id="search-input" placeholder="Search by device name..."/>
             </div>
             <label class="history-filter-field">
               <span>Device</span>
-              <select class="form-select" id="filter-device">
-                <option value="all">All Devices</option>
-              </select>
+              <select class="form-select" id="filter-device"><option value="all">All Devices</option></select>
             </label>
             <label class="history-filter-field">
               <span>Mode</span>
@@ -89,8 +93,8 @@
                 <option value="all">All Modes</option>
                 <option value="online">Online</option>
                 <option value="offline">Offline</option>
-                <option value="online-offline">Online → Offline</option>
-                <option value="offline-online">Offline → Online</option>
+                <option value="online-offline">Online to Offline</option>
+                <option value="offline-online">Offline to Online</option>
               </select>
             </label>
             <label class="history-filter-field">
@@ -127,7 +131,7 @@
         </section>
 
         <div class="history-list" id="history-list"></div>
-      </div>
+      </main>
     </div>
   </div>
   <script type="module" src="js/history.js"></script>

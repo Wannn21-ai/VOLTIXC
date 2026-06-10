@@ -65,7 +65,7 @@ function costOf(session) {
 }
 
 function powerOf(session) {
-  return toNumber(firstValue(session, ["powerAvg", "avgPower", "power", "powerMax", "maxPower"]));
+  return toNumber(firstValue(session, ["powerAvg", "avgPower", "averagePower", "power", "powerMax", "maxPower", "peakPower"]));
 }
 
 function durationSeconds(session) {
@@ -123,6 +123,21 @@ function labelFor(value) {
     "offline-monitoring": "Offline Monitoring",
   };
   return labels[value] || "Completed";
+}
+
+function syncInfo(session) {
+  const raw = String(firstValue(session, ["syncStatus"]) || "").toUpperCase();
+  if (session.pendingSync === true || raw === "PENDING") return { label: "Pending", className: "amber" };
+  if (session.pendingSync === false || raw === "SYNCED" || session.synced === true) return { label: "Synced", className: "green" };
+  return { label: "Sync Unknown", className: "" };
+}
+
+function sourceInfo(session) {
+  const source = String(firstValue(session, ["_source", "createdFrom", "source"]) || "History");
+  if (source.toLowerCase() === "local") return "LittleFS";
+  if (source.toLowerCase().includes("device")) return "Device";
+  if (source.toLowerCase().includes("firebase")) return "Firebase";
+  return source;
 }
 
 function formatDuration(totalSeconds) {
@@ -246,10 +261,13 @@ function render() {
   listEl.innerHTML = data.map(session => {
     const mode = modeOf(session);
     const status = statusOf(session);
+    const sync = syncInfo(session);
+    const source = sourceInfo(session);
+    const endReason = String(firstValue(session, ["endReason", "status", "tag"]) || "COMPLETED");
     const statusClass = status === "overload" || status === "power-loss" ? "red" : "amber";
     return `
       <article class="history-card" data-key="${escapeHtml(session._key)}">
-        <div>
+        <div class="history-card-main">
           <div class="history-card-name">${escapeHtml(session.name || "Device")}</div>
           <div class="history-card-meta">
             <div class="history-meta-item">Duration<span>${formatDuration(durationSeconds(session))}</span></div>
@@ -259,8 +277,9 @@ function render() {
           </div>
           <div class="history-tags">
             ${mode ? `<span class="history-tag">${escapeHtml(labelFor(mode))}</span>` : ""}
-            <span class="history-tag ${statusClass}">${escapeHtml(labelFor(status))}</span>
-            ${session.pendingSync === true ? '<span class="history-tag amber">Pending Sync</span>' : ""}
+            <span class="history-tag ${statusClass}">${escapeHtml(labelFor(status))} / ${escapeHtml(endReason)}</span>
+            <span class="history-tag ${sync.className}">${escapeHtml(sync.label)}</span>
+            <span class="history-tag source">${escapeHtml(source)}</span>
           </div>
         </div>
         <div class="history-card-actions">
