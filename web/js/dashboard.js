@@ -6,6 +6,7 @@ import {
 import { db, ref, onValue, set, push, get } from "./firebase-config.js";
 import { loadDeviceHistory } from "./local-history.js";
 import { getCurrentDevice, readableFirebaseError } from "./user-state.js";
+import { clampRefreshInterval, createMetersUpdateScheduler } from "./dashboard-live-update.js";
 
 // ================= INIT =================
 const user = await requireAuth();
@@ -131,6 +132,8 @@ let energyBaseline  = 0;
 let sessionCount    = 0;
 let lastknownEnergy = 0;
 let offlineSessionStartEnergy = null;
+const metersUpdateScheduler = createMetersUpdateScheduler(() => updateMeters());
+const scheduleMetersUpdate = () => metersUpdateScheduler.schedule();
 
 // ── BUG 1 FIX: pendingDeviceName moved to MODULE scope ──────────
 // Was declared inside updateMeters() (local), so btnSaveDev handler
@@ -498,17 +501,22 @@ function clearDisplay() {
 }
 function updateDisplay() {
   const monitoring = isRunning && !!activeDevice;
-  const shownEnergy = monitoring ? getSessionEnergy() : Math.max(0, firebaseEnergy);
-  const shownCost = monitoring
-    ? getSessionCost()
-    : Math.max(0, firebaseCost || shownEnergy * settings.tariff);
+  const sessionInactive = !firebaseRelay && !firebaseSessionActive;
+  const shownCurrent = sessionInactive ? 0 : current;
+  const shownPower = sessionInactive ? 0 : firebasePower;
+  const shownEnergy = sessionInactive
+    ? 0
+    : monitoring ? getSessionEnergy() : Math.max(0, firebaseEnergy);
+  const shownCost = sessionInactive
+    ? 0
+    : monitoring ? getSessionCost() : Math.max(0, firebaseCost || shownEnergy * settings.tariff);
   if (valVoltage) valVoltage.textContent = voltage.toFixed(1);
-  if (valCurrent) valCurrent.textContent = current.toFixed(2);
-  if (valPower)   valPower.textContent   = firebasePower.toFixed(0);
+  if (valCurrent) valCurrent.textContent = shownCurrent.toFixed(2);
+  if (valPower)   valPower.textContent   = shownPower.toFixed(0);
   if (valEnergy)  valEnergy.textContent  = shownEnergy.toFixed(3);
   if (valCost)    valCost.textContent    = formatCost(shownCost);
   setGauge(gaugeVoltage, voltage, 190, 240);
-  setGauge(gaugeCurrent, current, 0, 16);
+  setGauge(gaugeCurrent, shownCurrent, 0, 16);
   const elPF   = document.getElementById("val-pf");
   const elFreq = document.getElementById("val-freq");
   const elApp  = document.getElementById("val-apparent");
@@ -928,6 +936,7 @@ if (selectedDevice) {
     firebasePendingSync = Number(sys.pendingSync ?? firebasePendingSync);
     deviceNameFromEsp = sys.deviceName || deviceNameFromEsp;
     updateTimer();
+    scheduleMetersUpdate();
   }, showLiveReadError);
 
   onValue(ref(db, `${liveBase}/device`), snapshot => {
@@ -946,6 +955,7 @@ if (selectedDevice) {
     firebaseOverload = dev.overload === true;
     updateTimer();
     updateLiveEnergyCheckpoint();
+    scheduleMetersUpdate();
   }, showLiveReadError);
 
   // Transitional firmware still publishes active-session metadata here.
@@ -959,6 +969,7 @@ if (selectedDevice) {
     firebaseSessionState = session.sessionState || firebaseSessionState;
     deviceNameFromEsp = session.deviceName || session.name || deviceNameFromEsp;
     updateTimer();
+    scheduleMetersUpdate();
   }, error => {
     if (error?.code !== "PERMISSION_DENIED" && error?.code !== "database/permission-denied") {
       console.warn("[Dashboard] Transitional live session unavailable:", error?.message || error);
@@ -1075,6 +1086,7 @@ async function updateMeters() {
     if (settings.notifSession)
       showToast(`Sesi "${activeDevice.name}" selesai di ESP32`, "success");
     await resetMonitoring();
+    updateDisplay();
     await updateSessionCount();
     await updateBarPie();
     prevSystemOnline = systemOnline;
@@ -1184,7 +1196,8 @@ async function updateMeters() {
 
 function startMetersInterval() {
   if (metersInterval) clearInterval(metersInterval);
-  metersInterval = setInterval(updateMeters, settings.refreshInterval || 3000);
+  const refreshIntervalMs = clampRefreshInterval(settings.refreshInterval);
+  metersInterval = setInterval(scheduleMetersUpdate, refreshIntervalMs);
 }
 
 // ================================================================
@@ -1197,3 +1210,4 @@ await renderDeviceTabs();
 await updateSessionCount();
 await updateBarPie();
 startMetersInterval();
+scheduleMetersUpdate();
