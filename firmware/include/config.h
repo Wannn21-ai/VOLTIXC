@@ -33,10 +33,10 @@ static constexpr float OVERLOAD_THRESHOLD_W = 2000.0f;
 static constexpr float LOAD_CURRENT_THRESHOLD_A = 0.02f;
 static constexpr float LOAD_POWER_THRESHOLD_W = 1.0f;
 static constexpr float AC_PRESENT_MIN_VOLTAGE = 180.0f;
-static constexpr unsigned long LOAD_SETTLE_MS = 2000UL;
-static constexpr unsigned long LOAD_DETECT_TIMEOUT_MS = 8000UL;
+static constexpr unsigned long LOAD_SETTLE_MS = 500UL;
+static constexpr unsigned long LOAD_DETECT_TIMEOUT_MS = 2500UL;
 static constexpr unsigned long OFFLINE_LOAD_DETECT_TIMEOUT_MS = 12000UL;
-static constexpr unsigned int LOAD_DETECT_STABLE_SAMPLES = 2;
+static constexpr unsigned int LOAD_DETECT_STABLE_SAMPLES = 1;
 
 static constexpr unsigned long SENSOR_INTERVAL_MS = 1000UL;
 static constexpr unsigned long SESSION_INTERVAL_MS = 1000UL;
