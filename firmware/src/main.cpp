@@ -20,6 +20,9 @@
 static constexpr const char* TEST_DEVICE_NAME = "Test Load";
 static constexpr float SERIAL_THRESHOLD_MIN_W = 1.0f;
 static constexpr float SERIAL_THRESHOLD_MAX_W = 5000.0f;
+static constexpr unsigned long REQUESTED_HISTORY_SYNC_RETRY_MS = 2000UL;
+static constexpr unsigned long PERIODIC_HISTORY_SYNC_MS = 30000UL;
+static constexpr unsigned int AUTO_HISTORY_SYNC_MAX_UPLOADS = 3;
 
 static unsigned long lastSensorUpdateMs = 0;
 static unsigned long lastSessionUpdateMs = 0;
@@ -509,7 +512,10 @@ void loop() {
     }
     lastFirebaseConfigMs = now;
     lastFirebaseLiveMs = now;
-    lastPendingHistorySyncMs = now;
+    if (storageCountPendingHistory() > 0) {
+      storageRequestPendingHistorySync();
+      Serial.println("[history] pending auto-sync requested after online services restored");
+    }
   }
   if (!wifiConnected && wasWifiConnected) {
     sessionWriteCheckpoint();
@@ -565,8 +571,19 @@ void loop() {
     }
 
     const bool commandTransitionPending = firebaseCommandTransitionPending();
+    const bool requestedHistorySyncDue =
+      storagePendingHistorySyncRequested() &&
+      (lastPendingHistorySyncMs == 0 || now - lastPendingHistorySyncMs >= REQUESTED_HISTORY_SYNC_RETRY_MS);
+    const bool periodicHistorySyncDue =
+      lastPendingHistorySyncMs == 0 || now - lastPendingHistorySyncMs >= PERIODIC_HISTORY_SYNC_MS;
 
     if (commandPollRan &&
+        !commandTransitionPending &&
+        (requestedHistorySyncDue || periodicHistorySyncDue)) {
+      lastPendingHistorySyncMs = now;
+      Serial.println("[history] auto-sync started");
+      storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
+    } else if (commandPollRan &&
         appConfig.configPendingSync &&
         !commandTransitionPending &&
         !firebaseDeviceConfigPushBlocked() &&
@@ -587,11 +604,6 @@ void loop() {
         (lastFirebaseLiveMs == 0 || now - lastFirebaseLiveMs >= 2000UL)) {
       lastFirebaseLiveMs = now;
       firebasePublishLive();
-    } else if (commandPollRan &&
-        !commandTransitionPending &&
-        (lastPendingHistorySyncMs == 0 || now - lastPendingHistorySyncMs >= 30000UL)) {
-      lastPendingHistorySyncMs = now;
-      storageSyncPendingHistoryToFirebase();
     }
   }
 
