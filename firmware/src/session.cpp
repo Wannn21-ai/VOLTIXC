@@ -395,23 +395,40 @@ static void handleLoadValidation() {
     loadValidationWaitingLogged = true;
   }
 
-  if (now - loadValidationStartedAtMs >= currentLoadValidationTimeoutMs()) {
-    cancelLoadValidationNoHistory();
+  const unsigned long elapsedMs = now - loadValidationStartedAtMs;
+  const unsigned long timeoutMs = currentLoadValidationTimeoutMs();
+
+  if (elapsedMs < Config::LOAD_SETTLE_MS) {
     return;
   }
 
-  if (now - loadValidationStartedAtMs < Config::LOAD_SETTLE_MS) {
-    return;
-  }
-
-  if (isLoadAboveStartThreshold()) {
+  const bool loadDetected = isLoadAboveStartThreshold();
+  if (loadDetected) {
     loadValidationStableSamples++;
   } else {
     loadValidationStableSamples = 0;
   }
 
+  Serial.print("[LoadCheck] elapsedMs=");
+  Serial.print(elapsedMs);
+  Serial.print(" current=");
+  Serial.print(sensorData.current, 3);
+  Serial.print(" power=");
+  Serial.print(sensorData.power, 2);
+  Serial.print(" loadDetected=");
+  Serial.print(loadDetected ? "yes" : "no");
+  Serial.print(" stableSamples=");
+  Serial.print(loadValidationStableSamples);
+  Serial.print(" timeoutMs=");
+  Serial.println(timeoutMs);
+
   if (loadValidationStableSamples >= Config::LOAD_DETECT_STABLE_SAMPLES) {
     verifyLoadAndStartMonitoring();
+    return;
+  }
+
+  if (elapsedMs >= timeoutMs) {
+    cancelLoadValidationNoHistory();
   }
 }
 
