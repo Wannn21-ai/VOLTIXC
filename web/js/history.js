@@ -29,6 +29,51 @@ const btnDeleteAll = document.getElementById("btn-delete-all");
 
 let historyData = [];
 let refreshToken = 0;
+let activeDeviceId = "";
+
+function deletePathForSession(session) {
+  if (!session || session._source === "local") return "";
+  const key = session._key;
+  if (!key) return "";
+
+  if (session._source === "device-history") {
+    const deviceId = session.deviceId || activeDeviceId;
+    return deviceId ? `devices/${deviceId}/history/${key}` : "";
+  }
+
+  if (session._source === "completed-sessions") {
+    const deviceId = session.deviceId || activeDeviceId;
+    return deviceId ? `devices/${deviceId}/completedSessions/${key}` : "";
+  }
+
+  if (session._source === "user-history") {
+    return `users/${uid}/history/${key}`;
+  }
+
+  return "";
+}
+
+function deleteAllPathsForSessions(sessions) {
+  const paths = new Set();
+  const deviceIds = new Set();
+
+  sessions.forEach(session => {
+    if (session?._source === "device-history" || session?._source === "completed-sessions") {
+      const deviceId = session.deviceId || activeDeviceId;
+      if (deviceId) deviceIds.add(deviceId);
+    }
+    if (session?._source === "user-history") {
+      paths.add(`users/${uid}/history`);
+    }
+  });
+
+  deviceIds.forEach(deviceId => {
+    paths.add(`devices/${deviceId}/history`);
+    paths.add(`devices/${deviceId}/completedSessions`);
+  });
+
+  return [...paths];
+}
 
 function firstValue(session, keys) {
   for (const key of keys) {
@@ -65,7 +110,7 @@ function costOf(session) {
 }
 
 function powerOf(session) {
-  return toNumber(firstValue(session, ["powerAvg", "avgPower", "power", "powerMax", "maxPower"]));
+  return toNumber(firstValue(session, ["powerAvg", "avgPower", "averagePower", "power", "powerMax", "maxPower", "peakPower"]));
 }
 
 function durationSeconds(session) {
@@ -123,6 +168,21 @@ function labelFor(value) {
     "offline-monitoring": "Offline Monitoring",
   };
   return labels[value] || "Completed";
+}
+
+function syncInfo(session) {
+  const raw = String(firstValue(session, ["syncStatus"]) || "").toUpperCase();
+  if (session.pendingSync === true || raw === "PENDING") return { label: "Pending", className: "amber" };
+  if (session.pendingSync === false || raw === "SYNCED" || session.synced === true) return { label: "Synced", className: "green" };
+  return { label: "Sync Unknown", className: "" };
+}
+
+function sourceInfo(session) {
+  const source = String(firstValue(session, ["_source", "createdFrom", "source"]) || "History");
+  if (source.toLowerCase() === "local") return "LittleFS";
+  if (source.toLowerCase().includes("device")) return "Device";
+  if (source.toLowerCase().includes("firebase")) return "Firebase";
+  return source;
 }
 
 function formatDuration(totalSeconds) {
@@ -246,10 +306,13 @@ function render() {
   listEl.innerHTML = data.map(session => {
     const mode = modeOf(session);
     const status = statusOf(session);
+    const sync = syncInfo(session);
+    const source = sourceInfo(session);
+    const endReason = String(firstValue(session, ["endReason", "status", "tag"]) || "COMPLETED");
     const statusClass = status === "overload" || status === "power-loss" ? "red" : "amber";
     return `
       <article class="history-card" data-key="${escapeHtml(session._key)}">
-        <div>
+        <div class="history-card-main">
           <div class="history-card-name">${escapeHtml(session.name || "Device")}</div>
           <div class="history-card-meta">
             <div class="history-meta-item">Duration<span>${formatDuration(durationSeconds(session))}</span></div>
@@ -259,8 +322,9 @@ function render() {
           </div>
           <div class="history-tags">
             ${mode ? `<span class="history-tag">${escapeHtml(labelFor(mode))}</span>` : ""}
-            <span class="history-tag ${statusClass}">${escapeHtml(labelFor(status))}</span>
-            ${session.pendingSync === true ? '<span class="history-tag amber">Pending Sync</span>' : ""}
+            <span class="history-tag ${statusClass}">${escapeHtml(labelFor(status))} / ${escapeHtml(endReason)}</span>
+            <span class="history-tag ${sync.className}">${escapeHtml(sync.label)}</span>
+            <span class="history-tag source">${escapeHtml(source)}</span>
           </div>
         </div>
         <div class="history-card-actions">
@@ -288,6 +352,7 @@ const historyWatchRefs = [historyRef];
 try {
   const currentDevice = await getCurrentDevice(uid);
   if (currentDevice?.id) {
+    activeDeviceId = currentDevice.id;
     historyWatchRefs.push(
       ref(db, `devices/${currentDevice.id}/history`),
       ref(db, `devices/${currentDevice.id}/completedSessions`)
@@ -327,9 +392,14 @@ listEl.addEventListener("click", async event => {
       showToast("Local ESP32 history tetap disimpan di LittleFS", "error");
       return;
     }
+    const deletePath = deletePathForSession(session);
+    if (!deletePath) {
+      showToast("Unable to resolve history source", "error");
+      return;
+    }
     if (!confirm("Delete this session?")) return;
     try {
-      await set(ref(db, `users/${uid}/history/${key}`), null);
+      await set(ref(db, deletePath), null);
       showToast("Session deleted", "");
     } catch {
       showToast("Failed to delete", "error");
@@ -363,10 +433,15 @@ btnDeleteAll.addEventListener("click", async () => {
     showToast("Nothing to delete", "error");
     return;
   }
-  if (!confirm("Delete ALL history? This cannot be undone.")) return;
+  const deletePaths = deleteAllPathsForSessions(historyData);
+  if (deletePaths.length === 0) {
+    showToast("Only local ESP32 history found; LittleFS kept untouched", "error");
+    return;
+  }
+  if (!confirm("Delete Firebase history? Local ESP32 LittleFS history will be kept.")) return;
   try {
-    await set(historyRef, null);
-    showToast("All history deleted", "");
+    await Promise.all(deletePaths.map(path => set(ref(db, path), null)));
+    showToast("Firebase history deleted", "");
   } catch {
     showToast("Failed to delete", "error");
   }

@@ -82,6 +82,12 @@
           "$historyId": {
             ".write": "auth != null && (auth.token.deviceId === $deviceId || data.parent().parent().child('ownerUid').val() === auth.uid)"
           }
+        },
+        "completedSessions": {
+          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
+          "$historyId": {
+            ".write": "auth != null && (auth.token.deviceId === $deviceId || data.parent().parent().child('ownerUid').val() === auth.uid)"
+          }
         }
       }
     },
