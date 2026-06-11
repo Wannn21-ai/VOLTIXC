@@ -111,7 +111,7 @@ test("fresh commands outrank optional sync work and report redacted latency", ()
   assert.match(mainSource, /else if \(commandPollRan/);
   assert.match(mainSource, /const bool commandTransitionPending = firebaseCommandTransitionPending\(\)/);
   assert.match(mainSource, /!commandTransitionPending[\s\S]*firebaseReadConfig\(\)/);
-  assert.match(mainSource, /!commandTransitionPending[\s\S]*storageSyncPendingHistoryToFirebase\(\)/);
+  assert.match(mainSource, /!commandTransitionPending[\s\S]*storageSyncPendingHistoryToFirebase\(AUTO_HISTORY_SYNC_MAX_UPLOADS\)/);
   assert.match(firebaseSource, /logCommandLatency\("START"/);
   assert.match(firebaseSource, /logCommandLatency\("STOP"/);
   assert.match(firebaseSource, /const unsigned long ageAtReceiveMs = commandAgeMs/);
@@ -141,8 +141,8 @@ test("history final path succeeds independently and pending sync is budgeted", (
   assert.match(firebaseSource, /legacyHistoryMirrorDisabled = true/);
   assert.match(firebaseSource, /compatibility mirror disabled/);
   assert.match(firebaseSource, /Legacy completedSessions mirror skipped/);
-  assert.match(storageSource, /budget=one/);
-  assert.match(storageSource, /break;/);
+  assert.match(storageSource, /attemptedCount < maxUploads/);
+  assert.match(storageSource, /AUTO_HISTORY_SYNC_MAX_UPLOADS|sync cycle uploaded=/);
   assert.match(sessionSource, /queued for background cloud sync/);
   assert.doesNotMatch(sessionSource, /queued = firebasePushCompletedSession\(snapshot\)/);
 });

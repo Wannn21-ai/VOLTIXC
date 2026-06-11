@@ -16,4 +16,6 @@ unsigned long storageNextOfflineDeviceCounterFromHistory();
 bool storageClearHistory();
 bool storageMarkSessionQueued(const char* sessionId);
 int storageCountPendingHistory();
-bool storageSyncPendingHistoryToFirebase();
+void storageRequestPendingHistorySync();
+bool storagePendingHistorySyncRequested();
+bool storageSyncPendingHistoryToFirebase(unsigned int maxUploads = 1);

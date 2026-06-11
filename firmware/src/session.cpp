@@ -288,6 +288,8 @@ static void finalizeRecoveredNoLoad() {
 
   if (saved) {
     Serial.println("[recovery] Recovered session queued for background cloud sync");
+    storageRequestPendingHistorySync();
+    Serial.println("[history] pending auto-sync requested after recovered session save");
   }
   logHistoryOutcome(snapshot.sessionId, saved, queued, sessionData.pendingSync);
 
@@ -532,6 +534,8 @@ void sessionStop(EndReason reason) {
   if (saved) {
     storageClearActiveSessionCheckpoint();
     Serial.println("[session] Final session queued for background cloud sync");
+    storageRequestPendingHistorySync();
+    Serial.println("[history] pending auto-sync requested after sessionStop");
   } else {
     Serial.println("[session] Local save failed, session remains unsynced");
   }

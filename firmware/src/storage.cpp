@@ -19,6 +19,7 @@ static constexpr size_t SESSION_DOC_CAPACITY = 2048;
 static constexpr size_t CHECKPOINT_DOC_CAPACITY = 1024;
 
 static bool mounted = false;
+static bool pendingHistorySyncRequested = false;
 
 static void formatDuration(unsigned long durationMs, char* out, size_t outSize) {
   const unsigned long totalSec = durationMs / 1000UL;
@@ -656,98 +657,141 @@ int storageCountPendingHistory() {
   return valid ? count : -1;
 }
 
-bool storageSyncPendingHistoryToFirebase() {
+void storageRequestPendingHistorySync() {
+  pendingHistorySyncRequested = true;
+}
+
+bool storagePendingHistorySyncRequested() {
+  return pendingHistorySyncRequested;
+}
+
+bool storageSyncPendingHistoryToFirebase(unsigned int maxUploads) {
   if (!mounted) {
     Serial.println("[storage] Cannot sync pending history, LittleFS is not mounted");
     return false;
+  }
+
+  if (maxUploads == 0) {
+    maxUploads = 1;
   }
 
   const int pending = storageCountPendingHistory();
   if (pending < 0) {
     return false;
   }
-  Serial.print("[history] pending sync count=");
+  Serial.print("[history] pending count before sync=");
   Serial.println(pending);
 
   if (!networkIsConnected()) {
+    pendingHistorySyncRequested = pending > 0;
     Serial.print("[storage] Pending sync total=");
     Serial.print(pending);
     Serial.println(" queued=0 failed=0 save=SKIP WiFi offline");
     return pending == 0;
   }
   if (pending == 0) {
+    pendingHistorySyncRequested = false;
     Serial.println("[storage] Pending sync total=0 queued=0 failed=0 remaining=0 save=OK");
     return true;
   }
 
-  File root = LittleFS.open(HISTORY_DIR);
-  if (!root || !root.isDirectory()) {
-    return false;
-  }
-
-  bool attempted = false;
-  bool pushed = false;
-  bool saved = true;
-  File file = root.openNextFile();
-  while (file) {
-    if (!isHistorySessionFile(file)) {
-      file.close();
-      file = root.openNextFile();
-      continue;
-    }
-
-    const String path = file.path();
-    DynamicJsonDocument doc(SESSION_DOC_CAPACITY);
-    if (!readSessionFile(file, doc)) {
-      file.close();
-      root.close();
+  unsigned int attemptedCount = 0;
+  unsigned int uploadedCount = 0;
+  unsigned int failedCount = 0;
+  bool cycleSaveOk = true;
+  while (attemptedCount < maxUploads) {
+    File root = LittleFS.open(HISTORY_DIR);
+    if (!root || !root.isDirectory()) {
       return false;
     }
-    file.close();
 
-    JsonObject entry = doc.as<JsonObject>();
-    if (!isPendingHistoryEntry(entry)) {
+    String path;
+    DynamicJsonDocument doc(SESSION_DOC_CAPACITY);
+    File file = root.openNextFile();
+    while (file) {
+      if (!isHistorySessionFile(file)) {
+        file.close();
+        file = root.openNextFile();
+        continue;
+      }
+
+      if (!readSessionFile(file, doc)) {
+        file.close();
+        root.close();
+        return false;
+      }
+      if (isPendingHistoryEntry(doc.as<JsonObjectConst>())) {
+        path = file.path();
+        file.close();
+        break;
+      }
+      file.close();
       file = root.openNextFile();
-      continue;
+    }
+    root.close();
+
+    if (path.length() == 0) {
+      break;
     }
 
-    attempted = true;
+    JsonObject entry = doc.as<JsonObject>();
+    attemptedCount++;
     const char* sessionId = entry["sessionId"] | entry["id"] | "";
     Serial.print("[history] Pending sync upload sessionId=");
     Serial.print(sessionId[0] == '\0' ? "(unknown)" : sessionId);
-    Serial.println(" budget=one");
+    Serial.print(" attempt=");
+    Serial.print(attemptedCount);
+    Serial.print("/");
+    Serial.println(maxUploads);
 
     entry["syncStatus"] = "SYNCED";
     entry["pendingSync"] = false;
     applySyncMetadata(entry);
-    pushed = firebasePushCompletedSession(entry);
+    const bool pushed = firebasePushCompletedSession(entry);
     Serial.print("[history] Firebase push ");
     Serial.print(pushed ? "OK" : "FAIL");
     Serial.print(" sessionId=");
     Serial.println(sessionId[0] == '\0' ? "(unknown)" : sessionId);
     if (pushed) {
-      saved = writeSessionDocument(path.c_str(), entry);
+      const bool saved = writeSessionDocument(path.c_str(), entry);
+      cycleSaveOk = cycleSaveOk && saved;
+      if (saved) {
+        uploadedCount++;
+      } else {
+        failedCount++;
+      }
       Serial.print(saved
         ? "[history] pendingSync=false syncStatus=SYNCED sessionId="
         : "[history] Local sync mark failed; session file remains pending sessionId=");
       Serial.println(sessionId[0] == '\0' ? "(unknown)" : sessionId);
+      if (!saved) {
+        break;
+      }
     } else {
+      failedCount++;
       Serial.print("[history] pendingSync=true syncStatus=PENDING sessionId=");
       Serial.println(sessionId[0] == '\0' ? "(unknown)" : sessionId);
+      break;
     }
-    break;
   }
-  root.close();
 
+  const int remaining = pending - static_cast<int>(uploadedCount);
+  pendingHistorySyncRequested = remaining > 0;
+  Serial.print("[history] sync cycle uploaded=");
+  Serial.print(uploadedCount);
+  Serial.print(" failed=");
+  Serial.print(failedCount);
+  Serial.print(" remaining=");
+  Serial.println(remaining);
   Serial.print("[storage] Pending sync total=");
   Serial.print(pending);
   Serial.print(" queued=");
-  Serial.print(pushed && saved ? 1 : 0);
+  Serial.print(uploadedCount);
   Serial.print(" failed=");
-  Serial.print(attempted && !pushed ? 1 : 0);
+  Serial.print(failedCount);
   Serial.print(" remaining=");
-  Serial.print(pending - (pushed && saved ? 1 : 0));
+  Serial.print(remaining);
   Serial.print(" save=");
-  Serial.println(saved ? "OK" : "FAIL");
-  return attempted && pushed && saved;
+  Serial.println(cycleSaveOk ? "OK" : "FAIL");
+  return failedCount == 0 && cycleSaveOk;
 }
