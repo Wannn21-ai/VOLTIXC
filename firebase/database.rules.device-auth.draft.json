@@ -51,17 +51,17 @@
           ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
         },
         "history": {
-          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
-          "$historyId": {
-            ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
-          }
-        },
-        "completedSessions": {
-          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
-          "$historyId": {
-            ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
-          }
-        },
+  ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+  "$historyId": {
+    ".write": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && !newData.exists() && (root.child('devices').child($deviceId).child('ownerUid').val() === auth.uid || root.child('devices').child($deviceId).child('members').child(auth.uid).child('role').val() === 'owner' || root.child('devices').child($deviceId).child('members').child(auth.uid).child('role').val() === 'operator')))"
+  }
+},
+"completedSessions": {
+  ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().child('members').child(auth.uid).exists()",
+  "$historyId": {
+    ".write": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && !newData.exists() && (root.child('devices').child($deviceId).child('ownerUid').val() === auth.uid || root.child('devices').child($deviceId).child('members').child(auth.uid).child('role').val() === 'owner' || root.child('devices').child($deviceId).child('members').child(auth.uid).child('role').val() === 'operator')))"
+  }
+},
         "commands": {
           "current": {
             ".read": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId",
