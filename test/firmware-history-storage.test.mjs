@@ -54,7 +54,7 @@ test("successful sessionStop requests automatic pending history sync", () => {
   );
 });
 
-test("requested history auto-sync runs before periodic config and live work", () => {
+test("requested history auto-sync remains ahead of config after live priority", () => {
   assert.match(mainSource, /REQUESTED_HISTORY_SYNC_RETRY_MS = 2000UL/);
   assert.match(mainSource, /AUTO_HISTORY_SYNC_MAX_UPLOADS = 3/);
   const schedulerStart = mainSource.indexOf("const bool commandTransitionPending");
@@ -66,7 +66,7 @@ test("requested history auto-sync runs before periodic config and live work", ()
 
   assert.equal(autoSyncIndex >= 0, true);
   assert.equal(autoSyncIndex < configIndex, true);
-  assert.equal(autoSyncIndex < liveIndex, true);
+  assert.equal(liveIndex < autoSyncIndex, true);
   assert.match(schedulerSource, /!commandTransitionPending[\s\S]*storageSyncPendingHistoryToFirebase\(AUTO_HISTORY_SYNC_MAX_UPLOADS\)/);
 });
 

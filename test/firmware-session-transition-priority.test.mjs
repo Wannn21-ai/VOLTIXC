@@ -68,10 +68,13 @@ test("main flushes transition OLED then live before ACK and history sync", () =>
 });
 
 test("online restore command polling also flushes transition before ACK", () => {
-  const reconnectStart = mainSource.indexOf("if (onlineServicesAllowed && !wasOnlineServicesAllowed)");
-  const reconnectEnd = mainSource.indexOf("\n  if (!wifiConnected && wasWifiConnected)", reconnectStart);
+  const reconnectStart = mainSource.indexOf("if (onlineRestoredThisLoop)");
+  const reconnectEnd = mainSource.indexOf("\n  wasWifiConnected = wifiConnected", reconnectStart);
   const reconnectSource = mainSource.slice(reconnectStart, reconnectEnd);
-  assert.match(reconnectSource, /pollCommandIfDue\(onlineServicesAllowed, true\)/);
+  assert.match(
+    reconnectSource,
+    /serviceLocalRealtimeTasks\(recoveryActive\)[\s\S]*pollCommandIfDue\(onlineServicesAllowed, recoveryActive, true\)/,
+  );
 
   const helperStart = mainSource.indexOf("static bool pollCommandIfDue");
   const helperEnd = mainSource.indexOf("\nstatic void printLiveData()", helperStart);

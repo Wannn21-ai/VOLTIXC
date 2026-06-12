@@ -11,68 +11,86 @@ const firebaseSource = await readFile(
   "utf8",
 );
 
-test("command polling uses 500ms online and 250ms active intervals", () => {
-  assert.match(mainSource, /COMMAND_POLL_INTERVAL_MS = 500UL/);
-  assert.match(mainSource, /ACTIVE_COMMAND_POLL_INTERVAL_MS = 250UL/);
+test("command polling uses completion-based state-aware cooldowns", () => {
+  assert.match(mainSource, /IDLE_COMMAND_POLL_COOLDOWN_MS = 750UL/);
+  assert.match(mainSource, /MONITORING_COMMAND_POLL_COOLDOWN_MS = 500UL/);
+  assert.match(mainSource, /WAITING_LOAD_COMMAND_POLL_COOLDOWN_MS = 1000UL/);
 
   const intervalStart = mainSource.indexOf("static unsigned long commandPollIntervalMs()");
-  const intervalEnd = mainSource.indexOf("\nstatic bool pollCommandIfDue", intervalStart);
+  const intervalEnd = mainSource.indexOf("\nstatic unsigned long sensorUpdateIntervalMs", intervalStart);
   const intervalSource = mainSource.slice(intervalStart, intervalEnd);
-  for (const state of [
-    "WAITING_LOAD",
-    "MONITORING",
-    "OVERLOAD",
-    "FINISHING",
-    "FINISHED",
-  ]) {
+  for (const state of ["WAITING_LOAD", "MONITORING", "OVERLOAD", "FINISHING"]) {
     assert.match(intervalSource, new RegExp(`SessionState::${state}`));
   }
-  assert.match(intervalSource, /return ACTIVE_COMMAND_POLL_INTERVAL_MS/);
-  assert.match(intervalSource, /return COMMAND_POLL_INTERVAL_MS/);
+  assert.match(intervalSource, /return WAITING_LOAD_COMMAND_POLL_COOLDOWN_MS/);
+  assert.match(intervalSource, /return MONITORING_COMMAND_POLL_COOLDOWN_MS/);
+  assert.match(intervalSource, /return IDLE_COMMAND_POLL_COOLDOWN_MS/);
+
+  const pollStart = mainSource.indexOf("static bool pollCommandIfDue");
+  const pollEnd = mainSource.indexOf("\nstatic void serviceLocalRealtimeTasks", pollStart);
+  const pollSource = mainSource.slice(pollStart, pollEnd);
+  assert.equal(
+    pollSource.indexOf("firebasePollCommand()") <
+      pollSource.indexOf("lastFirebaseCommandCompletedMs = millis()"),
+    true,
+  );
+  assert.doesNotMatch(pollSource, /lastFirebaseCommandCompletedMs = now/);
 });
 
-test("online loop polls commands before local and optional Firebase work", () => {
+test("online loop services local realtime tasks before command and Firebase work", () => {
   const loopStart = mainSource.indexOf("void loop()");
   const loopSource = mainSource.slice(loopStart);
-  const priorityPollIndex = loopSource.indexOf(
-    "bool commandPollRan = pollCommandIfDue(onlineServicesAllowed)",
+  const localServiceIndex = loopSource.indexOf("serviceLocalRealtimeTasks(recoveryActive)");
+  const transitionFlushIndex = loopSource.indexOf(
+    "flushSessionTransitionPriority(onlineServicesAllowed)",
+    localServiceIndex,
+  );
+  const displayIndex = loopSource.indexOf("displayUpdate()", transitionFlushIndex);
+  const commandPollIndex = loopSource.indexOf(
+    "pollCommandIfDue(onlineServicesAllowed, recoveryActive)",
+    transitionFlushIndex,
   );
 
-  assert.equal(priorityPollIndex >= 0, true);
-  assert.equal(priorityPollIndex < loopSource.indexOf("storageUpdate()"), true);
+  assert.equal(localServiceIndex >= 0, true);
+  assert.equal(localServiceIndex < transitionFlushIndex, true);
+  assert.equal(transitionFlushIndex < displayIndex, true);
+  assert.equal(displayIndex < commandPollIndex, true);
   assert.equal(
-    priorityPollIndex <
+    commandPollIndex <
       loopSource.indexOf("storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS)"),
     true,
   );
-  assert.equal(priorityPollIndex < loopSource.indexOf("firebasePushDeviceConfig()"), true);
-  assert.equal(priorityPollIndex < loopSource.indexOf("firebaseReadConfig()"), true);
-  assert.equal(priorityPollIndex < loopSource.indexOf("firebasePublishLive()", priorityPollIndex), true);
-
-  const recoveryPublishIndex = loopSource.indexOf(
-    "firebasePublishLive()",
-    loopSource.indexOf("if (recoveryCompletedOnline)"),
-  );
-  assert.equal(priorityPollIndex < recoveryPublishIndex, true);
+  assert.equal(commandPollIndex < loopSource.indexOf("firebasePushDeviceConfig()"), true);
+  assert.equal(commandPollIndex < loopSource.indexOf("firebaseReadConfig()"), true);
 });
 
-test("blocking Firebase background work is followed by another due command poll", () => {
-  const markerIndex = mainSource.indexOf("if (backgroundFirebaseWorkRan)");
-  const postWorkSource = mainSource.slice(markerIndex, markerIndex + 180);
-  assert.equal(markerIndex >= 0, true);
-  assert.match(postWorkSource, /pollCommandIfDue\(onlineServicesAllowed\)/);
+test("local tasks gate command polls and background work without post-work repoll", () => {
+  const pollStart = mainSource.indexOf("static bool pollCommandIfDue");
+  const pollEnd = mainSource.indexOf("\nstatic void serviceLocalRealtimeTasks", pollStart);
+  const pollSource = mainSource.slice(pollStart, pollEnd);
+  assert.match(pollSource, /localRealtimeTasksDue\(recoveryActive\)/);
+  assert.match(pollSource, /logCommandPollSkipped\("local tasks due"\)/);
+  assert.match(pollSource, /logCommandPollSkipped\("cooldown active"\)/);
 
-  for (const operation of [
-    "storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS)",
-    "firebasePushDeviceConfig()",
-    "firebaseReadConfig()",
-    "firebasePublishLive()",
-  ]) {
-    const operationIndex = mainSource.indexOf(operation, mainSource.indexOf("if (onlineServicesAllowed)"));
-    const workRanIndex = mainSource.indexOf("backgroundFirebaseWorkRan = true", operationIndex);
-    assert.equal(operationIndex >= 0, true);
-    assert.equal(workRanIndex > operationIndex, true);
-  }
+  const loopStart = mainSource.indexOf("void loop()");
+  const loopSource = mainSource.slice(loopStart);
+  assert.match(loopSource, /const bool localTasksDueAfterCommand = localRealtimeTasksDue\(recoveryActive\)/);
+  assert.match(loopSource, /const bool waitingLoad = sessionData\.state == SessionState::WAITING_LOAD/);
+  assert.match(loopSource, /commandPollRan &&\s+!waitingLoad[\s\S]*firebasePublishLive\(\)/);
+  assert.match(loopSource, /commandPollRan &&\s+!localTasksDueAfterCommand/);
+  assert.doesNotMatch(loopSource, /if \(backgroundFirebaseWorkRan\)/);
+});
+
+test("WAITING_LOAD validates immediately after each fast sensor update", () => {
+  assert.match(mainSource, /WAITING_LOAD_TASK_INTERVAL_MS = 250UL/);
+  const serviceStart = mainSource.indexOf("static void serviceLocalRealtimeTasks");
+  const serviceEnd = mainSource.indexOf("\nstatic void printLiveData()", serviceStart);
+  const serviceSource = mainSource.slice(serviceStart, serviceEnd);
+  assert.match(
+    serviceSource,
+    /sensorUpdated && sessionData\.state == SessionState::WAITING_LOAD/,
+  );
+  assert.match(serviceSource, /if \(validateAfterSensor \|\|[\s\S]*sessionUpdate\(\)/);
 });
 
 test("command poll and command HTTP timing diagnostics are present", () => {
@@ -80,4 +98,7 @@ test("command poll and command HTTP timing diagnostics are present", () => {
   assert.match(firebaseSource, /command poll completed millis=/);
   assert.match(firebaseSource, /command HTTP duration millis=/);
   assert.match(firebaseSource, /accepted ageMs=/);
+  assert.match(mainSource, /sensor update millis=/);
+  assert.match(mainSource, /session update millis=/);
+  assert.match(mainSource, /skipped command poll reason=/);
 });
