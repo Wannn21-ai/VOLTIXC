@@ -96,7 +96,7 @@ test("path-level RTDB denial preserves auth and blocks repeated config pushes", 
   assert.match(firebaseSource, /configPushBlockedByRules = true/);
   assert.match(firebaseSource, /bool\* pathUnauthorizedOut = nullptr/);
   assert.match(firebaseSource, /\*pathUnauthorizedOut = true/);
-  assert.match(firebaseSource, /else if \(pathUnauthorized\)/);
+  assert.match(firebaseSource, /else if \(pathUnauthorized \|\| statusCode == 401 \|\| statusCode == 403\)/);
   assert.match(firebaseSource, /local config remains pending/);
   assert.match(mainSource, /!firebaseDeviceConfigPushBlocked\(\)/);
   assert.doesNotMatch(authSource, /rtdb_unauthorized_after_retry/);
