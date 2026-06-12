@@ -58,6 +58,16 @@
           ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
           ".write": true
         },
+        "historyCleanup": {
+          "current": {
+            ".read": true,
+            ".write": "!newData.exists() || (auth != null && (data.parent().parent().child('ownerUid').val() === auth.uid || data.parent().parent().child('members').child(auth.uid).child('role').val() === 'operator'))"
+          },
+          "lastAck": {
+            ".read": "auth != null && data.parent().parent().child('members').child(auth.uid).exists()",
+            ".write": true
+          }
+        },
         "ownerUid": {
           ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
           ".write": false

@@ -88,6 +88,17 @@
           "$historyId": {
             ".write": "auth != null && (auth.token.deviceId === $deviceId || data.parent().parent().child('ownerUid').val() === auth.uid)"
           }
+        },
+        "historyCleanup": {
+          "current": {
+            ".read": "auth != null && (auth.token.deviceId === $deviceId || data.parent().parent().child('ownerUid').val() === auth.uid || data.parent().parent().child('members').child(auth.uid).child('role').val() === 'operator')",
+            ".write": "auth != null && ((auth.token.deviceId === $deviceId && !newData.exists()) || (auth.token.deviceId !== $deviceId && (data.parent().parent().child('ownerUid').val() === auth.uid || data.parent().parent().child('members').child(auth.uid).child('role').val() === 'operator')))",
+            ".validate": "!newData.exists() || (newData.hasChildren(['type', 'requestId', 'requestedBy', 'createdAt']) && ((newData.child('type').val() === 'DELETE_HISTORY_SESSION' && newData.child('sessionIds').exists()) || (newData.child('type').val() === 'DELETE_ALL_HISTORY' && newData.child('beforeTs').isNumber())) && newData.child('requestId').isString() && newData.child('requestedBy').val() === auth.uid && newData.child('createdAt').isNumber())"
+          },
+          "lastAck": {
+            ".read": "auth != null && data.parent().parent().child('members').child(auth.uid).exists()",
+            ".write": "auth != null && auth.token.deviceId === $deviceId"
+          }
         }
       }
     },

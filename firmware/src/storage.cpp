@@ -589,6 +589,76 @@ bool storageClearHistory() {
   return cleared;
 }
 
+int storageDeleteCompletedSession(const char* sessionId) {
+  if (!mounted) {
+    Serial.println("[history-cleanup] skipped reason=LittleFS not mounted");
+    return -1;
+  }
+  if (sessionId == nullptr || sessionId[0] == '\0') {
+    Serial.println("[history-cleanup] skipped reason=invalid sessionId");
+    return -1;
+  }
+
+  char path[96];
+  makeHistoryPath(sessionId, path, sizeof(path));
+  if (!LittleFS.exists(path)) {
+    pendingHistorySyncRequested = storageCountPendingHistory() > 0;
+    return 0;
+  }
+  if (!LittleFS.remove(path)) {
+    Serial.print("[history-cleanup] failed local sessionId=");
+    Serial.println(sessionId);
+    return -1;
+  }
+
+  pendingHistorySyncRequested = storageCountPendingHistory() > 0;
+  Serial.print("[history-cleanup] deleted local sessionId=");
+  Serial.println(sessionId);
+  return 1;
+}
+
+int storageClearCompletedHistory() {
+  if (!mounted) {
+    Serial.println("[history-cleanup] skipped reason=LittleFS not mounted");
+    return -1;
+  }
+
+  int deletedCount = 0;
+  while (true) {
+    File root = LittleFS.open(HISTORY_DIR);
+    if (!root || !root.isDirectory()) {
+      return -1;
+    }
+
+    File file = root.openNextFile();
+    String path;
+    while (file) {
+      if (isHistorySessionFile(file)) {
+        path = file.path();
+        file.close();
+        break;
+      }
+      file.close();
+      file = root.openNextFile();
+    }
+    root.close();
+
+    if (path.length() == 0) {
+      break;
+    }
+    if (!LittleFS.remove(path)) {
+      Serial.println("[history-cleanup] delete all local failed");
+      return -1;
+    }
+    deletedCount++;
+  }
+
+  pendingHistorySyncRequested = false;
+  Serial.print("[history-cleanup] delete all local count=");
+  Serial.println(deletedCount);
+  return deletedCount;
+}
+
 bool storageMarkSessionQueued(const char* sessionId) {
   if (!mounted) {
     Serial.println("[storage] Cannot mark queued, LittleFS is not mounted");
@@ -659,6 +729,7 @@ int storageCountPendingHistory() {
 
 void storageRequestPendingHistorySync() {
   pendingHistorySyncRequested = true;
+  Serial.println("[history] auto-sync requested=true");
 }
 
 bool storagePendingHistorySyncRequested() {

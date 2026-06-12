@@ -2,6 +2,57 @@ function historyKey(session) {
   return session?.sessionId || session?.id || session?._key || "";
 }
 
+function cleanupRequestId(type, createdAt) {
+  const suffix = globalThis.crypto?.randomUUID?.() || `${createdAt}-${Math.random().toString(16).slice(2)}`;
+  return `${type.toLowerCase()}-${suffix}`;
+}
+
+export function cleanupRequestForSession(
+  session,
+  activeDeviceId,
+  requestedBy,
+  options = {},
+) {
+  const deviceId = session?.deviceId || activeDeviceId;
+  const sessionId = historyKey(session);
+  if (!deviceId || !sessionId || !requestedBy) return null;
+  const createdAt = options.createdAt ?? Date.now();
+  const requestId = options.requestId || cleanupRequestId("DELETE_HISTORY_SESSION", createdAt);
+  return {
+    path: `devices/${deviceId}/historyCleanup/current`,
+    payload: {
+      type: "DELETE_HISTORY_SESSION",
+      requestId,
+      sessionIds: [sessionId],
+      requestedBy,
+      createdAt,
+    },
+  };
+}
+
+export function cleanupRequestForAll(
+  sessions,
+  activeDeviceId,
+  requestedBy,
+  options = {},
+) {
+  const deviceId = activeDeviceId ||
+    sessions.find(session => session?._source !== "local" && session?.deviceId)?.deviceId;
+  if (!deviceId || !requestedBy) return null;
+  const createdAt = options.createdAt ?? Date.now();
+  const requestId = options.requestId || cleanupRequestId("DELETE_ALL_HISTORY", createdAt);
+  return {
+    path: `devices/${deviceId}/historyCleanup/current`,
+    payload: {
+      type: "DELETE_ALL_HISTORY",
+      requestId,
+      beforeTs: createdAt,
+      requestedBy,
+      createdAt,
+    },
+  };
+}
+
 export function deletePathsForSession(session, activeDeviceId = "") {
   if (!session || session._source === "local") return [];
 

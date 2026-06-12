@@ -5,7 +5,13 @@ import {
 import { db, ref, set, onValue } from "./firebase-config.js";
 import { getHistoryReadState, loadDeviceHistory } from "./local-history.js";
 import { getCurrentDevice } from "./user-state.js";
-import { deleteAllPathsForSessions, deleteFirebasePaths, deletePathsForSession } from "./history-delete.js";
+import {
+  cleanupRequestForAll,
+  cleanupRequestForSession,
+  deleteAllPathsForSessions,
+  deleteFirebasePaths,
+  deletePathsForSession,
+} from "./history-delete.js";
 
 const user = await requireAuth();
 renderShell("history", "HISTORY");
@@ -31,6 +37,24 @@ const btnDeleteAll = document.getElementById("btn-delete-all");
 let historyData = [];
 let refreshToken = 0;
 let activeDeviceId = "";
+let pendingCleanupRequestId = "";
+
+function cleanupStorageKey(deviceId) {
+  return `sem_pending_history_cleanup_${uid}_${deviceId}`;
+}
+
+async function queueDeviceCleanup(cleanupRequest, cloudDeleted = true) {
+  if (!cleanupRequest) {
+    showToast("Cloud history deleted. Device cleanup request unavailable.", "error");
+    return false;
+  }
+  await set(ref(db, cleanupRequest.path), cleanupRequest.payload);
+  pendingCleanupRequestId = cleanupRequest.payload.requestId;
+  const cleanupDeviceId = cleanupRequest.path.split("/")[1] || activeDeviceId;
+  sessionStorage.setItem(cleanupStorageKey(cleanupDeviceId), pendingCleanupRequestId);
+  showToast(cloudDeleted ? "Cloud history deleted. Device cleanup pending" : "Device cleanup pending", "");
+  return true;
+}
 
 function firstValue(session, keys) {
   for (const key of keys) {
@@ -310,10 +334,20 @@ try {
   const currentDevice = await getCurrentDevice(uid);
   if (currentDevice?.id) {
     activeDeviceId = currentDevice.id;
+    pendingCleanupRequestId = sessionStorage.getItem(cleanupStorageKey(activeDeviceId)) || "";
     historyWatchRefs.push(
       ref(db, `devices/${currentDevice.id}/history`),
       ref(db, `devices/${currentDevice.id}/completedSessions`)
     );
+    onValue(ref(db, `devices/${currentDevice.id}/historyCleanup/lastAck`), snapshot => {
+      const ack = snapshot.val();
+      if (!pendingCleanupRequestId || ack?.requestId !== pendingCleanupRequestId) return;
+      if (ack?.status === "DONE") {
+        sessionStorage.removeItem(cleanupStorageKey(activeDeviceId));
+        pendingCleanupRequestId = "";
+        showToast("Device local history cleared", "success");
+      }
+    });
   }
 } catch {}
 historyWatchRefs.forEach(sourceRef => onValue(sourceRef, refreshHistory, refreshHistory));
@@ -345,12 +379,9 @@ listEl.addEventListener("click", async event => {
     event.stopPropagation();
     const key = event.target.dataset.key;
     const session = historyData.find(item => item._key === key);
-    if (session?._source === "local") {
-      showToast("Local ESP32 history tetap disimpan di LittleFS", "error");
-      return;
-    }
     const deletePaths = deletePathsForSession(session, activeDeviceId);
-    if (deletePaths.length === 0) {
+    const cleanupRequest = cleanupRequestForSession(session, activeDeviceId, uid);
+    if (deletePaths.length === 0 && !cleanupRequest) {
       showToast("Unable to resolve history source", "error");
       return;
     }
@@ -358,8 +389,13 @@ listEl.addEventListener("click", async event => {
     const result = await deleteFirebasePaths(deletePaths, path => set(ref(db, path), null));
     if (result.permissionDenied) {
       showToast("Delete denied by Firebase rules", "error");
-    } else if (result.successCount > 0) {
-      showToast("Session deleted", "");
+    } else if (result.successCount > 0 || deletePaths.length === 0) {
+      try {
+        await queueDeviceCleanup(cleanupRequest, result.successCount > 0);
+      } catch (error) {
+        console.error("[history] Device cleanup request failed", error);
+        showToast("Cloud history deleted. Device cleanup request failed.", "error");
+      }
     } else {
       showToast("Failed to delete", "error");
     }
@@ -393,22 +429,22 @@ btnDeleteAll.addEventListener("click", async () => {
     return;
   }
   const deletePaths = deleteAllPathsForSessions(historyData, activeDeviceId);
-  if (deletePaths.length === 0) {
-    showToast("Only local ESP32 history found; LittleFS kept untouched", "error");
+  const cleanupRequest = cleanupRequestForAll(historyData, activeDeviceId, uid);
+  if (deletePaths.length === 0 && !cleanupRequest) {
+    showToast("Unable to resolve device history", "error");
     return;
   }
-  if (!confirm("Delete Firebase history? Local ESP32 LittleFS history will be kept.")) return;
+  if (!confirm("Delete cloud and device history?")) return;
   const result = await deleteFirebasePaths(deletePaths, path => set(ref(db, path), null));
   if (result.permissionDenied) {
     showToast("Delete denied by Firebase rules", "error");
-  } else if (result.successCount > 0) {
-    const localSessionsRemain = historyData.some(session => session?._source === "local");
-    showToast(
-      localSessionsRemain
-        ? "Firebase history deleted. Local ESP32 history is still stored in LittleFS."
-        : "Firebase history deleted",
-      ""
-    );
+  } else if (result.successCount > 0 || deletePaths.length === 0) {
+    try {
+      await queueDeviceCleanup(cleanupRequest, result.successCount > 0);
+    } catch (error) {
+      console.error("[history] Device cleanup request failed", error);
+      showToast("Cloud history deleted. Device cleanup request failed.", "error");
+    }
   } else {
     showToast("Failed to delete", "error");
   }
