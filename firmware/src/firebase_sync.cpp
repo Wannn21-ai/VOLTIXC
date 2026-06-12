@@ -799,12 +799,18 @@ void firebasePublishLive() {
   system["activeSsid"] = networkIsConnected() ? WiFi.SSID() : "";
   system["firmwareVersion"] = Config::FIRMWARE_VERSION;
 
+  const bool liveElectricalActive =
+    relayIsOn() &&
+    sessionData.state != SessionState::IDLE &&
+    sessionData.state != SessionState::FINISHED;
   JsonObject device = doc.createNestedObject("device");
-  device["connected"] = sensorData.valid;
+  device["connected"] = liveElectricalActive && sensorData.valid;
   device["voltage"] = sensorData.voltage;
-  device["current"] = sensorData.current;
-  device["power"] = sensorData.power;
-  device["apparent"] = sensorData.voltage * sensorData.current;
+  device["current"] = liveElectricalActive ? sensorData.current : 0.0f;
+  device["power"] = liveElectricalActive ? sensorData.power : 0.0f;
+  device["apparent"] = liveElectricalActive
+    ? sensorData.voltage * sensorData.current
+    : 0.0f;
   device["frequency"] = sensorData.frequency;
   device["pf"] = sensorData.powerFactor;
   device["powerFactor"] = sensorData.powerFactor;
@@ -812,7 +818,7 @@ void firebasePublishLive() {
   device["cost"] = sessionData.cost;
   device["duration"] = sessionData.durationMs / 1000UL;
   device["overload"] = sessionData.state == SessionState::OVERLOAD;
-  device["loadDetected"] = sensorData.loadDetected;
+  device["loadDetected"] = liveElectricalActive && sensorData.loadDetected;
 
   JsonObject session = doc.createNestedObject("session");
   session["active"] = isSessionActiveForLive();

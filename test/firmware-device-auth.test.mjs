@@ -102,16 +102,16 @@ test("path-level RTDB denial preserves auth and blocks repeated config pushes", 
   assert.doesNotMatch(authSource, /rtdb_unauthorized_after_retry/);
 });
 
-test("fresh commands outrank optional sync work and report redacted latency", () => {
+test("local realtime tasks and fresh commands outrank optional sync work", () => {
   assert.match(firebaseSource, /SINGULAR_COMMAND_FALLBACK_POLL_INTERVAL_MS = 5000UL/);
   assert.match(firebaseSource, /singularCommandFallbackDisabled = true/);
   assert.match(firebaseSource, /Primary commands\/current available; singular fallback disabled/);
-  assert.match(mainSource, /COMMAND_POLL_INTERVAL_MS = 500UL/);
-  assert.match(mainSource, /ACTIVE_COMMAND_POLL_INTERVAL_MS = 250UL/);
-  assert.match(mainSource, /bool commandPollRan = pollCommandIfDue\(onlineServicesAllowed\)/);
+  assert.match(mainSource, /WAITING_LOAD_TASK_INTERVAL_MS = 250UL/);
+  assert.match(mainSource, /lastFirebaseCommandCompletedMs = millis\(\)/);
+  assert.match(mainSource, /serviceLocalRealtimeTasks\(recoveryActive\)/);
   assert.match(mainSource, /else if \(commandPollRan/);
   assert.match(mainSource, /const bool commandTransitionPending = firebaseCommandTransitionPending\(\)/);
-  assert.match(mainSource, /if \(backgroundFirebaseWorkRan\) \{\s+pollCommandIfDue\(onlineServicesAllowed\)/);
+  assert.doesNotMatch(mainSource, /if \(backgroundFirebaseWorkRan\)/);
   assert.match(mainSource, /!commandTransitionPending[\s\S]*firebaseReadConfig\(\)/);
   assert.match(mainSource, /!commandTransitionPending[\s\S]*storageSyncPendingHistoryToFirebase\(AUTO_HISTORY_SYNC_MAX_UPLOADS\)/);
   assert.match(firebaseSource, /logCommandLatency\("START"/);

@@ -23,17 +23,21 @@ static constexpr float SERIAL_THRESHOLD_MAX_W = 5000.0f;
 static constexpr unsigned long REQUESTED_HISTORY_SYNC_RETRY_MS = 2000UL;
 static constexpr unsigned long PERIODIC_HISTORY_SYNC_MS = 30000UL;
 static constexpr unsigned int AUTO_HISTORY_SYNC_MAX_UPLOADS = 3;
-static constexpr unsigned long COMMAND_POLL_INTERVAL_MS = 500UL;
-static constexpr unsigned long ACTIVE_COMMAND_POLL_INTERVAL_MS = 250UL;
+static constexpr unsigned long IDLE_COMMAND_POLL_COOLDOWN_MS = 750UL;
+static constexpr unsigned long MONITORING_COMMAND_POLL_COOLDOWN_MS = 500UL;
+static constexpr unsigned long WAITING_LOAD_COMMAND_POLL_COOLDOWN_MS = 1000UL;
+static constexpr unsigned long WAITING_LOAD_TASK_INTERVAL_MS = 250UL;
+static constexpr unsigned long COMMAND_POLL_SKIP_LOG_INTERVAL_MS = 1000UL;
 
 static unsigned long lastSensorUpdateMs = 0;
 static unsigned long lastSessionUpdateMs = 0;
 static unsigned long lastLivePrintMs = 0;
 static unsigned long lastFirebaseConfigMs = 0;
 static unsigned long lastFirebaseLiveMs = 0;
-static unsigned long lastFirebaseCommandMs = 0;
+static unsigned long lastFirebaseCommandCompletedMs = 0;
 static unsigned long lastPendingHistorySyncMs = 0;
 static unsigned long offlineNoNetworkSinceMs = 0;
+static unsigned long lastCommandPollSkipLogMs = 0;
 static char serialCommandBuffer[32];
 static size_t serialCommandLength = 0;
 static bool serialCommandOverflow = false;
@@ -79,35 +83,110 @@ static void flushSessionTransitionPriority(bool onlineServicesAllowed) {
 static unsigned long commandPollIntervalMs() {
   switch (sessionData.state) {
     case SessionState::WAITING_LOAD:
+      return WAITING_LOAD_COMMAND_POLL_COOLDOWN_MS;
     case SessionState::MONITORING:
     case SessionState::OVERLOAD:
     case SessionState::FINISHING:
-    case SessionState::FINISHED:
-      return ACTIVE_COMMAND_POLL_INTERVAL_MS;
+      return MONITORING_COMMAND_POLL_COOLDOWN_MS;
     default:
-      return COMMAND_POLL_INTERVAL_MS;
+      return IDLE_COMMAND_POLL_COOLDOWN_MS;
   }
 }
 
-static bool pollCommandIfDue(bool onlineServicesAllowed, bool force = false) {
+static unsigned long sensorUpdateIntervalMs() {
+  return sessionData.state == SessionState::WAITING_LOAD
+    ? WAITING_LOAD_TASK_INTERVAL_MS
+    : Config::SENSOR_INTERVAL_MS;
+}
+
+static unsigned long sessionUpdateIntervalMs() {
+  return sessionData.state == SessionState::WAITING_LOAD
+    ? WAITING_LOAD_TASK_INTERVAL_MS
+    : Config::SESSION_INTERVAL_MS;
+}
+
+static bool localRealtimeTasksDue(bool recoveryActive) {
+  if (recoveryActive) {
+    return false;
+  }
+  const unsigned long now = millis();
+  return now - lastSensorUpdateMs >= sensorUpdateIntervalMs() ||
+    now - lastSessionUpdateMs >= sessionUpdateIntervalMs();
+}
+
+static void logCommandPollSkipped(const char* reason) {
+  const unsigned long now = millis();
+  if (lastCommandPollSkipLogMs != 0 &&
+      now - lastCommandPollSkipLogMs < COMMAND_POLL_SKIP_LOG_INTERVAL_MS) {
+    return;
+  }
+  lastCommandPollSkipLogMs = now;
+  Serial.print("[timing] skipped command poll reason=");
+  Serial.println(reason);
+}
+
+static bool pollCommandIfDue(
+  bool onlineServicesAllowed,
+  bool recoveryActive,
+  bool force = false
+) {
   if (!onlineServicesAllowed) {
+    return false;
+  }
+
+  if (localRealtimeTasksDue(recoveryActive)) {
+    logCommandPollSkipped("local tasks due");
     return false;
   }
 
   const unsigned long now = millis();
   if (!force &&
-      lastFirebaseCommandMs != 0 &&
-      now - lastFirebaseCommandMs < commandPollIntervalMs()) {
+      lastFirebaseCommandCompletedMs != 0 &&
+      now - lastFirebaseCommandCompletedMs < commandPollIntervalMs()) {
+    logCommandPollSkipped("cooldown active");
     return false;
   }
 
-  lastFirebaseCommandMs = now;
   firebasePollCommand();
+  lastFirebaseCommandCompletedMs = millis();
   flushSessionTransitionPriority(onlineServicesAllowed);
   if (firebaseTransitionAckRequested()) {
     firebaseFlushTransitionAck();
   }
   return true;
+}
+
+static void serviceLocalRealtimeTasks(bool recoveryActive) {
+  if (recoveryActive) {
+    return;
+  }
+
+  unsigned long now = millis();
+  bool sensorUpdated = false;
+  if (now - lastSensorUpdateMs >= sensorUpdateIntervalMs()) {
+    lastSensorUpdateMs = now;
+    sensorUpdate();
+    sensorUpdated = true;
+    Serial.print("[timing] sensor update millis=");
+    Serial.println(millis());
+
+    if (!sessionIsActive() &&
+        relayIsOn() &&
+        sensorData.loadDetected) {
+      sessionStart(TEST_DEVICE_NAME);
+    }
+  }
+
+  now = millis();
+  const bool validateAfterSensor =
+    sensorUpdated && sessionData.state == SessionState::WAITING_LOAD;
+  if (validateAfterSensor ||
+      now - lastSessionUpdateMs >= sessionUpdateIntervalMs()) {
+    lastSessionUpdateMs = now;
+    sessionUpdate();
+    Serial.print("[timing] session update millis=");
+    Serial.println(millis());
+  }
 }
 
 static void printLiveData() {
@@ -570,37 +649,10 @@ void loop() {
 
   const bool wifiConnected = networkIsConnected();
   const bool onlineServicesAllowed = wifiConnected && !offlineModeBlocksAutoOnline();
-  if (onlineServicesAllowed && !wasOnlineServicesAllowed) {
-    const bool restoredFromManualOffline = offlineModeHandleOnlineRestored();
-    systemMode = SystemMode::ONLINE;
-    if (restoredFromManualOffline) {
-      Serial.println("[network] Manual offline unlocked, WiFi connected");
-    }
-    timeSyncBegin();
-    firebaseAuthenticateDevice();
-    pollCommandIfDue(onlineServicesAllowed, true);
-    firebasePublishLive();
-    if (restoredFromManualOffline) {
-      Serial.println("[firebase] Live publish after manual offline unlock");
-    }
-    lastFirebaseConfigMs = now;
-    lastFirebaseLiveMs = now;
-    if (storageCountPendingHistory() > 0) {
-      storageRequestPendingHistorySync();
-      Serial.println("[history] pending auto-sync requested after online services restored");
-    }
-  }
+  const bool onlineRestoredThisLoop = onlineServicesAllowed && !wasOnlineServicesAllowed;
   if (!wifiConnected && wasWifiConnected) {
     sessionWriteCheckpoint();
     systemMode = SystemMode::OFFLINE;
-  }
-  wasWifiConnected = wifiConnected;
-  wasOnlineServicesAllowed = onlineServicesAllowed;
-
-  bool commandPollRan = pollCommandIfDue(onlineServicesAllowed);
-  if (recoveryCompletedOnline) {
-    firebasePublishLive();
-    commandPollRan = pollCommandIfDue(onlineServicesAllowed) || commandPollRan;
   }
 
   if (!wifiConnected &&
@@ -619,81 +671,101 @@ void loop() {
     offlineNoNetworkSinceMs = 0;
   }
 
-  storageUpdate();
-  indicatorsUpdate();
-  displayUpdate();
-
-  if (!recoveryActive && now - lastSensorUpdateMs >= Config::SENSOR_INTERVAL_MS) {
-    lastSensorUpdateMs = now;
-    sensorUpdate();
-
-    if (!sessionIsActive() &&
-        relayIsOn() &&
-        sensorData.loadDetected) {
-      sessionStart(TEST_DEVICE_NAME);
-    }
-  }
-
-  if (!recoveryActive && now - lastSessionUpdateMs >= Config::SESSION_INTERVAL_MS) {
-    lastSessionUpdateMs = now;
-    sessionUpdate();
-  }
-
+  serviceLocalRealtimeTasks(recoveryActive);
   offlineModeUpdate();
   flushSessionTransitionPriority(onlineServicesAllowed);
+  displayUpdate();
+
+  bool commandPollRan = false;
+  if (onlineRestoredThisLoop) {
+    const bool restoredFromManualOffline = offlineModeHandleOnlineRestored();
+    systemMode = SystemMode::ONLINE;
+    if (restoredFromManualOffline) {
+      Serial.println("[network] Manual offline unlocked, WiFi connected");
+    }
+    timeSyncBegin();
+    firebaseAuthenticateDevice();
+    serviceLocalRealtimeTasks(recoveryActive);
+    flushSessionTransitionPriority(onlineServicesAllowed);
+    displayUpdate();
+    commandPollRan = pollCommandIfDue(onlineServicesAllowed, recoveryActive, true);
+    if (sessionData.state != SessionState::WAITING_LOAD &&
+        !localRealtimeTasksDue(recoveryActive)) {
+      firebasePublishLive();
+      lastFirebaseLiveMs = millis();
+      if (restoredFromManualOffline) {
+        Serial.println("[firebase] Live publish after manual offline unlock");
+      }
+    }
+    lastFirebaseConfigMs = millis();
+    if (storageCountPendingHistory() > 0) {
+      storageRequestPendingHistorySync();
+      Serial.println("[history] pending auto-sync requested after online services restored");
+    }
+  }
+  wasWifiConnected = wifiConnected;
+  wasOnlineServicesAllowed = onlineServicesAllowed;
 
   if (onlineServicesAllowed) {
-    commandPollRan = pollCommandIfDue(onlineServicesAllowed) || commandPollRan;
+    commandPollRan =
+      pollCommandIfDue(onlineServicesAllowed, recoveryActive) || commandPollRan;
 
     const bool commandTransitionPending = firebaseCommandTransitionPending();
+    const bool localTasksDueAfterCommand = localRealtimeTasksDue(recoveryActive);
+    const bool waitingLoad = sessionData.state == SessionState::WAITING_LOAD;
+    const unsigned long firebaseNow = millis();
     const bool requestedHistorySyncDue =
       storagePendingHistorySyncRequested() &&
-      (lastPendingHistorySyncMs == 0 || now - lastPendingHistorySyncMs >= REQUESTED_HISTORY_SYNC_RETRY_MS);
+      (lastPendingHistorySyncMs == 0 ||
+       firebaseNow - lastPendingHistorySyncMs >= REQUESTED_HISTORY_SYNC_RETRY_MS);
     const bool periodicHistorySyncDue =
-      lastPendingHistorySyncMs == 0 || now - lastPendingHistorySyncMs >= PERIODIC_HISTORY_SYNC_MS;
-    bool backgroundFirebaseWorkRan = false;
+      lastPendingHistorySyncMs == 0 ||
+      firebaseNow - lastPendingHistorySyncMs >= PERIODIC_HISTORY_SYNC_MS;
 
-    if (commandPollRan &&
+    if (recoveryCompletedOnline && !waitingLoad && !localTasksDueAfterCommand) {
+      lastFirebaseLiveMs = firebaseNow;
+      firebasePublishLive();
+    } else if (commandPollRan &&
+        !waitingLoad &&
+        !localTasksDueAfterCommand &&
+        (lastFirebaseLiveMs == 0 || firebaseNow - lastFirebaseLiveMs >= 2000UL)) {
+      lastFirebaseLiveMs = firebaseNow;
+      firebasePublishLive();
+    } else if (commandPollRan &&
+        !localTasksDueAfterCommand &&
         !commandTransitionPending &&
         (requestedHistorySyncDue || periodicHistorySyncDue)) {
-      lastPendingHistorySyncMs = now;
+      lastPendingHistorySyncMs = firebaseNow;
       Serial.println("[history] auto-sync started");
       Serial.print("[timing] history sync started millis=");
       Serial.println(millis());
       storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
       Serial.print("[timing] history sync completed millis=");
       Serial.println(millis());
-      backgroundFirebaseWorkRan = true;
     } else if (commandPollRan &&
+        !localTasksDueAfterCommand &&
         appConfig.configPendingSync &&
         !commandTransitionPending &&
         !firebaseDeviceConfigPushBlocked() &&
-        (lastFirebaseConfigMs == 0 || now - lastFirebaseConfigMs >= 30000UL)) {
-      lastFirebaseConfigMs = now;
+        (lastFirebaseConfigMs == 0 || firebaseNow - lastFirebaseConfigMs >= 30000UL)) {
+      lastFirebaseConfigMs = firebaseNow;
       Serial.println("[config] Syncing pending config to Firebase");
       if (firebasePushDeviceConfig()) {
         Serial.println("[config] Pending config sync OK");
       } else {
         Serial.println("[config] Pending config sync FAIL");
       }
-      backgroundFirebaseWorkRan = true;
     } else if (commandPollRan &&
+        !localTasksDueAfterCommand &&
         !commandTransitionPending &&
-        (lastFirebaseConfigMs == 0 || now - lastFirebaseConfigMs >= 30000UL)) {
-      lastFirebaseConfigMs = now;
+        (lastFirebaseConfigMs == 0 || firebaseNow - lastFirebaseConfigMs >= 30000UL)) {
+      lastFirebaseConfigMs = firebaseNow;
       firebaseReadConfig();
-      backgroundFirebaseWorkRan = true;
-    } else if (commandPollRan &&
-        (lastFirebaseLiveMs == 0 || now - lastFirebaseLiveMs >= 2000UL)) {
-      lastFirebaseLiveMs = now;
-      firebasePublishLive();
-      backgroundFirebaseWorkRan = true;
-    }
-
-    if (backgroundFirebaseWorkRan) {
-      pollCommandIfDue(onlineServicesAllowed);
     }
   }
+
+  storageUpdate();
+  indicatorsUpdate();
 
   indicatorsSetWifi(wifiConnected);
   indicatorsSetStatus(
