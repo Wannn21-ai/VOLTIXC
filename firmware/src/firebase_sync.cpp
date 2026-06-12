@@ -43,6 +43,22 @@ static bool configPushBlockedByRules = false;
 static bool singularCommandFallbackDisabled = false;
 static bool legacyHistoryMirrorDisabled = false;
 
+class CommandPollTimingScope {
+ public:
+  CommandPollTimingScope() : startedAtMs(millis()) {
+    Serial.print("[timing] command poll started millis=");
+    Serial.println(startedAtMs);
+  }
+
+  ~CommandPollTimingScope() {
+    Serial.print("[timing] command poll completed millis=");
+    Serial.println(millis());
+  }
+
+ private:
+  unsigned long startedAtMs;
+};
+
 static String configJsonPath(const String& configPath) {
   return configPath + ".json";
 }
@@ -927,6 +943,8 @@ bool firebaseDeviceConfigPushBlocked() {
 }
 
 void firebasePollCommand() {
+  CommandPollTimingScope timingScope;
+
   if (publishPendingStartAckIfReady()) {
     return;
   }
@@ -943,7 +961,8 @@ void firebasePollCommand() {
   String response;
   const bool forceLog = shouldLog(lastPollLogMs);
   bool pathUnauthorized = false;
-  if (!httpRequest(
+  const unsigned long commandHttpStartedAtMs = millis();
+  const bool commandHttpOk = httpRequest(
         "GET",
         "/devices/esp32-voltix-001/commands/current.json",
         "",
@@ -951,7 +970,10 @@ void firebasePollCommand() {
         forceLog,
         nullptr,
         &pathUnauthorized
-      )) {
+      );
+  Serial.print("[timing] command HTTP duration millis=");
+  Serial.println(millis() - commandHttpStartedAtMs);
+  if (!commandHttpOk) {
     if (pathUnauthorized) {
       Serial.println("[command] Primary commands/current denied; trying singular fallback");
     }
