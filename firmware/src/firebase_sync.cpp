@@ -20,6 +20,7 @@
 
 static constexpr unsigned long HTTP_LOG_INTERVAL_MS = 5000UL;
 static constexpr unsigned long SINGULAR_COMMAND_FALLBACK_POLL_INTERVAL_MS = 5000UL;
+static constexpr unsigned long CONFIG_PUSH_BLOCKED_COOLDOWN_MS = 10UL * 60UL * 1000UL;
 static constexpr uint64_t FINAL_COMMAND_MAX_AGE_MS = 5ULL * 60ULL * 1000ULL;
 
 static char lastProcessedCommandId[48] = "";
@@ -40,6 +41,8 @@ static uint64_t lastLoggedStaleFinalCommandAt = 0;
 static bool missingLiveDeviceIdLogged = false;
 static bool missingCommandDeviceIdLogged = false;
 static bool configPushBlockedByRules = false;
+static unsigned long configPushBlockedAtMs = 0;
+static uint64_t configPushBlockedRevision = 0;
 static bool singularCommandFallbackDisabled = false;
 static bool legacyHistoryMirrorDisabled = false;
 
@@ -79,6 +82,31 @@ static String configRevisionText(uint64_t revision) {
   char buffer[24];
   snprintf(buffer, sizeof(buffer), "%llu", revision);
   return String(buffer);
+}
+
+static void clearConfigPushCooldown() {
+  configPushBlockedByRules = false;
+  configPushBlockedAtMs = 0;
+  configPushBlockedRevision = 0;
+}
+
+static bool configPushCooldownActive() {
+  if (!configPushBlockedByRules) {
+    return false;
+  }
+  if (configPushBlockedRevision != appConfig.configRevision ||
+      millis() - configPushBlockedAtMs >= CONFIG_PUSH_BLOCKED_COOLDOWN_MS) {
+    clearConfigPushCooldown();
+    return false;
+  }
+  return true;
+}
+
+static void startConfigPushCooldown() {
+  configPushBlockedByRules = true;
+  configPushBlockedAtMs = millis();
+  configPushBlockedRevision = appConfig.configRevision;
+  Serial.println("[config] Push blocked, cooldown started");
 }
 
 static bool readRevision(JsonDocument& doc, uint64_t& revision) {
@@ -893,7 +921,7 @@ void firebaseReadConfig() {
 }
 
 bool firebasePushDeviceConfig() {
-  if (configPushBlockedByRules) {
+  if (configPushCooldownActive()) {
     return false;
   }
 
@@ -927,10 +955,11 @@ bool firebasePushDeviceConfig() {
     &pathUnauthorized
   );
   if (ok) {
+    clearConfigPushCooldown();
     appConfig.configPendingSync = false;
     saveLocalConfig();
-  } else if (pathUnauthorized) {
-    configPushBlockedByRules = true;
+  } else if (pathUnauthorized || statusCode == 401 || statusCode == 403) {
+    startConfigPushCooldown();
     Serial.println(
       "[config] Device config push blocked by rules; local config remains pending"
     );
@@ -939,7 +968,7 @@ bool firebasePushDeviceConfig() {
 }
 
 bool firebaseDeviceConfigPushBlocked() {
-  return configPushBlockedByRules;
+  return configPushCooldownActive();
 }
 
 void firebasePollCommand() {
