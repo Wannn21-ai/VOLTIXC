@@ -106,10 +106,12 @@ test("fresh commands outrank optional sync work and report redacted latency", ()
   assert.match(firebaseSource, /SINGULAR_COMMAND_FALLBACK_POLL_INTERVAL_MS = 5000UL/);
   assert.match(firebaseSource, /singularCommandFallbackDisabled = true/);
   assert.match(firebaseSource, /Primary commands\/current available; singular fallback disabled/);
-  assert.match(mainSource, /now - lastFirebaseCommandMs >= 500UL/);
-  assert.match(mainSource, /bool commandPollRan = false/);
+  assert.match(mainSource, /COMMAND_POLL_INTERVAL_MS = 500UL/);
+  assert.match(mainSource, /ACTIVE_COMMAND_POLL_INTERVAL_MS = 250UL/);
+  assert.match(mainSource, /bool commandPollRan = pollCommandIfDue\(onlineServicesAllowed\)/);
   assert.match(mainSource, /else if \(commandPollRan/);
   assert.match(mainSource, /const bool commandTransitionPending = firebaseCommandTransitionPending\(\)/);
+  assert.match(mainSource, /if \(backgroundFirebaseWorkRan\) \{\s+pollCommandIfDue\(onlineServicesAllowed\)/);
   assert.match(mainSource, /!commandTransitionPending[\s\S]*firebaseReadConfig\(\)/);
   assert.match(mainSource, /!commandTransitionPending[\s\S]*storageSyncPendingHistoryToFirebase\(AUTO_HISTORY_SYNC_MAX_UPLOADS\)/);
   assert.match(firebaseSource, /logCommandLatency\("START"/);

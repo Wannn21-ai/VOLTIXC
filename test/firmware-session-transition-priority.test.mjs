@@ -43,17 +43,21 @@ test("STOP requests FINISHED refresh after relay OFF and local save flow", () =>
 });
 
 test("main flushes transition OLED then live before ACK and history sync", () => {
+  const helperStart = mainSource.indexOf("static bool pollCommandIfDue");
+  const helperEnd = mainSource.indexOf("\nstatic void printLiveData()", helperStart);
+  const helperSource = mainSource.slice(helperStart, helperEnd);
+  const pollIndex = helperSource.indexOf("firebasePollCommand()");
+  const flushIndex = helperSource.indexOf("flushSessionTransitionPriority(onlineServicesAllowed)", pollIndex);
+  const ackIndex = helperSource.indexOf("firebaseFlushTransitionAck()", flushIndex);
   const loopStart = mainSource.indexOf("void loop()");
   const loopSource = mainSource.slice(loopStart);
-  const pollIndex = loopSource.indexOf("firebasePollCommand()");
-  const flushIndex = loopSource.indexOf("flushSessionTransitionPriority(onlineServicesAllowed)", pollIndex);
-  const ackIndex = loopSource.indexOf("firebaseFlushTransitionAck()", flushIndex);
-  const historyIndex = loopSource.indexOf("storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS)", ackIndex);
+  const priorityPollIndex = loopSource.indexOf("pollCommandIfDue(onlineServicesAllowed)");
+  const historyIndex = loopSource.indexOf("storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS)");
 
   assert.equal(pollIndex >= 0, true);
   assert.equal(pollIndex < flushIndex, true);
   assert.equal(flushIndex < ackIndex, true);
-  assert.equal(ackIndex < historyIndex, true);
+  assert.equal(priorityPollIndex < historyIndex, true);
 
   const flushStart = mainSource.indexOf("static void flushSessionTransitionPriority");
   const flushEnd = mainSource.indexOf("\nstatic void printLiveData()", flushStart);
@@ -67,13 +71,16 @@ test("online restore command polling also flushes transition before ACK", () => 
   const reconnectStart = mainSource.indexOf("if (onlineServicesAllowed && !wasOnlineServicesAllowed)");
   const reconnectEnd = mainSource.indexOf("\n  if (!wifiConnected && wasWifiConnected)", reconnectStart);
   const reconnectSource = mainSource.slice(reconnectStart, reconnectEnd);
-  const pollIndex = reconnectSource.indexOf("firebasePollCommand()");
-  const flushIndex = reconnectSource.indexOf("flushSessionTransitionPriority(onlineServicesAllowed)");
-  const ackIndex = reconnectSource.indexOf("firebaseFlushTransitionAck()");
+  assert.match(reconnectSource, /pollCommandIfDue\(onlineServicesAllowed, true\)/);
 
-  assert.equal(pollIndex >= 0, true);
-  assert.equal(pollIndex < flushIndex, true);
-  assert.equal(flushIndex < ackIndex, true);
+  const helperStart = mainSource.indexOf("static bool pollCommandIfDue");
+  const helperEnd = mainSource.indexOf("\nstatic void printLiveData()", helperStart);
+  const helperSource = mainSource.slice(helperStart, helperEnd);
+  assert.equal(
+    helperSource.indexOf("flushSessionTransitionPriority(onlineServicesAllowed)") <
+      helperSource.indexOf("firebaseFlushTransitionAck()"),
+    true,
+  );
 });
 
 test("transition ACKs are deferred until main priority flush", () => {
