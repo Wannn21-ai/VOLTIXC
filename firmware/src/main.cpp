@@ -39,6 +39,41 @@ static bool wasWifiConnected = false;
 static bool wasOnlineServicesAllowed = false;
 static bool wasRecoveryActive = false;
 
+static const char* transitionTimingLabel(SessionTransitionRefresh type) {
+  switch (type) {
+    case SessionTransitionRefresh::START_VERIFIED: return "START";
+    case SessionTransitionRefresh::STOP_FINISHED: return "STOP";
+    default: return "transition";
+  }
+}
+
+static void flushSessionTransitionPriority(bool onlineServicesAllowed) {
+  const SessionTransitionRefresh type = sessionTransitionRefreshType();
+  if (type == SessionTransitionRefresh::NONE) {
+    return;
+  }
+
+  const char* label = transitionTimingLabel(type);
+  if (sessionDisplayRefreshRequested()) {
+    displayShowStatus();
+    sessionMarkDisplayRefreshed();
+    Serial.print("[timing] OLED refreshed after ");
+    Serial.print(label);
+    Serial.print(" millis=");
+    Serial.println(millis());
+  }
+
+  if (onlineServicesAllowed && sessionLivePublishRequested()) {
+    firebasePublishLive();
+    lastFirebaseLiveMs = millis();
+    sessionMarkLivePublished();
+    Serial.print("[timing] live published after ");
+    Serial.print(label);
+    Serial.print(" millis=");
+    Serial.println(millis());
+  }
+}
+
 static void printLiveData() {
   Serial.print("[live] mode=");
   Serial.print(systemModeToString(systemMode));
@@ -506,6 +541,10 @@ void loop() {
     timeSyncBegin();
     firebaseAuthenticateDevice();
     firebasePollCommand();
+    flushSessionTransitionPriority(onlineServicesAllowed);
+    if (firebaseTransitionAckRequested()) {
+      firebaseFlushTransitionAck();
+    }
     firebasePublishLive();
     if (restoredFromManualOffline) {
       Serial.println("[firebase] Live publish after manual offline unlock");
@@ -561,6 +600,7 @@ void loop() {
   }
 
   offlineModeUpdate();
+  flushSessionTransitionPriority(onlineServicesAllowed);
 
   if (onlineServicesAllowed) {
     bool commandPollRan = false;
@@ -568,6 +608,11 @@ void loop() {
       lastFirebaseCommandMs = now;
       firebasePollCommand();
       commandPollRan = true;
+    }
+
+    flushSessionTransitionPriority(onlineServicesAllowed);
+    if (firebaseTransitionAckRequested()) {
+      firebaseFlushTransitionAck();
     }
 
     const bool commandTransitionPending = firebaseCommandTransitionPending();
@@ -582,7 +627,11 @@ void loop() {
         (requestedHistorySyncDue || periodicHistorySyncDue)) {
       lastPendingHistorySyncMs = now;
       Serial.println("[history] auto-sync started");
+      Serial.print("[timing] history sync started millis=");
+      Serial.println(millis());
       storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
+      Serial.print("[timing] history sync completed millis=");
+      Serial.println(millis());
     } else if (commandPollRan &&
         appConfig.configPendingSync &&
         !commandTransitionPending &&

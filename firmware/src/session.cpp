@@ -39,6 +39,9 @@ unsigned long loadValidationStartedAtMs = 0;
 unsigned int loadValidationStableSamples = 0;
 bool loadValidationWaitingLogged = false;
 StartValidationResult startValidationResult = StartValidationResult::NONE;
+SessionTransitionRefresh transitionRefreshType = SessionTransitionRefresh::NONE;
+bool displayRefreshRequested = false;
+bool livePublishRequested = false;
 char recoveryStatusText[48] = "idle";
 bool recoveryAttemptedThisBoot = false;
 bool offlineModeActive = false;
@@ -53,6 +56,18 @@ unsigned long offlineFinishedAtMs = 0;
 unsigned long manualOfflineIdleStartedAtMs = 0;
 unsigned long manualOfflineTryingOnlineAtMs = 0;
 unsigned long offlineDeviceCounter = 1UL;
+}
+
+static void requestTransitionRefresh(SessionTransitionRefresh type) {
+  transitionRefreshType = type;
+  displayRefreshRequested = true;
+  livePublishRequested = true;
+}
+
+static void clearTransitionRefreshIfComplete() {
+  if (!displayRefreshRequested && !livePublishRequested) {
+    transitionRefreshType = SessionTransitionRefresh::NONE;
+  }
 }
 
 static void updateSessionTotals() {
@@ -338,7 +353,10 @@ static void verifyLoadAndStartMonitoring() {
   sessionData.pendingSync = false;
   resetLoadValidationState();
   startValidationResult = StartValidationResult::VERIFIED;
+  requestTransitionRefresh(SessionTransitionRefresh::START_VERIFIED);
   Serial.println("[LoadCheck] Load verified, monitoring started");
+  Serial.print("[timing] load verified millis=");
+  Serial.println(now);
   if (offlineModeActive) {
     offlineNoLoadPrompt = false;
     offlineReadyForNext = false;
@@ -518,6 +536,8 @@ void sessionStop(EndReason reason) {
   sessionData.state = SessionState::FINISHING;
   const CompletedSessionSnapshot snapshot = makeFinalSnapshot(reason);
   relaySet(false);
+  Serial.print("[timing] relay OFF millis=");
+  Serial.println(millis());
 
   Serial.print("[history] sessionStop saving sessionId=");
   Serial.print(snapshot.sessionId);
@@ -567,6 +587,9 @@ void sessionStop(EndReason reason) {
   Serial.println(timestampText);
 
   sessionData.state = SessionState::FINISHED;
+  requestTransitionRefresh(SessionTransitionRefresh::STOP_FINISHED);
+  Serial.print("[timing] state FINISHED millis=");
+  Serial.println(millis());
   elapsedBeforeRecoveryMs = 0;
   resumeMillis = 0;
   if (offlineModeActive) {
@@ -667,6 +690,28 @@ bool sessionConsumeStartValidationResult(StartValidationResult& result) {
   result = startValidationResult;
   startValidationResult = StartValidationResult::NONE;
   return true;
+}
+
+SessionTransitionRefresh sessionTransitionRefreshType() {
+  return transitionRefreshType;
+}
+
+bool sessionDisplayRefreshRequested() {
+  return displayRefreshRequested;
+}
+
+bool sessionLivePublishRequested() {
+  return livePublishRequested;
+}
+
+void sessionMarkDisplayRefreshed() {
+  displayRefreshRequested = false;
+  clearTransitionRefreshIfComplete();
+}
+
+void sessionMarkLivePublished() {
+  livePublishRequested = false;
+  clearTransitionRefreshIfComplete();
 }
 
 void sessionRecoveryBegin() {

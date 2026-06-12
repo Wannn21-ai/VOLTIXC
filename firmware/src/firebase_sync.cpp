@@ -30,6 +30,7 @@ static char ackStatus[12] = "DONE";
 static char ackReason[24] = "";
 static char ackMessage[64] = "Command processed";
 static bool pendingStartAck = false;
+static bool transitionAckRequested = false;
 static char pendingStartCommandId[48] = "";
 static unsigned long lastLiveLogMs = 0;
 static unsigned long lastPollLogMs = 0;
@@ -551,8 +552,7 @@ static bool publishPendingStartAckIfReady() {
     Serial.println("[firebase] START ack rejected reason=NO_LOAD");
   }
 
-  firebaseAckCommand();
-  httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
+  transitionAckRequested = true;
   pendingStartAck = false;
   pendingStartCommandId[0] = '\0';
   return true;
@@ -660,6 +660,8 @@ static void processFinalCommand(JsonDocument& doc, uint64_t updatedAt) {
   }
 
   if (startRequested) {
+    Serial.print("[timing] START command received millis=");
+    Serial.println(receivedAtMs);
     if (!sessionStart(appConfig.deviceName)) {
       Serial.println("[command] Singular fallback START ignored: device busy");
       return;
@@ -669,6 +671,8 @@ static void processFinalCommand(JsonDocument& doc, uint64_t updatedAt) {
   }
 
   if (stopRequested) {
+    Serial.print("[timing] STOP command received millis=");
+    Serial.println(receivedAtMs);
     if (sessionIsActive()) {
       sessionStop(EndReason::USER_STOP);
     }
@@ -997,6 +1001,8 @@ void firebasePollCommand() {
   strlcpy(lastProcessedCommandId, id, sizeof(lastProcessedCommandId));
 
   if (strcmp(type, "START") == 0) {
+    Serial.print("[timing] START command received millis=");
+    Serial.println(receivedAtMs);
     const char* deviceName = doc["deviceName"] | Config::DEFAULT_DEVICE_NAME;
     if (doc["tariff"].is<float>()) appConfig.tariffPerKwh = doc["tariff"].as<float>();
     if (doc["overloadThreshold"].is<float>()) appConfig.overloadThresholdW = doc["overloadThreshold"].as<float>();
@@ -1017,6 +1023,8 @@ void firebasePollCommand() {
   }
 
   if (strcmp(type, "STOP") == 0) {
+    Serial.print("[timing] STOP command received millis=");
+    Serial.println(receivedAtMs);
     sessionSetRemoteContext(uid, commandSessionId);
     pendingStartAck = false;
     pendingStartCommandId[0] = '\0';
@@ -1025,8 +1033,7 @@ void firebasePollCommand() {
     }
     logCommandLatency("STOP", "commands/current", ageAtReceiveMs, receivedAtMs);
     setAck(id, type, "DONE", "STOP command processed");
-    firebaseAckCommand();
-    httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
+    transitionAckRequested = true;
     return;
   }
 
@@ -1036,8 +1043,22 @@ void firebasePollCommand() {
 
 bool firebaseCommandTransitionPending() {
   return pendingStartAck ||
+    transitionAckRequested ||
     sessionData.state == SessionState::WAITING_LOAD ||
     sessionData.state == SessionState::FINISHING;
+}
+
+bool firebaseTransitionAckRequested() {
+  return transitionAckRequested;
+}
+
+void firebaseFlushTransitionAck() {
+  if (!transitionAckRequested) {
+    return;
+  }
+  firebaseAckCommand();
+  httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
+  transitionAckRequested = false;
 }
 
 void firebaseAckCommand() {
