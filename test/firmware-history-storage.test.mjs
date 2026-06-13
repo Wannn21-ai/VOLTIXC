@@ -62,12 +62,15 @@ test("requested history auto-sync remains ahead of config after live priority", 
   const schedulerSource = mainSource.slice(schedulerStart, schedulerEnd);
   const autoSyncIndex = schedulerSource.indexOf('Serial.println("[history] auto-sync started")');
   const configIndex = schedulerSource.indexOf("firebasePushDeviceConfig()");
-  const liveIndex = schedulerSource.indexOf("firebasePublishLive()");
+  const commandPollIndex = mainSource.indexOf(
+    "commandPollRan =\n      pollCommandIfDue(onlineServicesAllowed, recoveryActive)",
+  );
+  const requestedSyncIndex = mainSource.indexOf('Serial.println("[history] auto-sync started")');
 
   assert.equal(autoSyncIndex >= 0, true);
   assert.equal(autoSyncIndex < configIndex, true);
-  assert.equal(liveIndex < autoSyncIndex, true);
-  assert.match(schedulerSource, /!commandTransitionPending[\s\S]*storageSyncPendingHistoryToFirebase\(AUTO_HISTORY_SYNC_MAX_UPLOADS\)/);
+  assert.equal(commandPollIndex < requestedSyncIndex, true);
+  assert.match(schedulerSource, /if \(requestedHistorySyncDue\)[\s\S]*!commandTransitionPending[\s\S]*storageSyncPendingHistoryToFirebase\(AUTO_HISTORY_SYNC_MAX_UPLOADS\)/);
 });
 
 test("manual Serial sync remains available with the default bounded cycle", () => {

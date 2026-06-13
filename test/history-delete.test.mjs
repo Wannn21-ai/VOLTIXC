@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  cleanupRequestForAll,
+  cleanupRequestForSession,
   deleteAllPathsForSessions,
   deleteFirebasePaths,
   deletePathsForSession,
 } from "../web/js/history-delete.js";
+
+const historyPageSource = await readFile(
+  new URL("../web/js/history.js", import.meta.url),
+  "utf8",
+);
 
 test("single delete creates both device history child paths", () => {
   assert.deepEqual(
@@ -94,4 +102,58 @@ test("missing mirror path does not prevent a successful delete", async () => {
     "devices/device-1/history/session-1",
     "devices/device-1/completedSessions/session-1",
   ]);
+});
+
+test("single delete creates a device cleanup request", () => {
+  assert.deepEqual(
+    cleanupRequestForSession(
+      { deviceId: "device-1", sessionId: "session-1" },
+      "",
+      "user-1",
+      { requestId: "cleanup-1", createdAt: 1234 },
+    ),
+    {
+      path: "devices/device-1/historyCleanup/current",
+      payload: {
+        type: "DELETE_HISTORY_SESSION",
+        requestId: "cleanup-1",
+        sessionIds: ["session-1"],
+        requestedBy: "user-1",
+        createdAt: 1234,
+      },
+    },
+  );
+});
+
+test("delete all creates a device cleanup request with cutoff timestamp", () => {
+  assert.deepEqual(
+    cleanupRequestForAll(
+      [{ _source: "local", deviceId: "device-1", sessionId: "local-1" }],
+      "device-1",
+      "user-1",
+      { requestId: "cleanup-all-1", createdAt: 5678 },
+    ),
+    {
+      path: "devices/device-1/historyCleanup/current",
+      payload: {
+        type: "DELETE_ALL_HISTORY",
+        requestId: "cleanup-all-1",
+        beforeTs: 5678,
+        requestedBy: "user-1",
+        createdAt: 5678,
+      },
+    },
+  );
+});
+
+test("history page queues device cleanup after Firebase mirror deletion", () => {
+  const singleStart = historyPageSource.indexOf('if (event.target.classList.contains("btn-delete"))');
+  const singleEnd = historyPageSource.indexOf("\n  const card =", singleStart);
+  const singleSource = historyPageSource.slice(singleStart, singleEnd);
+  const allStart = historyPageSource.indexOf('btnDeleteAll.addEventListener("click"');
+  const allEnd = historyPageSource.indexOf("\nfunction exportSingleCSV", allStart);
+  const allSource = historyPageSource.slice(allStart, allEnd);
+
+  assert.equal(singleSource.indexOf("deleteFirebasePaths") < singleSource.indexOf("queueDeviceCleanup"), true);
+  assert.equal(allSource.indexOf("deleteFirebasePaths") < allSource.indexOf("queueDeviceCleanup"), true);
 });

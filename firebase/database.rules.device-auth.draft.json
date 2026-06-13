@@ -62,6 +62,17 @@
     ".write": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && !newData.exists() && (root.child('devices').child($deviceId).child('ownerUid').val() === auth.uid || root.child('devices').child($deviceId).child('members').child(auth.uid).child('role').val() === 'owner' || root.child('devices').child($deviceId).child('members').child(auth.uid).child('role').val() === 'operator')))"
   }
 },
+        "historyCleanup": {
+          "current": {
+            ".read": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId",
+            ".write": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId && !newData.exists()) || (auth.token.deviceRole !== 'hardware' && (data.parent().parent().child('ownerUid').val() === auth.uid || data.parent().parent().child('members').child(auth.uid).child('role').val() === 'operator')))",
+            ".validate": "!newData.exists() || (auth.token.deviceRole !== 'hardware' && newData.hasChildren(['type', 'requestId', 'requestedBy', 'createdAt']) && ((newData.child('type').val() === 'DELETE_HISTORY_SESSION' && newData.child('sessionIds').exists()) || (newData.child('type').val() === 'DELETE_ALL_HISTORY' && newData.child('beforeTs').isNumber())) && newData.child('requestId').isString() && newData.child('requestedBy').val() === auth.uid && newData.child('createdAt').isNumber())"
+          },
+          "lastAck": {
+            ".read": "auth != null && auth.token.deviceRole !== 'hardware' && data.parent().parent().child('members').child(auth.uid).exists()",
+            ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
+          }
+        },
         "commands": {
           "current": {
             ".read": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId",

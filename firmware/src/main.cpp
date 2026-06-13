@@ -22,6 +22,7 @@ static constexpr float SERIAL_THRESHOLD_MIN_W = 1.0f;
 static constexpr float SERIAL_THRESHOLD_MAX_W = 5000.0f;
 static constexpr unsigned long REQUESTED_HISTORY_SYNC_RETRY_MS = 2000UL;
 static constexpr unsigned long PERIODIC_HISTORY_SYNC_MS = 30000UL;
+static constexpr unsigned long HISTORY_CLEANUP_POLL_INTERVAL_MS = 5000UL;
 static constexpr unsigned int AUTO_HISTORY_SYNC_MAX_UPLOADS = 3;
 static constexpr unsigned long IDLE_COMMAND_POLL_COOLDOWN_MS = 750UL;
 static constexpr unsigned long MONITORING_COMMAND_POLL_COOLDOWN_MS = 500UL;
@@ -36,6 +37,7 @@ static unsigned long lastFirebaseConfigMs = 0;
 static unsigned long lastFirebaseLiveMs = 0;
 static unsigned long lastFirebaseCommandCompletedMs = 0;
 static unsigned long lastPendingHistorySyncMs = 0;
+static unsigned long lastHistoryCleanupPollMs = 0;
 static unsigned long offlineNoNetworkSinceMs = 0;
 static unsigned long lastCommandPollSkipLogMs = 0;
 static char serialCommandBuffer[32];
@@ -713,6 +715,7 @@ void loop() {
     const bool commandTransitionPending = firebaseCommandTransitionPending();
     const bool localTasksDueAfterCommand = localRealtimeTasksDue(recoveryActive);
     const bool waitingLoad = sessionData.state == SessionState::WAITING_LOAD;
+    const bool finishing = sessionData.state == SessionState::FINISHING;
     const unsigned long firebaseNow = millis();
     const bool requestedHistorySyncDue =
       storagePendingHistorySyncRequested() &&
@@ -721,8 +724,44 @@ void loop() {
     const bool periodicHistorySyncDue =
       lastPendingHistorySyncMs == 0 ||
       firebaseNow - lastPendingHistorySyncMs >= PERIODIC_HISTORY_SYNC_MS;
+    const bool cleanupPollDue =
+      lastHistoryCleanupPollMs == 0 ||
+      firebaseNow - lastHistoryCleanupPollMs >= HISTORY_CLEANUP_POLL_INTERVAL_MS;
+    const bool requestedHistorySyncEvaluated = requestedHistorySyncDue;
 
-    if (recoveryCompletedOnline && !waitingLoad && !localTasksDueAfterCommand) {
+    if (requestedHistorySyncDue) {
+      Serial.println("[history] auto-sync requested=true");
+      if (waitingLoad) {
+        lastPendingHistorySyncMs = firebaseNow;
+        Serial.println("[history] auto-sync skipped reason=WAITING_LOAD");
+      } else if (finishing || commandTransitionPending) {
+        lastPendingHistorySyncMs = firebaseNow;
+        Serial.println("[history] auto-sync skipped reason=transition pending");
+      } else {
+        if (sessionData.state == SessionState::FINISHED) {
+          Serial.println("[history] auto-sync allowed after STOP");
+        }
+        lastPendingHistorySyncMs = millis();
+        lastHistoryCleanupPollMs = millis();
+        const HistoryCleanupPollResult cleanupResult = firebasePollHistoryCleanup();
+        if (cleanupResult == HistoryCleanupPollResult::NO_REQUEST ||
+            cleanupResult == HistoryCleanupPollResult::PROCESSED) {
+          Serial.println("[history] auto-sync started");
+          Serial.print("[timing] history sync started millis=");
+          Serial.println(millis());
+          storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
+          Serial.println("[history] sync completed");
+          Serial.print("[timing] history sync completed millis=");
+          Serial.println(millis());
+        } else {
+          Serial.println("[history] auto-sync skipped reason=cleanup unavailable");
+        }
+      }
+    }
+
+    if (requestedHistorySyncEvaluated) {
+      // Do not repeat requested cleanup/sync or start optional Firebase work this loop.
+    } else if (recoveryCompletedOnline && !waitingLoad && !localTasksDueAfterCommand) {
       lastFirebaseLiveMs = firebaseNow;
       firebasePublishLive();
     } else if (commandPollRan &&
@@ -735,13 +774,31 @@ void loop() {
         !localTasksDueAfterCommand &&
         !commandTransitionPending &&
         (requestedHistorySyncDue || periodicHistorySyncDue)) {
-      lastPendingHistorySyncMs = firebaseNow;
-      Serial.println("[history] auto-sync started");
-      Serial.print("[timing] history sync started millis=");
-      Serial.println(millis());
-      storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
-      Serial.print("[timing] history sync completed millis=");
-      Serial.println(millis());
+      if (waitingLoad || finishing) {
+        Serial.println("[history] auto-sync skipped reason=unsafe session state");
+      } else {
+        lastHistoryCleanupPollMs = millis();
+        const HistoryCleanupPollResult cleanupResult = firebasePollHistoryCleanup();
+        if (cleanupResult == HistoryCleanupPollResult::NO_REQUEST ||
+            cleanupResult == HistoryCleanupPollResult::PROCESSED) {
+          lastPendingHistorySyncMs = millis();
+          Serial.println("[history] auto-sync started");
+          Serial.print("[timing] history sync started millis=");
+          Serial.println(millis());
+          storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
+          Serial.println("[history] sync completed");
+          Serial.print("[timing] history sync completed millis=");
+          Serial.println(millis());
+        } else {
+          Serial.println("[history] auto-sync skipped reason=cleanup unavailable");
+        }
+      }
+    } else if (commandPollRan &&
+        cleanupPollDue &&
+        !localTasksDueAfterCommand &&
+        !sessionIsActive()) {
+      lastHistoryCleanupPollMs = millis();
+      firebasePollHistoryCleanup();
     } else if (commandPollRan &&
         !localTasksDueAfterCommand &&
         appConfig.configPendingSync &&

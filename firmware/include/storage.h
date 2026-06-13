@@ -14,6 +14,8 @@ bool storagePrintHistoryJson(Print& output);
 int storageCountHistory();
 unsigned long storageNextOfflineDeviceCounterFromHistory();
 bool storageClearHistory();
+int storageDeleteCompletedSession(const char* sessionId);
+int storageClearCompletedHistory();
 bool storageMarkSessionQueued(const char* sessionId);
 int storageCountPendingHistory();
 void storageRequestPendingHistorySync();

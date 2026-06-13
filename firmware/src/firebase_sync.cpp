@@ -8,6 +8,7 @@
 #include "relay.h"
 #include "session.h"
 #include "state.h"
+#include "storage.h"
 #include "time_sync.h"
 
 #include <Arduino.h>
@@ -449,6 +450,46 @@ static String finalHistoryJsonPath(const char* historyId) {
 
 static String completedSessionJsonPath(const char* sessionId) {
   return configJsonPath(FirebasePaths::pathCompletedSession(String(Config::DEVICE_ID), String(sessionId)));
+}
+
+static String historyCleanupCurrentJsonPath() {
+  return configJsonPath(
+    FirebasePaths::pathDeviceRoot(String(Config::DEVICE_ID)) + "/historyCleanup/current"
+  );
+}
+
+static String historyCleanupLastAckJsonPath() {
+  return configJsonPath(
+    FirebasePaths::pathDeviceRoot(String(Config::DEVICE_ID)) + "/historyCleanup/lastAck"
+  );
+}
+
+static bool acknowledgeHistoryCleanup(
+  const char* requestId,
+  const char* type,
+  const char* status,
+  int deletedCount
+) {
+  StaticJsonDocument<384> doc;
+  doc["requestId"] = requestId;
+  doc["type"] = type;
+  doc["status"] = status;
+  doc["deletedCount"] = deletedCount;
+  doc["completedAt"] = timeIsSynced()
+    ? getUnixMs()
+    : static_cast<uint64_t>(millis());
+
+  String payload;
+  serializeJson(doc, payload);
+  const String ackPath = historyCleanupLastAckJsonPath();
+  if (!httpRequest("PUT", ackPath.c_str(), payload, nullptr, true)) {
+    return false;
+  }
+
+  Serial.print("[history-cleanup] ack sent requestId=");
+  Serial.println(requestId);
+  const String currentPath = historyCleanupCurrentJsonPath();
+  return httpRequest("PUT", currentPath.c_str(), "null", nullptr, true);
 }
 
 static bool pushHistoryPayload(const char* sessionId, const String& payload) {
@@ -1103,6 +1144,74 @@ void firebaseAckCommand() {
   String payload;
   serializeJson(doc, payload);
   httpRequest("PUT", "/devices/esp32-voltix-001/commands/lastAck.json", payload, nullptr, true);
+}
+
+HistoryCleanupPollResult firebasePollHistoryCleanup() {
+  if (!networkIsConnected()) {
+    Serial.println("[history-cleanup] skipped reason=offline");
+    return HistoryCleanupPollResult::FAILED;
+  }
+  if (sessionIsActive()) {
+    Serial.println("[history-cleanup] skipped reason=active session");
+    return HistoryCleanupPollResult::SKIPPED_UNSAFE;
+  }
+
+  const String currentPath = historyCleanupCurrentJsonPath();
+  String response;
+  if (!httpRequest("GET", currentPath.c_str(), "", &response, false)) {
+    return HistoryCleanupPollResult::FAILED;
+  }
+  if (response.length() == 0 || response == "null") {
+    return HistoryCleanupPollResult::NO_REQUEST;
+  }
+
+  StaticJsonDocument<1024> doc;
+  const DeserializationError error = deserializeJson(doc, response);
+  if (error || !doc.is<JsonObject>()) {
+    Serial.println("[history-cleanup] skipped reason=invalid request");
+    return HistoryCleanupPollResult::FAILED;
+  }
+
+  const char* requestId = doc["requestId"] | "";
+  const char* type = doc["type"] | "";
+  Serial.print("[history-cleanup] request received type=");
+  Serial.println(type[0] == '\0' ? "(missing)" : type);
+  if (requestId[0] == '\0' || type[0] == '\0') {
+    Serial.println("[history-cleanup] skipped reason=invalid request");
+    return HistoryCleanupPollResult::FAILED;
+  }
+
+  int deletedCount = 0;
+  if (strcmp(type, "DELETE_HISTORY_SESSION") == 0) {
+    if (!doc["sessionIds"].is<JsonArray>()) {
+      Serial.println("[history-cleanup] skipped reason=invalid request");
+      return HistoryCleanupPollResult::FAILED;
+    }
+    for (JsonVariantConst value : doc["sessionIds"].as<JsonArrayConst>()) {
+      const char* sessionId = value.as<const char*>();
+      if (sessionId == nullptr || sessionId[0] == '\0') {
+        continue;
+      }
+      const int deleted = storageDeleteCompletedSession(sessionId);
+      if (deleted < 0) {
+        return HistoryCleanupPollResult::FAILED;
+      }
+      deletedCount += deleted;
+    }
+  } else if (strcmp(type, "DELETE_ALL_HISTORY") == 0) {
+    deletedCount = storageClearCompletedHistory();
+    if (deletedCount < 0) {
+      return HistoryCleanupPollResult::FAILED;
+    }
+  } else {
+    Serial.println("[history-cleanup] skipped reason=invalid request");
+    return HistoryCleanupPollResult::FAILED;
+  }
+
+  if (!acknowledgeHistoryCleanup(requestId, type, "DONE", deletedCount)) {
+    return HistoryCleanupPollResult::FAILED;
+  }
+  return HistoryCleanupPollResult::PROCESSED;
 }
 
 bool firebasePushCompletedSession(const CompletedSessionSnapshot& snapshot) {
