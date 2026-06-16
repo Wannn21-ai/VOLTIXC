@@ -32,7 +32,7 @@
             <h1>Live Energy Dashboard</h1>
             <p id="active-device-label">No active device</p>
           </div>
-          <button id="btn-stop" class="btn btn-danger dashboard-stop-button">Stop Session</button>
+          <button id="btn-stop" class="btn btn-danger dashboard-stop-button" title="Stop monitoring and save the session">Stop Session</button>
         </header>
 
         <section class="card placeholder-card dashboard-empty" id="no-device-state">
@@ -69,19 +69,23 @@
             <div class="hero-status-grid">
               <div class="hero-status-item">
                 <span>Session</span>
-                <strong>Live telemetry</strong>
+                <strong id="val-session-status">Live telemetry</strong>
+                <small id="val-session-helper">Ready for live readings.</small>
               </div>
               <div class="hero-status-item">
                 <span>Relay</span>
                 <strong id="val-relay-status">OFF</strong>
+                <small id="val-relay-helper">Relay is idle.</small>
               </div>
               <div class="hero-status-item">
                 <span>Mode</span>
                 <strong id="val-mode-status">TRANSITION</strong>
+                <small id="val-mode-helper">Waiting for ESP32 state.</small>
               </div>
               <div class="hero-status-item">
                 <span>WiFi / Device</span>
                 <strong id="val-device-link-status">WAITING</strong>
+                <small id="val-link-helper">Listening for live data.</small>
               </div>
             </div>
           </article>

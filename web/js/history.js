@@ -38,6 +38,7 @@ let historyData = [];
 let refreshToken = 0;
 let activeDeviceId = "";
 let pendingCleanupRequestId = "";
+let historyLoading = true;
 
 function cleanupStorageKey(deviceId) {
   return `sem_pending_history_cleanup_${uid}_${deviceId}`;
@@ -195,6 +196,23 @@ function escapeHtml(value) {
   })[char]);
 }
 
+function hasActiveFilters() {
+  return Boolean(searchInput.value.trim()) ||
+    deviceFilter.value !== "all" ||
+    modeFilter.value !== "all" ||
+    statusFilter.value !== "all" ||
+    dateFilter.value !== "all";
+}
+
+function renderHistoryState(title, subtitle, icon = "V", className = "") {
+  listEl.innerHTML = `
+    <div class="empty-state history-empty-state ${className}">
+      <div class="empty-state-icon">${escapeHtml(icon)}</div>
+      <div class="empty-state-title">${escapeHtml(title)}</div>
+      <div class="empty-state-sub">${escapeHtml(subtitle)}</div>
+    </div>`;
+}
+
 function renderSummary() {
   const totalDuration = historyData.reduce((sum, session) => sum + durationSeconds(session), 0);
   const totalEnergy = historyData.reduce((sum, session) => sum + energyOf(session), 0);
@@ -264,6 +282,11 @@ function filteredSessions() {
 
 function render() {
   renderSummary();
+  if (historyLoading) {
+    countEl.textContent = "Loading sessions...";
+    renderHistoryState("Loading history...", "Fetching cloud history and device completed sessions.", "...");
+    return;
+  }
   const data = filteredSessions();
   countEl.textContent = `${data.length} of ${historyData.length} session${historyData.length !== 1 ? "s" : ""}`;
 
@@ -273,14 +296,14 @@ function render() {
       ? "Access denied for this device history"
       : readState.kind === "no-device"
         ? "No device paired"
-        : "No sessions found";
-    const subtitle = readState.message || "Adjust the filters or start monitoring a device from the Dashboard";
-    listEl.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">◷</div>
-        <div class="empty-state-title">${escapeHtml(title)}</div>
-        <div class="empty-state-sub">${escapeHtml(subtitle)}</div>
-      </div>`;
+        : historyData.length === 0
+          ? "No sessions yet"
+          : "No sessions found";
+    const subtitle = readState.message ||
+      (historyData.length === 0 && !hasActiveFilters()
+        ? "No sessions yet. Start monitoring from Dashboard."
+        : "Adjust the filters or start monitoring from Dashboard.");
+    renderHistoryState(title, subtitle, historyData.length === 0 ? "V" : "Filter");
     return;
   }
 
@@ -294,7 +317,13 @@ function render() {
     return `
       <article class="history-card" data-key="${escapeHtml(session._key)}">
         <div class="history-card-main">
-          <div class="history-card-name">${escapeHtml(session.name || "Device")}</div>
+          <div class="history-card-topline">
+            <div>
+              <div class="history-card-name">${escapeHtml(session.name || "Device")}</div>
+              <div class="history-card-sub">${escapeHtml(formatDateTime(session))}</div>
+            </div>
+            <span class="history-tag ${sync.className}">${escapeHtml(sync.label)}</span>
+          </div>
           <div class="history-card-meta">
             <div class="history-meta-item">Duration<span>${formatDuration(durationSeconds(session))}</span></div>
             <div class="history-meta-item">Power<span>${powerOf(session).toFixed(0)} W</span></div>
@@ -304,18 +333,12 @@ function render() {
           <div class="history-tags">
             ${mode ? `<span class="history-tag">${escapeHtml(labelFor(mode))}</span>` : ""}
             <span class="history-tag ${statusClass}">${escapeHtml(labelFor(status))} / ${escapeHtml(endReason)}</span>
-            <span class="history-tag ${sync.className}">${escapeHtml(sync.label)}</span>
             <span class="history-tag source">${escapeHtml(source)}</span>
           </div>
         </div>
         <div class="history-card-actions">
-          <div>
-            <div class="history-date">${escapeHtml(formatDateTime(session))}</div>
-            <div style="display:flex;gap:8px;justify-content:flex-end;">
-              <button class="btn btn-icon btn-export" data-key="${escapeHtml(session._key)}" title="Export CSV">↓</button>
-              <button class="btn btn-danger btn-delete" data-key="${escapeHtml(session._key)}" title="Delete">✕</button>
-            </div>
-          </div>
+          <button class="btn btn-icon btn-export" data-key="${escapeHtml(session._key)}" title="Export CSV" aria-label="Export session CSV">↓</button>
+          <button class="btn btn-danger btn-delete" data-key="${escapeHtml(session._key)}" title="Delete session" aria-label="Delete session">Delete</button>
         </div>
       </article>`;
   }).join("");
@@ -323,10 +346,20 @@ function render() {
 
 async function refreshHistory() {
   const token = ++refreshToken;
-  historyData = await loadDeviceHistory(uid);
-  if (token !== refreshToken) return;
-  buildDeviceFilter();
+  historyLoading = true;
   render();
+  try {
+    historyData = await loadDeviceHistory(uid);
+    if (token !== refreshToken) return;
+    buildDeviceFilter();
+  } catch (error) {
+    console.warn("[history] refresh failed", error?.message || error);
+  } finally {
+    if (token === refreshToken) {
+      historyLoading = false;
+      render();
+    }
+  }
 }
 
 const historyWatchRefs = [historyRef];
@@ -434,7 +467,7 @@ btnDeleteAll.addEventListener("click", async () => {
     showToast("Unable to resolve device history", "error");
     return;
   }
-  if (!confirm("Delete cloud and device history?")) return;
+  if (!confirm("This deletes cloud history and requests ESP32 local cleanup.")) return;
   const result = await deleteFirebasePaths(deletePaths, path => set(ref(db, path), null));
   if (result.permissionDenied) {
     showToast("Delete denied by Firebase rules", "error");
