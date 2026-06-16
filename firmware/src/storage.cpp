@@ -22,6 +22,8 @@ static constexpr size_t CHECKPOINT_DOC_CAPACITY = 1024;
 
 static bool mounted = false;
 static bool pendingHistorySyncRequested = false;
+static bool fastHistoryUploadRequested = false;
+static char fastHistoryUploadSessionId[48] = "";
 
 static void formatDuration(unsigned long durationMs, char* out, size_t outSize) {
   const unsigned long totalSec = durationMs / 1000UL;
@@ -808,6 +810,108 @@ void storageRequestPendingHistorySync() {
 
 bool storagePendingHistorySyncRequested() {
   return pendingHistorySyncRequested;
+}
+
+void storageRequestFastHistoryUpload(const char* sessionId) {
+  if (sessionId == nullptr || sessionId[0] == '\0') {
+    Serial.println("[history] fast upload skipped reason=invalid sessionId");
+    return;
+  }
+  strlcpy(fastHistoryUploadSessionId, sessionId, sizeof(fastHistoryUploadSessionId));
+  fastHistoryUploadRequested = true;
+  pendingHistorySyncRequested = true;
+  Serial.print("[history] fast upload requested sessionId=");
+  Serial.println(fastHistoryUploadSessionId);
+}
+
+bool storageFastHistoryUploadRequested() {
+  return fastHistoryUploadRequested && fastHistoryUploadSessionId[0] != '\0';
+}
+
+bool storageUploadFastCompletedSession() {
+  if (!storageFastHistoryUploadRequested()) {
+    Serial.println("[history] fast upload skipped reason=no request");
+    return false;
+  }
+
+  char sessionId[sizeof(fastHistoryUploadSessionId)];
+  strlcpy(sessionId, fastHistoryUploadSessionId, sizeof(sessionId));
+  if (!mounted) {
+    fastHistoryUploadRequested = false;
+    pendingHistorySyncRequested = true;
+    Serial.print("[history] fast upload skipped reason=LittleFS not mounted sessionId=");
+    Serial.println(sessionId);
+    Serial.print("[history] pending sync fallback enabled sessionId=");
+    Serial.println(sessionId);
+    return false;
+  }
+  if (!networkIsConnected()) {
+    fastHistoryUploadRequested = false;
+    pendingHistorySyncRequested = true;
+    Serial.print("[history] fast upload skipped reason=offline sessionId=");
+    Serial.println(sessionId);
+    Serial.print("[history] pending sync fallback enabled sessionId=");
+    Serial.println(sessionId);
+    return false;
+  }
+
+  char path[96];
+  makeHistoryPath(sessionId, path, sizeof(path));
+  File file = LittleFS.open(path, "r");
+  if (!file) {
+    fastHistoryUploadRequested = false;
+    const int pendingCount = storageCountPendingHistory();
+    pendingHistorySyncRequested = pendingCount < 0 || pendingCount > 0;
+    Serial.print("[history] fast upload skipped reason=missing local sessionId=");
+    Serial.println(sessionId);
+    return false;
+  }
+
+  DynamicJsonDocument doc(SESSION_DOC_CAPACITY);
+  const bool parsed = readSessionFile(file, doc);
+  file.close();
+  if (!parsed) {
+    fastHistoryUploadRequested = false;
+    pendingHistorySyncRequested = true;
+    Serial.print("[history] fast upload FAIL sessionId=");
+    Serial.println(sessionId);
+    Serial.print("[history] pending sync fallback enabled sessionId=");
+    Serial.println(sessionId);
+    return false;
+  }
+
+  JsonObject entry = doc.as<JsonObject>();
+  if (!isPendingHistoryEntry(entry)) {
+    fastHistoryUploadRequested = false;
+    const int pendingCount = storageCountPendingHistory();
+    pendingHistorySyncRequested = pendingCount < 0 || pendingCount > 0;
+    Serial.print("[history] fast upload skipped reason=already synced sessionId=");
+    Serial.println(sessionId);
+    return true;
+  }
+
+  Serial.print("[history] fast upload started sessionId=");
+  Serial.println(sessionId);
+  entry["syncStatus"] = "SYNCED";
+  entry["pendingSync"] = false;
+  applySyncMetadata(entry);
+  const bool pushed = firebasePushCompletedSession(entry);
+  if (pushed && writeSessionDocument(path, entry)) {
+    fastHistoryUploadRequested = false;
+    const int pendingCount = storageCountPendingHistory();
+    pendingHistorySyncRequested = pendingCount < 0 || pendingCount > 0;
+    Serial.print("[history] fast upload OK sessionId=");
+    Serial.println(sessionId);
+    return true;
+  }
+
+  fastHistoryUploadRequested = false;
+  pendingHistorySyncRequested = true;
+  Serial.print("[history] fast upload FAIL sessionId=");
+  Serial.println(sessionId);
+  Serial.print("[history] pending sync fallback enabled sessionId=");
+  Serial.println(sessionId);
+  return false;
 }
 
 bool storageSyncPendingHistoryToFirebase(unsigned int maxUploads) {

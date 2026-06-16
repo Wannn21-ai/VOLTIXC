@@ -690,7 +690,11 @@ void loop() {
     serviceLocalRealtimeTasks(recoveryActive);
     flushSessionTransitionPriority(onlineServicesAllowed);
     displayUpdate();
-    commandPollRan = pollCommandIfDue(onlineServicesAllowed, recoveryActive, true);
+    if (!storageFastHistoryUploadRequested()) {
+      commandPollRan = pollCommandIfDue(onlineServicesAllowed, recoveryActive, true);
+    } else {
+      logCommandPollSkipped("fast history upload pending");
+    }
     if (sessionData.state != SessionState::WAITING_LOAD &&
         !localRealtimeTasksDue(recoveryActive)) {
       firebasePublishLive();
@@ -709,8 +713,12 @@ void loop() {
   wasOnlineServicesAllowed = onlineServicesAllowed;
 
   if (onlineServicesAllowed) {
-    commandPollRan =
-      pollCommandIfDue(onlineServicesAllowed, recoveryActive) || commandPollRan;
+    if (!storageFastHistoryUploadRequested()) {
+      commandPollRan =
+        pollCommandIfDue(onlineServicesAllowed, recoveryActive) || commandPollRan;
+    } else {
+      logCommandPollSkipped("fast history upload pending");
+    }
 
     const bool commandTransitionPending = firebaseCommandTransitionPending();
     const bool localTasksDueAfterCommand = localRealtimeTasksDue(recoveryActive);
@@ -724,12 +732,15 @@ void loop() {
     const bool periodicHistorySyncDue =
       lastPendingHistorySyncMs == 0 ||
       firebaseNow - lastPendingHistorySyncMs >= PERIODIC_HISTORY_SYNC_MS;
+    const bool fastHistoryUploadDue = storageFastHistoryUploadRequested();
     const bool cleanupPollDue =
       lastHistoryCleanupPollMs == 0 ||
       firebaseNow - lastHistoryCleanupPollMs >= HISTORY_CLEANUP_POLL_INTERVAL_MS;
     const bool requestedHistorySyncEvaluated = requestedHistorySyncDue;
     const bool cleanupRequiredBeforeHistorySync =
-      requestedHistorySyncDue || (commandPollRan && periodicHistorySyncDue);
+      fastHistoryUploadDue ||
+      requestedHistorySyncDue ||
+      (commandPollRan && periodicHistorySyncDue);
     bool cleanupPollEvaluated = false;
     HistoryCleanupPollResult cleanupResult = HistoryCleanupPollResult::NO_REQUEST;
 
@@ -749,9 +760,28 @@ void loop() {
       }
     }
 
+    if (fastHistoryUploadDue) {
+      if (waitingLoad) {
+        Serial.println("[history] fast upload skipped reason=WAITING_LOAD");
+      } else if (finishing || commandTransitionPending) {
+        Serial.println("[history] fast upload skipped reason=transition pending");
+      } else if (sessionIsActive()) {
+        Serial.println("[history] fast upload skipped reason=active session");
+      } else if (!cleanupPollEvaluated ||
+          (cleanupResult != HistoryCleanupPollResult::NO_REQUEST &&
+           cleanupResult != HistoryCleanupPollResult::PROCESSED)) {
+        Serial.println("[history] fast upload skipped reason=cleanup unavailable");
+      } else {
+        storageUploadFastCompletedSession();
+      }
+    }
+
     if (requestedHistorySyncDue) {
       Serial.println("[history] auto-sync requested=true");
-      if (waitingLoad) {
+      if (fastHistoryUploadDue) {
+        lastPendingHistorySyncMs = firebaseNow;
+        Serial.println("[history] auto-sync skipped reason=fast upload pending");
+      } else if (waitingLoad) {
         lastPendingHistorySyncMs = firebaseNow;
         Serial.println("[history] auto-sync skipped reason=WAITING_LOAD");
       } else if (finishing || commandTransitionPending) {
@@ -782,6 +812,8 @@ void loop() {
 
     if (requestedHistorySyncEvaluated) {
       // Do not repeat requested cleanup/sync or start optional Firebase work this loop.
+    } else if (fastHistoryUploadDue) {
+      // Do not start optional Firebase work before the just-finished session upload settles.
     } else if (recoveryCompletedOnline && !waitingLoad && !localTasksDueAfterCommand) {
       lastFirebaseLiveMs = firebaseNow;
       firebasePublishLive();

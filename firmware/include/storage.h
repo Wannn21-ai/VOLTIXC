@@ -20,4 +20,7 @@ bool storageMarkSessionQueued(const char* sessionId);
 int storageCountPendingHistory();
 void storageRequestPendingHistorySync();
 bool storagePendingHistorySyncRequested();
+void storageRequestFastHistoryUpload(const char* sessionId);
+bool storageFastHistoryUploadRequested();
+bool storageUploadFastCompletedSession();
 bool storageSyncPendingHistoryToFirebase(unsigned int maxUploads = 1);

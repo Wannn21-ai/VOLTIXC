@@ -555,6 +555,7 @@ void sessionStop(EndReason reason) {
     storageClearActiveSessionCheckpoint();
     Serial.println("[session] Final session queued for background cloud sync");
     storageRequestPendingHistorySync();
+    storageRequestFastHistoryUpload(snapshot.sessionId);
     Serial.println("[history] pending auto-sync requested after sessionStop");
   } else {
     Serial.println("[session] Local save failed, session remains unsynced");
