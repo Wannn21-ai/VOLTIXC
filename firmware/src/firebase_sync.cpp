@@ -492,6 +492,21 @@ static bool acknowledgeHistoryCleanup(
   return httpRequest("PUT", currentPath.c_str(), "null", nullptr, true);
 }
 
+static bool parseCleanupBeforeTs(JsonVariantConst value, uint64_t& beforeTs) {
+  if (!(value.is<uint64_t>() || value.is<unsigned long>() || value.is<double>())) {
+    return false;
+  }
+  const double numeric = value.as<double>();
+  if (!isfinite(numeric) || numeric <= 0.0) {
+    return false;
+  }
+  beforeTs = value.as<uint64_t>();
+  if (beforeTs < 100000000000ULL) {
+    beforeTs *= 1000ULL;
+  }
+  return beforeTs > 0;
+}
+
 static bool pushHistoryPayload(const char* sessionId, const String& payload) {
   if (Config::DEVICE_ID == nullptr || Config::DEVICE_ID[0] == '\0') {
     Serial.println("[history] cloud sync skipped: missing deviceId");
@@ -1147,6 +1162,7 @@ void firebaseAckCommand() {
 }
 
 HistoryCleanupPollResult firebasePollHistoryCleanup() {
+  Serial.println("[history-cleanup] poll started");
   if (!networkIsConnected()) {
     Serial.println("[history-cleanup] skipped reason=offline");
     return HistoryCleanupPollResult::FAILED;
@@ -1174,7 +1190,7 @@ HistoryCleanupPollResult firebasePollHistoryCleanup() {
 
   const char* requestId = doc["requestId"] | "";
   const char* type = doc["type"] | "";
-  Serial.print("[history-cleanup] request received type=");
+  Serial.print("[history-cleanup] current request found type=");
   Serial.println(type[0] == '\0' ? "(missing)" : type);
   if (requestId[0] == '\0' || type[0] == '\0') {
     Serial.println("[history-cleanup] skipped reason=invalid request");
@@ -1199,7 +1215,16 @@ HistoryCleanupPollResult firebasePollHistoryCleanup() {
       deletedCount += deleted;
     }
   } else if (strcmp(type, "DELETE_ALL_HISTORY") == 0) {
-    deletedCount = storageClearCompletedHistory();
+    uint64_t beforeTs = 0;
+    if (!parseCleanupBeforeTs(doc["beforeTs"], beforeTs)) {
+      Serial.println("[history-cleanup] skipped reason=invalid beforeTs");
+      return HistoryCleanupPollResult::FAILED;
+    }
+    char beforeTsText[24];
+    snprintf(beforeTsText, sizeof(beforeTsText), "%llu", beforeTs);
+    Serial.print("[history-cleanup] delete all beforeTs=");
+    Serial.println(beforeTsText);
+    deletedCount = storageClearCompletedHistoryBefore(beforeTs);
     if (deletedCount < 0) {
       return HistoryCleanupPollResult::FAILED;
     }

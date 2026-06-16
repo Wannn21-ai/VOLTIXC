@@ -8,6 +8,8 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 static constexpr const char* LEGACY_HISTORY_PATH = "/history.json";
@@ -68,6 +70,54 @@ static bool readSessionFile(File& file, DynamicJsonDocument& doc) {
     return false;
   }
   return true;
+}
+
+static bool parseTimestampMs(JsonVariantConst value, uint64_t& timestampMs) {
+  uint64_t parsed = 0;
+  if (value.is<const char*>()) {
+    const char* text = value.as<const char*>();
+    if (text == nullptr || text[0] == '\0') {
+      return false;
+    }
+    char* end = nullptr;
+    parsed = strtoull(text, &end, 10);
+    if (end == text || *end != '\0') {
+      return false;
+    }
+  } else if (value.is<uint64_t>() || value.is<unsigned long>() || value.is<double>()) {
+    const double numeric = value.as<double>();
+    if (!isfinite(numeric) || numeric <= 0.0) {
+      return false;
+    }
+    parsed = value.as<uint64_t>();
+  } else {
+    return false;
+  }
+
+  if (parsed == 0) {
+    return false;
+  }
+  if (parsed < 100000000000ULL) {
+    parsed *= 1000ULL;
+  }
+  timestampMs = parsed;
+  return true;
+}
+
+static bool readCompletedSessionTimestampMs(JsonObjectConst entry, uint64_t& timestampMs) {
+  static const char* fields[] = {
+    "timestamp",
+    "endTime",
+    "end_ts",
+    "startTime",
+    "start_ts"
+  };
+  for (const char* field : fields) {
+    if (parseTimestampMs(entry[field], timestampMs)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 static bool writeSessionDocument(const char* path, JsonObjectConst entry) {
@@ -617,9 +667,13 @@ int storageDeleteCompletedSession(const char* sessionId) {
   return 1;
 }
 
-int storageClearCompletedHistory() {
+int storageClearCompletedHistoryBefore(uint64_t beforeTs) {
   if (!mounted) {
     Serial.println("[history-cleanup] skipped reason=LittleFS not mounted");
+    return -1;
+  }
+  if (beforeTs == 0) {
+    Serial.println("[history-cleanup] skipped reason=invalid beforeTs");
     return -1;
   }
 
@@ -632,11 +686,28 @@ int storageClearCompletedHistory() {
 
     File file = root.openNextFile();
     String path;
+    String sessionId;
     while (file) {
       if (isHistorySessionFile(file)) {
-        path = file.path();
-        file.close();
-        break;
+        DynamicJsonDocument doc(SESSION_DOC_CAPACITY);
+        if (readSessionFile(file, doc)) {
+          JsonObjectConst entry = doc.as<JsonObjectConst>();
+          sessionId = entry["sessionId"] | entry["id"] | "(unknown)";
+          uint64_t sessionTimestampMs = 0;
+          if (!readCompletedSessionTimestampMs(entry, sessionTimestampMs)) {
+            Serial.print("[history-cleanup] keeping local sessionId=");
+            Serial.print(sessionId);
+            Serial.println(" reason=missing or invalid timestamp");
+          } else if (sessionTimestampMs > beforeTs) {
+            Serial.print("[history-cleanup] keeping local sessionId=");
+            Serial.print(sessionId);
+            Serial.println(" reason=after beforeTs");
+          } else {
+            path = file.path();
+            file.close();
+            break;
+          }
+        }
       }
       file.close();
       file = root.openNextFile();
@@ -651,9 +722,12 @@ int storageClearCompletedHistory() {
       return -1;
     }
     deletedCount++;
+    Serial.print("[history-cleanup] deleted local sessionId=");
+    Serial.println(sessionId);
   }
 
-  pendingHistorySyncRequested = false;
+  const int pendingCount = storageCountPendingHistory();
+  pendingHistorySyncRequested = pendingCount < 0 || pendingCount > 0;
   Serial.print("[history-cleanup] delete all local count=");
   Serial.println(deletedCount);
   return deletedCount;

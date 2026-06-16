@@ -728,6 +728,26 @@ void loop() {
       lastHistoryCleanupPollMs == 0 ||
       firebaseNow - lastHistoryCleanupPollMs >= HISTORY_CLEANUP_POLL_INTERVAL_MS;
     const bool requestedHistorySyncEvaluated = requestedHistorySyncDue;
+    const bool cleanupRequiredBeforeHistorySync =
+      requestedHistorySyncDue || (commandPollRan && periodicHistorySyncDue);
+    bool cleanupPollEvaluated = false;
+    HistoryCleanupPollResult cleanupResult = HistoryCleanupPollResult::NO_REQUEST;
+
+    if ((cleanupPollDue || cleanupRequiredBeforeHistorySync) &&
+        !localTasksDueAfterCommand &&
+        !commandTransitionPending) {
+      cleanupPollEvaluated = true;
+      lastHistoryCleanupPollMs = millis();
+      if (waitingLoad) {
+        cleanupResult = HistoryCleanupPollResult::SKIPPED_UNSAFE;
+        Serial.println("[history-cleanup] skipped reason=waiting load");
+      } else if (sessionIsActive()) {
+        cleanupResult = HistoryCleanupPollResult::SKIPPED_UNSAFE;
+        Serial.println("[history-cleanup] skipped reason=active session");
+      } else {
+        cleanupResult = firebasePollHistoryCleanup();
+      }
+    }
 
     if (requestedHistorySyncDue) {
       Serial.println("[history] auto-sync requested=true");
@@ -737,25 +757,26 @@ void loop() {
       } else if (finishing || commandTransitionPending) {
         lastPendingHistorySyncMs = firebaseNow;
         Serial.println("[history] auto-sync skipped reason=transition pending");
+      } else if (sessionIsActive()) {
+        lastPendingHistorySyncMs = firebaseNow;
+        Serial.println("[history] auto-sync skipped reason=active session");
+      } else if (!cleanupPollEvaluated ||
+          (cleanupResult != HistoryCleanupPollResult::NO_REQUEST &&
+           cleanupResult != HistoryCleanupPollResult::PROCESSED)) {
+        lastPendingHistorySyncMs = firebaseNow;
+        Serial.println("[history] auto-sync skipped reason=cleanup unavailable");
       } else {
         if (sessionData.state == SessionState::FINISHED) {
           Serial.println("[history] auto-sync allowed after STOP");
         }
         lastPendingHistorySyncMs = millis();
-        lastHistoryCleanupPollMs = millis();
-        const HistoryCleanupPollResult cleanupResult = firebasePollHistoryCleanup();
-        if (cleanupResult == HistoryCleanupPollResult::NO_REQUEST ||
-            cleanupResult == HistoryCleanupPollResult::PROCESSED) {
-          Serial.println("[history] auto-sync started");
-          Serial.print("[timing] history sync started millis=");
-          Serial.println(millis());
-          storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
-          Serial.println("[history] sync completed");
-          Serial.print("[timing] history sync completed millis=");
-          Serial.println(millis());
-        } else {
-          Serial.println("[history] auto-sync skipped reason=cleanup unavailable");
-        }
+        Serial.println("[history] auto-sync started");
+        Serial.print("[timing] history sync started millis=");
+        Serial.println(millis());
+        storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
+        Serial.println("[history] sync completed");
+        Serial.print("[timing] history sync completed millis=");
+        Serial.println(millis());
       }
     }
 
@@ -776,29 +797,22 @@ void loop() {
         (requestedHistorySyncDue || periodicHistorySyncDue)) {
       if (waitingLoad || finishing) {
         Serial.println("[history] auto-sync skipped reason=unsafe session state");
+      } else if (sessionIsActive()) {
+        Serial.println("[history] auto-sync skipped reason=active session");
+      } else if (!cleanupPollEvaluated ||
+          (cleanupResult != HistoryCleanupPollResult::NO_REQUEST &&
+           cleanupResult != HistoryCleanupPollResult::PROCESSED)) {
+        Serial.println("[history] auto-sync skipped reason=cleanup unavailable");
       } else {
-        lastHistoryCleanupPollMs = millis();
-        const HistoryCleanupPollResult cleanupResult = firebasePollHistoryCleanup();
-        if (cleanupResult == HistoryCleanupPollResult::NO_REQUEST ||
-            cleanupResult == HistoryCleanupPollResult::PROCESSED) {
-          lastPendingHistorySyncMs = millis();
-          Serial.println("[history] auto-sync started");
-          Serial.print("[timing] history sync started millis=");
-          Serial.println(millis());
-          storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
-          Serial.println("[history] sync completed");
-          Serial.print("[timing] history sync completed millis=");
-          Serial.println(millis());
-        } else {
-          Serial.println("[history] auto-sync skipped reason=cleanup unavailable");
-        }
+        lastPendingHistorySyncMs = millis();
+        Serial.println("[history] auto-sync started");
+        Serial.print("[timing] history sync started millis=");
+        Serial.println(millis());
+        storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
+        Serial.println("[history] sync completed");
+        Serial.print("[timing] history sync completed millis=");
+        Serial.println(millis());
       }
-    } else if (commandPollRan &&
-        cleanupPollDue &&
-        !localTasksDueAfterCommand &&
-        !sessionIsActive()) {
-      lastHistoryCleanupPollMs = millis();
-      firebasePollHistoryCleanup();
     } else if (commandPollRan &&
         !localTasksDueAfterCommand &&
         appConfig.configPendingSync &&
