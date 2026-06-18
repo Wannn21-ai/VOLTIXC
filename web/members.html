@@ -13,24 +13,43 @@
   <meta name="firebase-app-id" content="NETLIFY_ENV_FIREBASE_APP_ID"/>
   <link rel="stylesheet" href="css/style.css">
 </head>
-<body data-page="members" data-title="Members">
+<body class="members-page" data-page="members" data-title="Members" data-skip-device-placeholder="true">
   <div class="app-layout">
     <aside class="sidebar" id="sidebar"></aside>
     <div class="main-content" id="main-content">
       <header class="topbar" id="topbar"></header>
-      <main class="page-content">
-        <div class="page-header">
+      <main class="page-content members-shell">
+        <header class="members-page-header">
           <div>
-            <div class="page-header-title">Members</div>
-            <div class="page-header-sub">Account sharing controls will be available in a future sprint.</div>
+            <div class="members-eyebrow">Access control</div>
+            <h1>Member Management</h1>
+            <div class="page-header-sub">Owner, operator, and viewer support will be added later.</div>
           </div>
-        </div>
-        <section class="card placeholder-card">
-          <div class="empty-state">
-            <div class="empty-state-icon">USR</div>
-            <div class="empty-state-title" id="placeholder-title">Member Management Coming Soon</div>
-            <div class="empty-state-sub" id="placeholder-sub">No owner, member, or account-sharing rules are changed by this placeholder page.</div>
+        </header>
+        <section class="members-hero-card">
+          <div class="members-orb" aria-hidden="true"></div>
+          <div class="members-hero-copy">
+            <div class="members-eyebrow">Coming Soon</div>
+            <h2 id="placeholder-title">Member Management</h2>
+            <p id="placeholder-sub">VOLTIX will support owner, operator, and viewer roles in a future release. This page is a visual placeholder only and does not change account sharing, device access, Firebase paths, or member rules.</p>
             <a class="btn btn-primary" href="index.html">Back to Dashboard</a>
+          </div>
+          <div class="members-role-grid" aria-label="Planned member roles">
+            <article class="members-role-card cyan">
+              <span>Owner</span>
+              <strong>Full Control</strong>
+              <p>Device management and member invitations.</p>
+            </article>
+            <article class="members-role-card green">
+              <span>Operator</span>
+              <strong>Operate</strong>
+              <p>Start, stop, and monitor assigned devices.</p>
+            </article>
+            <article class="members-role-card amber">
+              <span>Viewer</span>
+              <strong>Read Only</strong>
+              <p>View live status and history reports.</p>
+            </article>
           </div>
         </section>
       </main>

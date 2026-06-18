@@ -473,7 +473,7 @@ btnDeleteAll.addEventListener("click", async () => {
     showToast("Unable to resolve device history", "error");
     return;
   }
-  if (!confirm("This deletes cloud history and requests ESP32 local cleanup.")) return;
+  if (!confirm("Hapus semua riwayat? Data cloud akan dihapus dan ESP32 akan diminta membersihkan riwayat lokal.")) return;
   const result = await deleteFirebasePaths(deletePaths, path => set(ref(db, path), null));
   if (result.permissionDenied) {
     showToast("Delete denied by Firebase rules", "error");

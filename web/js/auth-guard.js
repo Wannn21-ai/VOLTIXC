@@ -420,7 +420,13 @@ export function fillUserInfo(user) {
 }
 
 // ── Status dot ────────────────────────────────────
-export function setSystemStatus(online) {
+export function isEspOnlineStatus(system = {}) {
+  const wifiStatus = String(system?.wifiStatus || system?.wifi || system?.status || "").toUpperCase();
+  return system?.internet === true || wifiStatus === "CONNECTED" || wifiStatus === "ONLINE";
+}
+
+export function setSystemStatus(status) {
+  const online = typeof status === "boolean" ? status : isEspOnlineStatus(status);
   const dot  = document.getElementById("system-dot");
   const text = document.getElementById("system-status-text");
   if (!dot) return;
@@ -438,9 +444,7 @@ export function startStatusWatcher() {
       }
       onValue(ref(db, `devices/${currentDevice.id}/live/system`), snapshot => {
         const sys = snapshot.val() || {};
-        const now = Math.floor(Date.now() / 1000);
-        const diff = now - (sys.timestamp || 0);
-        setSystemStatus(sys.internet === true && sys.timestamp > 0 && diff <= 15);
+        setSystemStatus(sys);
       });
     })
     .catch(error => {
