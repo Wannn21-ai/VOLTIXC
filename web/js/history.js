@@ -284,7 +284,7 @@ function render() {
   renderSummary();
   if (historyLoading) {
     countEl.textContent = "Loading sessions...";
-    renderHistoryState("Loading history...", "Fetching cloud history and device completed sessions.", "...");
+    renderHistoryState("Loading history...", "Fetching cloud history and device completed sessions.", "...", "loading");
     return;
   }
   const data = filteredSessions();
@@ -313,12 +313,18 @@ function render() {
     const sync = syncInfo(session);
     const source = sourceInfo(session);
     const endReason = String(firstValue(session, ["endReason", "status", "tag"]) || "COMPLETED");
-    const statusClass = status === "overload" || status === "power-loss" ? "red" : "amber";
+    const statusClass =
+      status === "overload" || status === "power-loss" ? "red" :
+      status === "stop-app" ? "cyan" :
+      status === "offline-monitoring" || status === "device-removed" ? "amber" :
+      "";
     return `
       <article class="history-card" data-key="${escapeHtml(session._key)}">
+        <div class="history-card-rail" aria-hidden="true"></div>
         <div class="history-card-main">
           <div class="history-card-topline">
             <div>
+              <div class="history-card-kicker">Completed session</div>
               <div class="history-card-name">${escapeHtml(session.name || "Device")}</div>
               <div class="history-card-sub">${escapeHtml(formatDateTime(session))}</div>
             </div>

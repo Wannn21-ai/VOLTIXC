@@ -226,6 +226,13 @@ const valSessionHelper = document.getElementById("val-session-helper");
 const valRelayHelper = document.getElementById("val-relay-helper");
 const valModeHelper = document.getElementById("val-mode-helper");
 const valLinkHelper = document.getElementById("val-link-helper");
+const heroDeviceName = document.getElementById("hero-device-name");
+const heroConnectionState = document.getElementById("hero-connection-state");
+const heroSessionState = document.getElementById("hero-session-state");
+const heroRelayState = document.getElementById("hero-relay-state");
+const heroModeState = document.getElementById("hero-mode-state");
+const heroStateText = document.getElementById("hero-state-text");
+const btnStartInline = document.getElementById("btn-start-inline");
 
 // ================================================================
 // BANNER: OFFLINE ESP32
@@ -566,8 +573,25 @@ function setHeroStatus(el, value, state) {
   el.textContent = value;
   el.className = state ? `status-${state}` : "";
 }
+function setPanelPill(el, value, state) {
+  if (!el) return;
+  el.textContent = value;
+  el.className = state ? `panel-state status-${state}` : "panel-state";
+}
 function setHelper(el, text) {
   if (el) el.textContent = text;
+}
+function visualStateText(visualState) {
+  const copy = {
+    idle: "Ready to monitor",
+    starting: "Waiting for load",
+    monitoring: "Monitoring active",
+    stopping: "Stopping and saving",
+    finished: "Session saved",
+    offline: "Device offline",
+    overload: "Overload protection active",
+  };
+  return copy[visualState] || copy.idle;
 }
 function dashboardVisualState() {
   if (!systemOnline) return "offline";
@@ -591,6 +615,24 @@ function applyActionState() {
           ? "ESP32 must be online before starting."
           : "Start a new monitoring session";
     fab.setAttribute("aria-label", fab.title);
+  }
+  if (btnStartInline) {
+    btnStartInline.disabled = starting || stopping || isRunning || !systemOnline;
+    btnStartInline.textContent = starting
+      ? "Starting..."
+      : stopping
+        ? "Saving..."
+        : isRunning
+          ? "Monitoring Active"
+          : "Start Monitoring";
+    btnStartInline.title = starting
+      ? "Start command sent. Waiting for ESP32 confirmation."
+      : stopping
+        ? "Stop is saving the current session."
+        : !systemOnline
+          ? "ESP32 must be online before starting."
+          : "Start a new monitoring session";
+    btnStartInline.setAttribute("aria-label", btnStartInline.title);
   }
   if (btnSaveDev) {
     btnSaveDev.disabled = starting || stopping;
@@ -617,12 +659,30 @@ function updateHeroStatuses(systemOnline) {
     overload: "Overload detected. Relay protection is active.",
     idle: "No active load. Start monitoring from the action button.",
   };
+  const healthyState = visualState === "monitoring" || visualState === "finished";
+  const warningState = visualState === "offline" || visualState === "overload";
+  const panelState = healthyState ? "online" : warningState ? "offline" : "transition";
+  const deviceLabel = activeDevice?.name || pendingDeviceName || selectedDevice?.name || deviceNameFromEsp || "No active device";
+  if (heroDeviceName) heroDeviceName.textContent = deviceLabel;
+  if (heroStateText) heroStateText.textContent = visualStateText(visualState);
+  setPanelPill(
+    heroConnectionState,
+    systemOnline ? "Online" : firebaseTimestamp > 0 ? "Offline" : "Waiting",
+    systemOnline ? "online" : firebaseTimestamp > 0 ? "offline" : "transition"
+  );
+  setPanelPill(heroSessionState, visualStateText(visualState), panelState);
+  setPanelPill(heroRelayState, firebaseRelay ? "Relay ON" : "Relay OFF", firebaseRelay ? "online" : "offline");
+  setPanelPill(
+    heroModeState,
+    mode === SystemMode.ONLINE ? "Online" : mode === SystemMode.OFFLINE ? "Offline" : "Transition",
+    mode === SystemMode.ONLINE ? "online" : mode === SystemMode.OFFLINE ? "offline" : "transition"
+  );
   setHeroStatus(
     valSessionStatus,
     sessionLabels[visualState] || "IDLE",
-    visualState === "monitoring" || visualState === "finished"
+    healthyState
       ? "online"
-      : visualState === "offline" || visualState === "overload"
+      : warningState
         ? "offline"
         : "transition"
   );
@@ -942,6 +1002,7 @@ function closeModal() {
 }
 
 fab.addEventListener("click", openModalManual);
+btnStartInline?.addEventListener("click", openModalManual);
 btnCancelDev.addEventListener("click", closeModal);
 modalAdd.addEventListener("click", e => {
   if (e.target === modalAdd && !waitingForName) closeModal();
