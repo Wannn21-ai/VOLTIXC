@@ -35,6 +35,37 @@
           <button id="btn-stop" class="btn btn-danger dashboard-stop-button" title="Stop monitoring and save the session">Stop Session</button>
         </header>
 
+        <section class="dashboard-command-panel" aria-label="Device command status">
+          <div class="command-panel-orb" aria-hidden="true"></div>
+          <div class="command-panel-main">
+            <div class="dashboard-eyebrow">Active device</div>
+            <h2 id="hero-device-name">No active device</h2>
+            <p id="hero-state-text">Ready to monitor when ESP32 is online.</p>
+          </div>
+          <div class="command-panel-grid" aria-label="Current monitoring state">
+            <div class="command-panel-pill">
+              <span>Connection</span>
+              <strong id="hero-connection-state">Waiting</strong>
+            </div>
+            <div class="command-panel-pill">
+              <span>Session</span>
+              <strong id="hero-session-state">Idle</strong>
+            </div>
+            <div class="command-panel-pill">
+              <span>Relay</span>
+              <strong id="hero-relay-state">OFF</strong>
+            </div>
+            <div class="command-panel-pill">
+              <span>Mode</span>
+              <strong id="hero-mode-state">Transition</strong>
+            </div>
+          </div>
+          <div class="command-panel-actions">
+            <button class="btn btn-primary btn-command-start" id="btn-start-inline" type="button" title="Start a new monitoring session">Start Monitoring</button>
+            <span class="command-panel-note">Uses the existing START/STOP command flow.</span>
+          </div>
+        </section>
+
         <section class="card placeholder-card dashboard-empty" id="no-device-state">
           <div class="empty-state">
             <div class="empty-state-icon">V</div>
