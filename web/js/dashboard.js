@@ -1,7 +1,7 @@
 import {
   requireAuth, renderShell, fillUserInfo, setSystemStatus,
   showToast, applyTheme, updateChartColors, startStatusWatcher,
-  loadAndApplySettings
+  loadAndApplySettings, isEspOnlineStatus
 } from "./auth-guard.js";
 import { db, ref, onValue, set, push, get } from "./firebase-config.js";
 import { loadDeviceHistory } from "./local-history.js";
@@ -117,6 +117,8 @@ let systemMode = SystemMode.OFFLINE;
 let sessionState = SessionState.IDLE;
 let systemOnline = false;
 let deviceOnline = false;
+let loadDetected = false;
+let liveDataFresh = false;
 let prevDeviceConnected = false;
 let prevOverload        = false;
 let prevRelayState      = false;
@@ -201,6 +203,7 @@ const valCurrent      = document.getElementById("val-current");
 const valPower        = document.getElementById("val-power");
 const valEnergy       = document.getElementById("val-energy");
 const valCost         = document.getElementById("val-cost");
+const subEnergyKwh    = document.getElementById("sub-energy-kwh");
 const valDeviceName   = document.getElementById("val-device-name");
 const subDuration     = document.getElementById("sub-duration");
 const subTariff       = document.getElementById("sub-tariff");
@@ -250,7 +253,7 @@ if (!offlineBannerEl) {
     <span style="font-size:18px;">⚠</span>
     <div style="flex:1;">
       <div style="font-weight:600;margin-bottom:2px;" id="offline-banner-title">
-        ESP32 tidak merespons
+        Status ESP32
       </div>
       <div style="font-size:12px;color:var(--text-muted);" id="offline-banner-sub">
         Menunggu koneksi...
@@ -269,42 +272,7 @@ if (!offlineBannerEl) {
 let offlineDurationInterval = null;
 
 function showOfflineBanner(firstDetectedAt) {
-  offlineBannerEl.style.display = "flex";
-  offlineBannerShown = true;
-
-  const titleEl    = document.getElementById("offline-banner-title");
-  const subEl      = document.getElementById("offline-banner-sub");
-  const durationEl = document.getElementById("offline-duration-badge");
-
-  const lastSeen = firebaseTimestamp > 0
-    ? new Date(firebaseTimestamp * 1000).toLocaleTimeString("id-ID")
-    : "—";
-  
-  // Update banner text berdasarkan kondisi ESP32
-  if (!systemInternet && firebaseTimestamp > 0) {
-    if (titleEl) titleEl.textContent = "⚠ ESP32 tidak terhubung ke internet";
-    if (firebaseOffline && firebaseRelay) {
-      // ESP32 dalam mode offline dengan relay ON
-      if (subEl) subEl.textContent = `Mode: Offline • Device: ${deviceNameFromEsp} • Data terakhir: ${lastSeen}`;
-    } else {
-      if (subEl) subEl.textContent = `Data terakhir: ${lastSeen}`;
-    }
-  } else if (firebaseOffline && firebaseTimestamp > 0) {
-    if (titleEl) titleEl.textContent = "📡 ESP32 Mode: OFFLINE";
-    if (subEl) subEl.textContent = `Device: ${deviceNameFromEsp} • Relay: ON • Mengukur lokal • Data terakhir: ${lastSeen}`;
-  } else {
-    if (titleEl) titleEl.textContent = "⚠ ESP32 tidak merespons";
-    if (subEl) subEl.textContent = `Data terakhir: ${lastSeen}`;
-  }
-
-  if (offlineDurationInterval) clearInterval(offlineDurationInterval);
-  offlineDurationInterval = setInterval(() => {
-    if (!firstDetectedAt || !durationEl) return;
-    const secs = Math.floor((Date.now() - firstDetectedAt) / 1000);
-    durationEl.textContent = secs < 60
-      ? `Offline ${secs}s`
-      : `Offline ${Math.floor(secs / 60)}m ${secs % 60}s`;
-  }, 1000);
+  hideOfflineBanner();
 }
 
 function hideOfflineBanner() {
@@ -341,8 +309,8 @@ if (!modeStatusBanner) {
   else document.querySelector(".page-content")?.prepend(modeStatusBanner);
 }
 
-function updateModeStatusBanner(isOnline, relayOn, pendingCount = 0) {
-  if (!isOnline && relayOn) {
+function updateModeStatusBanner(explicitOfflineMode, relayOn, pendingCount = 0) {
+  if (explicitOfflineMode && relayOn) {
     modeStatusBanner.style.display = "flex";
     const textEl = document.getElementById("mode-status-text");
     const badgeEl = document.getElementById("pending-sync-badge");
@@ -463,9 +431,15 @@ const pieChart = new Chart(document.getElementById("chart-pie"), {
 
 // ================= HELPERS =================
 const symbol     = () => settings.currency === "USD" ? "$" : "Rp";
-const formatCost = v  => settings.currency === "USD"
-  ? `$ ${v.toFixed(2)}`
-  : `Rp ${Math.round(v).toLocaleString("id-ID")}`;
+const formatCost = v  => {
+  const value = Number(v) || 0;
+  if (settings.currency === "USD") return `$ ${value.toFixed(2)}`;
+  return `Rp ${value.toLocaleString("id-ID", { maximumFractionDigits: 1 })}`;
+};
+const formatWh = kwh => {
+  const wh = Math.max(0, (Number(kwh) || 0) * 1000);
+  return wh.toLocaleString("id-ID", { maximumFractionDigits: wh < 10 ? 1 : 0 });
+};
 
 function getSessionEnergy() {
   return Math.max(0, lastknownEnergy - energyBaseline);
@@ -477,17 +451,17 @@ function enumValue(enumMap, value) {
   return Object.values(enumMap).includes(value) ? value : null;
 }
 function deriveSystemMode() {
-  if (!systemOnline) return SystemMode.OFFLINE;
   const fromEsp = enumValue(SystemMode, firebaseSystemMode);
-  if (fromEsp) return fromEsp;
-  return firebaseOffline ? SystemMode.OFFLINE : SystemMode.ONLINE;
+  if (!systemOnline) return SystemMode.OFFLINE;
+  if (fromEsp && fromEsp !== SystemMode.OFFLINE) return fromEsp;
+  return SystemMode.ONLINE;
 }
 function deriveSessionState(webOverload) {
   const hasSessionContext = isRunning || !!activeDevice || firebaseSessionActive || !!pendingDeviceName;
   const fromEsp = enumValue(SessionState, firebaseSessionState);
   if (hasSessionContext && fromEsp) return fromEsp;
   if (hasSessionContext && (webOverload || firebaseOverload)) return SessionState.OVERLOAD;
-  if (pendingDeviceName || waitingForName || (firebaseRelay && !deviceOnline)) return SessionState.WAITING_LOAD;
+  if (pendingDeviceName || waitingForName || (firebaseRelay && !loadDetected && !firebaseSessionActive)) return SessionState.WAITING_LOAD;
   if ((isRunning || firebaseSessionActive) && deviceOnline) return SessionState.MONITORING;
   if (activeDevice && !firebaseRelay && !firebaseSessionActive) return SessionState.FINISHED;
   return SessionState.IDLE;
@@ -507,7 +481,8 @@ function clearDisplay() {
   if (valVoltage) valVoltage.textContent = "0";
   if (valCurrent) valCurrent.textContent = "0.00";
   if (valPower)   valPower.textContent   = "0";
-  if (valEnergy)  valEnergy.textContent  = "0.000";
+  if (valEnergy)  valEnergy.textContent  = "0";
+  if (subEnergyKwh) subEnergyKwh.textContent = "0.00000 kWh";
   if (valCost)    valCost.textContent    = formatCost(0);
   setGauge(gaugeVoltage, 0, 190, 240);
   setGauge(gaugeCurrent, 0, 0, 16);
@@ -526,7 +501,8 @@ function updateDisplay() {
   if (valVoltage) valVoltage.textContent = voltage.toFixed(1);
   if (valCurrent) valCurrent.textContent = shownCurrent.toFixed(2);
   if (valPower)   valPower.textContent   = shownPower.toFixed(0);
-  if (valEnergy)  valEnergy.textContent  = shownEnergy.toFixed(3);
+  if (valEnergy)  valEnergy.textContent  = formatWh(shownEnergy);
+  if (subEnergyKwh) subEnergyKwh.textContent = `${shownEnergy.toFixed(5)} kWh`;
   if (valCost)    valCost.textContent    = formatCost(shownCost);
   setGauge(gaugeVoltage, voltage, 190, 240);
   setGauge(gaugeCurrent, shownCurrent, 0, 16);
@@ -655,7 +631,7 @@ function updateHeroStatuses(systemOnline) {
     monitoring: "Session is active and accumulating energy.",
     stopping: "Stopping and saving session...",
     finished: "Final data published. History sync is being confirmed.",
-    offline: "ESP32 is offline or live data is stale.",
+    offline: "ESP32 internet is offline.",
     overload: "Overload detected. Relay protection is active.",
     idle: "No active load. Start monitoring from the action button.",
   };
@@ -706,7 +682,7 @@ function updateHeroStatuses(systemOnline) {
   );
   setHelper(
     valLinkHelper,
-    systemOnline ? "Fresh live data received." :
+    systemOnline ? (liveDataFresh ? "Fresh live data received." : "ESP32 internet is online; waiting for fresh telemetry.") :
       firebaseTimestamp > 0 ? "Using last known ESP32 update." : "Waiting for first live packet."
   );
   applyActionState();
@@ -1078,8 +1054,7 @@ if (selectedDevice) {
     firebaseWifiStatus = String(sys.wifiStatus || "");
     firebaseActiveSsid = String(sys.activeSsid || "");
     firebaseFirmwareVersion = String(sys.firmwareVersion || "");
-    systemInternet = sys.internet === true ||
-      ["CONNECTED", "ONLINE"].includes(firebaseWifiStatus.toUpperCase());
+    systemInternet = isEspOnlineStatus(sys);
     firebaseTimestamp = liveTimestampSeconds(sys.timestampUnixMs, sys.timestamp);
     firebaseRelay = relayIsOn(sys.relayState ?? sys.relay);
     firebaseOffline = sys.offline === true || String(sys.mode || sys.systemMode || "").toUpperCase() === "OFFLINE";
@@ -1151,58 +1126,45 @@ async function updateMeters() {
   const espTimestampFresh = firebaseTimestamp > 0 && diff <= STALE_THRESHOLD;
   const listenerFresh = firebaseSystemReceivedAtMs > 0 &&
     nowMs - firebaseSystemReceivedAtMs <= STALE_THRESHOLD * 1000;
-  systemOnline = systemInternet && (espTimestampFresh || listenerFresh);
-  deviceOnline = systemOnline &&
-    firebaseDeviceConnected !== false &&
+  liveDataFresh = espTimestampFresh || listenerFresh;
+  systemOnline = systemInternet;
+  deviceOnline = systemOnline && firebaseDeviceConnected !== false;
+  loadDetected = deviceOnline &&
     firebaseSessionState !== SessionState.WAITING_LOAD &&
     current >= settings.loadCurrentThreshold &&
     firebasePower >= settings.loadPowerThreshold;
 
   const webOverload = (isRunning || firebaseSessionActive || !!pendingDeviceName) &&
-    deviceOnline && firebasePower >= settings.overloadThreshold;
+    loadDetected && firebasePower >= settings.overloadThreshold;
   systemMode = deriveSystemMode();
   sessionState = deriveSessionState(webOverload);
 
-  // ── Offline banner ──────────────────────────────────────
-  if (!systemOnline && firebaseTimestamp > 0) {
-    if (!offlineDetectedAt) offlineDetectedAt = Date.now();
-    const offSec = (Date.now() - offlineDetectedAt) / 1000;
-    if (offSec >= 5 && !offlineBannerShown) {
-      showOfflineBanner(offlineDetectedAt);
-      reconnectToastShown = false;
-    }
-  } else if (systemOnline) {
-    if (offlineBannerShown) {
-      hideOfflineBanner();
-      if (!reconnectToastShown && offlineDetectedAt) {
-        const totalSec = Math.round((Date.now() - offlineDetectedAt) / 1000);
-        const label = totalSec < 60 ? `${totalSec}s` : `${Math.round(totalSec / 60)}m`;
-        showToast(`✓ ESP32 kembali online (offline ${label})`, "success");
-        reconnectToastShown = true;
-      }
-    }
+  // The dashboard hero/status cards are the only offline indicator now.
+  hideOfflineBanner();
+  if (systemOnline) {
     offlineDetectedAt = null;
     offlineBannerShown = false;
-  } else if (firebaseTimestamp === 0 && !offlineBannerShown) {
-    if (!offlineDetectedAt) offlineDetectedAt = Date.now();
-    if ((Date.now() - offlineDetectedAt) / 1000 >= 10) {
-      showOfflineBanner(offlineDetectedAt);
-    }
+  } else if (!offlineDetectedAt) {
+    offlineDetectedAt = Date.now();
+    reconnectToastShown = false;
   }
 
   // ── Offline session banner ──────────────────────────────
   // Tampilkan banner saat ESP32 dalam mode offline dengan relay ON
-  setOfflineSessionBanner(systemMode === SystemMode.OFFLINE && firebaseRelay && !systemOnline, deviceNameFromEsp);
+  const explicitOfflineNoInternet = firebaseOffline && !systemInternet;
+  setOfflineSessionBanner(explicitOfflineNoInternet && firebaseRelay, deviceNameFromEsp);
   
   // ── Mode status banner ────────────────────────────────
   // Tampilkan badge mode offline dengan jumlah sesi pending sync
-  updateModeStatusBanner(systemMode !== SystemMode.ONLINE, firebaseRelay, firebasePendingSync);
+  updateModeStatusBanner(explicitOfflineNoInternet, firebaseRelay, firebasePendingSync);
 
   // ── Update status bar ──────────────────────────────────
   setSystemStatus(systemOnline);
   updateHeroStatuses(systemOnline);
   if (systemOnline) {
-    if (subWebStatus) subWebStatus.textContent = "Web: online";
+    if (subWebStatus) subWebStatus.textContent = liveDataFresh
+      ? "Web: online"
+      : "Web: online (menunggu data terbaru)";
   } else if (firebaseTimestamp > 0) {
     if (subWebStatus) subWebStatus.textContent = diff < 60
       ? `Web: offline (${diff}s)` : `Web: offline (${Math.round(diff / 60)}m)`;
@@ -1262,7 +1224,7 @@ async function updateMeters() {
   }
 
   // ── Device baru terdeteksi ─────────────────────────────
-  const sessionDeviceOnline = deviceOnline && (firebaseRelay || firebaseSessionActive || isRunning);
+  const sessionDeviceOnline = loadDetected && (firebaseRelay || firebaseSessionActive || isRunning);
   if (!prevDeviceConnected && sessionDeviceOnline) {
     // State migration point: WAITING_LOAD -> MONITORING.
     deviceConnectTime   = Date.now();

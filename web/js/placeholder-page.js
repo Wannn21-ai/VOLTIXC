@@ -13,14 +13,16 @@ fillUserInfo(user);
 startStatusWatcher();
 await loadAndApplySettings(user.uid);
 
-try {
-  const currentDevice = await getCurrentDevice(user.uid);
-  if (!currentDevice) {
-    document.getElementById("placeholder-title").textContent = "No device paired yet";
-    document.getElementById("placeholder-sub").textContent =
-      "Pair your VOLTIX device to start monitoring.";
+if (document.body.dataset.skipDevicePlaceholder !== "true") {
+  try {
+    const currentDevice = await getCurrentDevice(user.uid);
+    if (!currentDevice) {
+      document.getElementById("placeholder-title").textContent = "No device paired yet";
+      document.getElementById("placeholder-sub").textContent =
+        "Pair your VOLTIX device to start monitoring.";
+    }
+  } catch (error) {
+    document.getElementById("placeholder-title").textContent = "Device access unavailable";
+    document.getElementById("placeholder-sub").textContent = readableFirebaseError(error);
   }
-} catch (error) {
-  document.getElementById("placeholder-title").textContent = "Device access unavailable";
-  document.getElementById("placeholder-sub").textContent = readableFirebaseError(error);
 }
