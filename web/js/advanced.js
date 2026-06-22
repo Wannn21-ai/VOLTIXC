@@ -100,8 +100,8 @@ function modeInfo(session) {
   const start = String(firstValue(session, ["modeStart", "startMode"]) || "").toLowerCase();
   const end = String(firstValue(session, ["modeEnd", "endMode"]) || "").toLowerCase();
   const combined = `${explicit} ${start} ${end}`.replace(/[_>→-]+/g, " ");
-  if ((start.includes("online") && end.includes("offline")) || /online(?:\s+to)?\s+offline/.test(combined)) return { key: "online-offline", label: "Online → Offline" };
-  if ((start.includes("offline") && end.includes("online")) || /offline(?:\s+to)?\s+online/.test(combined)) return { key: "offline-online", label: "Offline → Online" };
+  if ((start.includes("online") && end.includes("offline")) || /online(?:\s+to)?\s+offline/.test(combined)) return { key: "online-offline", label: tr("historyOnlineToOffline") };
+  if ((start.includes("offline") && end.includes("online")) || /offline(?:\s+to)?\s+online/.test(combined)) return { key: "offline-online", label: tr("historyOfflineToOnline") };
   if (combined.includes("offline")) return { key: "offline", label: "Offline" };
   if (combined.includes("online")) return { key: "online", label: "Online" };
   return { key: "", label: tr("detailModeUnknown") };
@@ -111,11 +111,11 @@ function reasonInfo(session) {
   const raw = String(firstValue(session, ["endReason", "status", "tag", "stopReason"]) || "");
   const text = raw.toLowerCase();
   if (/overload/.test(text)) return { key: "overload", label: "Overload" };
-  if (/device.*removed|removed|unplug|load.*removed/.test(text)) return { key: "device-removed", label: "Device Removed" };
-  if (/power.*loss|lost.*power|blackout/.test(text)) return { key: "power-loss", label: "Power Loss" };
-  if (/offline.*monitor/.test(text)) return { key: "offline-monitoring", label: "Offline Monitoring" };
-  if (/stop.*app|app.*stop|manual|user.*stop/.test(text)) return { key: "stop-app", label: "Stop by App" };
-  return { key: "", label: raw || "Completed" };
+  if (/device.*removed|removed|unplug|load.*removed/.test(text)) return { key: "device-removed", label: tr("historyDeviceRemoved") };
+  if (/power.*loss|lost.*power|blackout/.test(text)) return { key: "power-loss", label: tr("historyPowerLoss") };
+  if (/offline.*monitor/.test(text)) return { key: "offline-monitoring", label: tr("historyOfflineMonitoring") };
+  if (/stop.*app|app.*stop|manual|user.*stop/.test(text)) return { key: "stop-app", label: tr("historyStopByApp") };
+  return { key: "", label: raw || tr("historyCompleted") };
 }
 
 function syncInfo(session) {

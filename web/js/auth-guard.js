@@ -207,6 +207,7 @@ Object.assign(LANG.en, {
   dashboardLinkWaitingFirst: "Waiting for first live packet.",
   dashboardNoDeviceTitle: "No device paired yet",
   dashboardNoDeviceSub: "Pair your VOLTIX device to unlock live monitoring.",
+  dashboardLiveUnavailable: "Device live data unavailable",
   dashboardOpenDevice: "Open Device Page",
   dashboardCurrentSession: "Current session",
   dashboardEnergySummary: "Energy Summary",
@@ -478,6 +479,57 @@ Object.assign(LANG.en, {
   advWaitingData: "Waiting for live data..."
 });
 
+Object.assign(LANG.en, {
+  shellNavigation: "Navigation",
+  shellLogoSub: "Smart Energy Monitor",
+  dashboardAnalytics: "Analytics",
+  dashboardEnergyIntelligence: "Energy Intelligence",
+  dashboardRealtime: "Realtime",
+  dashboardPowerOverTime: "Power Over Time",
+  dashboardHistoryKicker: "History",
+  dashboardDeviceUsage: "Device Usage",
+  dashboardShare: "Share",
+  dashboardEnergyDistribution: "Energy Distribution",
+  dashboardLiveTelemetry: "Live telemetry",
+  dashboardRelayIdle: "Relay is idle.",
+  dashboardWaitingEspState: "Waiting for ESP32 state.",
+  dashboardListeningLiveData: "Listening for live data.",
+  dashboardLow: "LOW",
+  dashboardNominal: "NOMINAL",
+  dashboardHigh: "HIGH",
+  dashboardIdleShort: "IDLE",
+  dashboardActiveShort: "ACTIVE",
+  dashboardLimitShort: "LIMIT",
+  advPoor: "Poor",
+  advIdeal: "Ideal",
+  advWaitingDataDot: "Waiting for data",
+  advNoDevice: "No Device",
+  advExcellent: "Excellent",
+  advGood: "Good",
+  advFair: "Fair",
+  advNormal: "Normal",
+  advAcceptable: "Acceptable",
+  advOutOfRange: "Out of range",
+  advDeviation: "deviation",
+  advPowerCard: "Power",
+  advActivePower: "Active Power (W)",
+  advApparentPower: "Apparent Power (VA)",
+  advReactivePower: "Reactive Power (VAR)",
+  advEnergyCost: "Energy & Cost",
+  advSessionEnergyWh: "Session Energy (Wh)",
+  advSessionEnergyKwh: "Session Energy (kWh)",
+  advEstimatedCost: "Estimated Cost",
+  advTariffUsed: "Tariff used",
+  advVoltage: "V (V)",
+  advCurrent: "I (A)",
+  advPActive: "P Active (W)",
+  advSApparent: "S Apparent (VA)",
+  advQReactive: "Q Reactive (VAR)",
+  advExportCsv: "Export CSV",
+  detailCompletedReport: "Completed session report",
+  detailSessionReportName: "Device"
+});
+
 Object.assign(LANG.id, {
   loading: "Memuat...",
   saving: "Menyimpan...",
@@ -491,7 +543,7 @@ Object.assign(LANG.id, {
   noDevicePairedYet: "Belum ada device terpasang",
   pairDeviceToMonitor: "Pasangkan device VOLTIX untuk mulai monitoring.",
   dashboardEyebrow: "Pusat kendali energi pintar",
-  dashboardLiveTitle: "Dasbor Energi Langsung",
+  dashboardLiveTitle: "Dasbor Energi Real-time",
   dashboardHeroInitial: "Siap monitoring saat ESP32 online.",
   dashboardActiveDevice: "Device aktif",
   dashboardConnection: "Koneksi",
@@ -536,6 +588,7 @@ Object.assign(LANG.id, {
   dashboardLinkWaitingFirst: "Menunggu paket data langsung pertama.",
   dashboardNoDeviceTitle: "Belum ada device terpasang",
   dashboardNoDeviceSub: "Pasangkan device VOLTIX untuk membuka monitoring langsung.",
+  dashboardLiveUnavailable: "Data langsung device tidak tersedia",
   dashboardOpenDevice: "Buka Halaman Device",
   dashboardCurrentSession: "Sesi saat ini",
   dashboardEnergySummary: "Ringkasan Energi",
@@ -597,7 +650,7 @@ Object.assign(LANG.id, {
   dashboardLiveTelemetryLabel: "Telemetri langsung: {name}",
   historyEyebrow: "Arsip energi",
   historyTitle: "Riwayat Sesi",
-  historyCountInitial: "0 sesi terekam",
+  historyCountInitial: "0 sesi tersimpan",
   historyUsageOverview: "Ringkasan Pemakaian",
   historyPortfolioTotals: "Total portofolio",
   historyOverviewSub: "Gabungan metrik dari semua sesi VOLTIX yang dimuat.",
@@ -807,10 +860,67 @@ Object.assign(LANG.id, {
   advWaitingData: "Menunggu data langsung..."
 });
 
+Object.assign(LANG.id, {
+  shellNavigation: "Navigasi",
+  shellLogoSub: "Monitor Energi Pintar",
+  dashboardAnalytics: "Analitik",
+  dashboardEnergyIntelligence: "Intelijen Energi",
+  dashboardRealtime: "Real-time",
+  dashboardPowerOverTime: "Daya Sepanjang Waktu",
+  dashboardHistoryKicker: "Riwayat",
+  dashboardDeviceUsage: "Pemakaian Device",
+  dashboardShare: "Distribusi",
+  dashboardEnergyDistribution: "Distribusi Energi",
+  dashboardLiveTelemetry: "Telemetri langsung",
+  dashboardRelayIdle: "Relay sedang idle.",
+  dashboardWaitingEspState: "Menunggu status ESP32.",
+  dashboardListeningLiveData: "Mendengarkan data langsung.",
+  dashboardLow: "RENDAH",
+  dashboardNominal: "NOMINAL",
+  dashboardHigh: "TINGGI",
+  dashboardIdleShort: "IDLE",
+  dashboardActiveShort: "AKTIF",
+  dashboardLimitShort: "BATAS",
+  advPoor: "Buruk",
+  advIdeal: "Ideal",
+  advWaitingDataDot: "Menunggu data",
+  advNoDevice: "Tidak Ada Device",
+  advExcellent: "Sangat Baik",
+  advGood: "Baik",
+  advFair: "Cukup",
+  advNormal: "Normal",
+  advAcceptable: "Dapat diterima",
+  advOutOfRange: "Di luar rentang",
+  advDeviation: "deviasi",
+  advPowerCard: "Daya",
+  advActivePower: "Daya Aktif (W)",
+  advApparentPower: "Daya Semu (VA)",
+  advReactivePower: "Daya Reaktif (VAR)",
+  advEnergyCost: "Energi & Biaya",
+  advSessionEnergyWh: "Energi Sesi (Wh)",
+  advSessionEnergyKwh: "Energi Sesi (kWh)",
+  advEstimatedCost: "Estimasi Biaya",
+  advTariffUsed: "Tarif dipakai",
+  advVoltage: "V (V)",
+  advCurrent: "I (A)",
+  advPActive: "P Aktif (W)",
+  advSApparent: "S Semu (VA)",
+  advQReactive: "Q Reaktif (VAR)",
+  advExportCsv: "Ekspor CSV",
+  detailCompletedReport: "Laporan sesi selesai",
+  detailSessionReportName: "Device"
+});
+
 let currentLanguage = "en";
 
 export function getCurrentLanguage() {
   return currentLanguage;
+}
+
+export function t(key, fallback = "", replacements = {}) {
+  const hasKey = LANG[currentLanguage]?.[key] !== undefined || LANG.en?.[key] !== undefined;
+  if (!hasKey) return fallback || key;
+  return tr(key, replacements);
 }
 
 export function tr(key, replacements = {}) {
@@ -825,6 +935,21 @@ function s(id, val) { const el = document.getElementById(id); if (el) el.textCon
 function attr(id, name, val) { const el = document.getElementById(id); if (el) el.setAttribute(name, val); }
 function optionText(selector, val) { const el = document.querySelector(selector); if (el) el.textContent = val; }
 
+function applyDataI18n() {
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = t(el.dataset.i18n, el.textContent);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+    el.placeholder = t(el.dataset.i18nPlaceholder, el.getAttribute("placeholder") || "");
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach(el => {
+    el.title = t(el.dataset.i18nTitle, el.getAttribute("title") || "");
+  });
+  document.querySelectorAll("[data-i18n-aria-label]").forEach(el => {
+    el.setAttribute("aria-label", t(el.dataset.i18nAriaLabel, el.getAttribute("aria-label") || ""));
+  });
+}
+
 // ================================================================
 // applyLanguage — apply ke semua halaman (bukan hanya settings)
 // Dipanggil dari renderShell setelah settings di-load
@@ -832,6 +957,12 @@ function optionText(selector, val) { const el = document.querySelector(selector)
 export function applyLanguage(lang) {
   currentLanguage = LANG[lang] ? lang : "en";
   const t = LANG[currentLanguage] || LANG.en;
+  applyDataI18n();
+  document.documentElement.lang = currentLanguage;
+  const topbarTitle = document.getElementById("topbar-title");
+  if (topbarTitle?.dataset.i18n) {
+    document.title = `VOLTIX ${tr(topbarTitle.dataset.i18n)}`;
+  }
 
   // ── Settings page ──
   s("txt-settings-title",       t.settingsTitle);
@@ -1089,6 +1220,16 @@ export function applyLanguage(lang) {
 export function renderShell(activePage, pageTitle) {
   const sidebarEl = document.getElementById("sidebar");
   const topbarEl  = document.getElementById("topbar");
+  const normalizedTitle = String(pageTitle || "").toUpperCase();
+  const titleKey = normalizedTitle.includes("SESSION")
+    ? "detailTitle"
+    : activePage === "dashboard" ? "dashTitle"
+      : activePage === "history" ? "histTitle"
+      : activePage === "device" ? "deviceTitle"
+      : activePage === "members" ? "membersTitle"
+      : activePage === "settings" ? "settingsTitle"
+      : activePage === "advanced" ? "advTitle"
+      : "";
   const navItems  = [
     { href: "index.html",    icon: "⊡", key: "dashboard", labelId: "nav-label-dashboard", defaultLabel: "Dashboard" },
     { href: "history.html",  icon: "◷", key: "history",   labelId: "nav-label-history",   defaultLabel: "History"   },
@@ -1104,11 +1245,11 @@ export function renderShell(activePage, pageTitle) {
       </div>
       <div>
         <div class="sidebar-logo-text">VOLTIX</div>
-        <div class="sidebar-logo-sub">Smart Energy Monitor</div>
+        <div class="sidebar-logo-sub" data-i18n="shellLogoSub">Smart Energy Monitor</div>
       </div>
     </div>
     <nav class="sidebar-nav">
-      <div class="sidebar-section-label">Navigation</div>
+      <div class="sidebar-section-label" data-i18n="shellNavigation">Navigation</div>
       ${navItems.map(n => `
         <a href="${n.href}" class="${activePage === n.key ? "active" : ""}">
           <span class="nav-icon">${n.icon}</span>
@@ -1132,7 +1273,7 @@ export function renderShell(activePage, pageTitle) {
 
   topbarEl.innerHTML = `
     <button class="topbar-menu-btn" id="menu-btn">☰</button>
-    <div class="topbar-title">${pageTitle}</div>
+    <div class="topbar-title" id="topbar-title"${titleKey ? ` data-i18n="${titleKey}"` : ""}>${pageTitle}</div>
     <div class="topbar-status">
       <div class="status-dot" id="system-dot"></div>
       <span id="system-status-text">Connecting...</span>

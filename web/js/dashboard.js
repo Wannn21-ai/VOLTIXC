@@ -20,7 +20,7 @@ try {
   if (!selectedDevice) document.getElementById("no-device-state").style.display = "block";
 } catch (error) {
   document.getElementById("no-device-state").style.display = "block";
-  document.querySelector("#no-device-state .empty-state-title").textContent = "Device access unavailable";
+  document.querySelector("#no-device-state .empty-state-title").textContent = tr("deviceAccessUnavailable");
   document.querySelector("#no-device-state .empty-state-sub").textContent = readableFirebaseError(error);
 }
 
@@ -1041,7 +1041,7 @@ function showLiveReadError(error) {
   const state = document.getElementById("no-device-state");
   if (!state) return;
   state.style.display = "block";
-  state.querySelector(".empty-state-title").textContent = "Device live data unavailable";
+  state.querySelector(".empty-state-title").textContent = tr("dashboardLiveUnavailable");
   state.querySelector(".empty-state-sub").textContent = readableFirebaseError(error);
 }
 

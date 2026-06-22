@@ -30,9 +30,9 @@
           <div>
             <div class="dashboard-eyebrow" id="dashboard-eyebrow-main">Smart energy command center</div>
             <h1 id="dashboard-live-title">Live Energy Dashboard</h1>
-            <p id="active-device-label">No active device</p>
+            <p id="active-device-label" data-i18n="noActiveDevice">No active device</p>
           </div>
-          <button id="btn-stop" class="btn btn-danger dashboard-stop-button" title="Stop monitoring and save the session">Stop Session</button>
+          <button id="btn-stop" class="btn btn-danger dashboard-stop-button" title="Stop monitoring and save the session" data-i18n="dashboardStop" data-i18n-title="dashboardStopTitle">Stop Session</button>
         </header>
 
         <section class="dashboard-command-panel" aria-label="Device command status">
@@ -61,7 +61,7 @@
             </div>
           </div>
           <div class="command-panel-actions">
-            <button class="btn btn-primary btn-command-start" id="btn-start-inline" type="button" title="Start a new monitoring session">Start Monitoring</button>
+            <button class="btn btn-primary btn-command-start" id="btn-start-inline" type="button" title="Start a new monitoring session" data-i18n="dashboardStart" data-i18n-title="dashboardStartTitle" data-i18n-aria-label="dashboardStartTitle">Start Monitoring</button>
             <span class="command-panel-note" id="command-panel-note">Uses the existing START/STOP command flow.</span>
           </div>
         </section>
@@ -99,24 +99,24 @@
 
             <div class="hero-status-grid">
               <div class="hero-status-item">
-                <span>Session</span>
-                <strong id="val-session-status">Live telemetry</strong>
-                <small id="val-session-helper">Ready for live readings.</small>
+                <span data-i18n="dashboardSession">Session</span>
+                <strong id="val-session-status" data-i18n="dashboardLiveTelemetry">Live telemetry</strong>
+                <small id="val-session-helper" data-i18n="dashboardSessionIdleHelp">Ready for live readings.</small>
               </div>
               <div class="hero-status-item">
-                <span>Relay</span>
+                <span data-i18n="dashboardRelay">Relay</span>
                 <strong id="val-relay-status">OFF</strong>
-                <small id="val-relay-helper">Relay is idle.</small>
+                <small id="val-relay-helper" data-i18n="dashboardRelayIdle">Relay is idle.</small>
               </div>
               <div class="hero-status-item">
-                <span>Mode</span>
+                <span data-i18n="dashboardMode">Mode</span>
                 <strong id="val-mode-status">TRANSITION</strong>
-                <small id="val-mode-helper">Waiting for ESP32 state.</small>
+                <small id="val-mode-helper" data-i18n="dashboardWaitingEspState">Waiting for ESP32 state.</small>
               </div>
               <div class="hero-status-item">
                 <span>WiFi / Device</span>
                 <strong id="val-device-link-status">WAITING</strong>
-                <small id="val-link-helper">Listening for live data.</small>
+                <small id="val-link-helper" data-i18n="dashboardListeningLiveData">Listening for live data.</small>
               </div>
             </div>
           </article>
@@ -140,7 +140,7 @@
                   <div class="gauge-unit">VOLT</div>
                 </div>
               </div>
-              <div class="gauge-scale"><span>LOW</span><span>NOMINAL</span><span>HIGH</span></div>
+              <div class="gauge-scale"><span data-i18n="dashboardLow">LOW</span><span data-i18n="dashboardNominal">NOMINAL</span><span data-i18n="dashboardHigh">HIGH</span></div>
             </article>
 
             <article class="gauge-card dashboard-gauge-card">
@@ -161,7 +161,7 @@
                   <div class="gauge-unit">AMPERE</div>
                 </div>
               </div>
-              <div class="gauge-scale"><span>IDLE</span><span>ACTIVE</span><span>LIMIT</span></div>
+              <div class="gauge-scale"><span data-i18n="dashboardIdleShort">IDLE</span><span data-i18n="dashboardActiveShort">ACTIVE</span><span data-i18n="dashboardLimitShort">LIMIT</span></div>
             </article>
           </div>
         </section>
@@ -234,45 +234,45 @@
         <section class="dashboard-section">
           <div class="dashboard-section-heading">
             <div>
-              <div class="dashboard-eyebrow">Analytics</div>
-              <h2>Energy Intelligence</h2>
+              <div class="dashboard-eyebrow" data-i18n="dashboardAnalytics">Analytics</div>
+              <h2 data-i18n="dashboardEnergyIntelligence">Energy Intelligence</h2>
             </div>
           </div>
           <div class="dashboard-chart-grid">
             <article class="chart-card chart-inner chart-card-wide">
               <div class="chart-card-header">
                 <div>
-                  <div class="dashboard-card-kicker">Realtime</div>
-                  <div class="chart-card-title">Power Over Time</div>
+                  <div class="dashboard-card-kicker" data-i18n="dashboardRealtime">Realtime</div>
+                  <div class="chart-card-title" data-i18n="dashboardPowerOverTime">Power Over Time</div>
                 </div>
                 <span class="chart-unit">WATTS</span>
               </div>
               <div class="chart-stage chart-stage-wide">
-                <canvas id="chart-line" role="img" aria-label="Realtime power chart"></canvas>
+                <canvas id="chart-line" role="img" aria-label="Realtime power chart" data-i18n-aria-label="dashboardPowerOverTime"></canvas>
               </div>
             </article>
             <article class="chart-card chart-inner">
               <div class="chart-card-header">
                 <div>
-                  <div class="dashboard-card-kicker">History</div>
-                  <div class="chart-card-title">Device Usage</div>
+                  <div class="dashboard-card-kicker" data-i18n="dashboardHistoryKicker">History</div>
+                  <div class="chart-card-title" data-i18n="dashboardDeviceUsage">Device Usage</div>
                 </div>
                 <span class="chart-unit">kWh</span>
               </div>
               <div class="chart-stage">
-                <canvas id="chart-bar" role="img" aria-label="Device usage bar chart"></canvas>
+                <canvas id="chart-bar" role="img" aria-label="Device usage bar chart" data-i18n-aria-label="dashboardDeviceUsage"></canvas>
               </div>
             </article>
             <article class="chart-card chart-inner">
               <div class="chart-card-header">
                 <div>
-                  <div class="dashboard-card-kicker">Share</div>
-                  <div class="chart-card-title">Energy Distribution</div>
+                  <div class="dashboard-card-kicker" data-i18n="dashboardShare">Share</div>
+                  <div class="chart-card-title" data-i18n="dashboardEnergyDistribution">Energy Distribution</div>
                 </div>
                 <span class="chart-unit">TOTAL</span>
               </div>
               <div class="chart-stage">
-                <canvas id="chart-pie" role="img" aria-label="Energy distribution donut chart"></canvas>
+                <canvas id="chart-pie" role="img" aria-label="Energy distribution donut chart" data-i18n-aria-label="dashboardEnergyDistribution"></canvas>
               </div>
             </article>
           </div>
@@ -283,20 +283,20 @@
 
   <div class="modal-overlay" id="modal-add-device">
     <div class="modal">
-      <div class="modal-title">Add Device</div>
-      <div class="modal-sub">Give your device a name to start monitoring.</div>
+      <div class="modal-title" id="modal-add-title" data-i18n="addDeviceTitle">Add Device</div>
+      <div class="modal-sub" id="modal-add-sub" data-i18n="addDeviceSub">Give your device a name to start monitoring.</div>
       <div class="form-group">
-        <label class="form-label" for="input-device-name">Device Name</label>
-        <input type="text" id="input-device-name" class="form-input" placeholder="e.g. Laptop, AC, Charger" maxlength="24"/>
+        <label class="form-label" id="modal-device-label" for="input-device-name" data-i18n="deviceNameLabel">Device Name</label>
+        <input type="text" id="input-device-name" class="form-input" placeholder="e.g. Laptop, AC, Charger" data-i18n-placeholder="deviceNamePlaceholder" maxlength="24"/>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" id="btn-cancel-device">Cancel</button>
-        <button class="btn btn-primary" id="btn-save-device">Start Monitoring</button>
+        <button class="btn btn-ghost" id="btn-cancel-device" data-i18n="cancelBtn">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-device" data-i18n="startMonitoring">Start Monitoring</button>
       </div>
     </div>
   </div>
 
-  <button class="fab" id="fab-add" aria-label="Start a new monitoring session">+</button>
+  <button class="fab" id="fab-add" aria-label="Start a new monitoring session" data-i18n-aria-label="dashboardStartTitle" data-i18n-title="dashboardStartTitle">+</button>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script type="module" src="js/dashboard.js"></script>
