@@ -149,15 +149,689 @@ export const LANG = {
   }
 };
 
+Object.assign(LANG.en, {
+  loading: "Loading...",
+  saving: "Saving...",
+  commonDelete: "Delete",
+  commonUnknown: "Unknown",
+  paired: "Paired",
+  pairingPending: "Pairing pending",
+  statusUnavailable: "Status unavailable",
+  notReported: "Not reported",
+  deviceAccessUnavailable: "Device access unavailable",
+  noDevicePairedYet: "No device paired yet",
+  pairDeviceToMonitor: "Pair your VOLTIX device to start monitoring.",
+  dashboardEyebrow: "Smart energy command center",
+  dashboardLiveTitle: "Live Energy Dashboard",
+  dashboardHeroInitial: "Ready to monitor when ESP32 is online.",
+  dashboardActiveDevice: "Active device",
+  dashboardConnection: "Connection",
+  dashboardSession: "Session",
+  dashboardRelay: "Relay",
+  dashboardMode: "Mode",
+  dashboardWaiting: "Waiting",
+  dashboardTransition: "Transition",
+  dashboardCommandNote: "Uses the existing START/STOP command flow.",
+  dashboardStart: "Start Monitoring",
+  dashboardStop: "Stop Session",
+  dashboardStartTitle: "Start a new monitoring session",
+  dashboardStopTitle: "Stop monitoring and save the session",
+  dashboardStarting: "Starting...",
+  dashboardSaving: "Saving...",
+  dashboardMonitoringActive: "Monitoring Active",
+  dashboardStartWaitingTitle: "Start command sent. Waiting for ESP32 confirmation.",
+  dashboardStopSavingTitle: "Stop is saving the current session.",
+  dashboardEspOnlineRequiredTitle: "ESP32 must be online before starting.",
+  dashboardReady: "Ready to monitor",
+  dashboardWaitingLoad: "Waiting for load",
+  dashboardMonitoring: "Monitoring active",
+  dashboardStopping: "Stopping and saving session",
+  dashboardSaved: "Session saved",
+  dashboardOffline: "Device offline",
+  dashboardOverload: "Overload protection active",
+  dashboardSessionIdleHelp: "Ready for live readings.",
+  dashboardSessionStartingHelp: "START sent. Waiting for load confirmation.",
+  dashboardSessionMonitoringHelp: "Collecting live power and energy data.",
+  dashboardSessionStoppingHelp: "Saving the final session report.",
+  dashboardSessionFinishedHelp: "Session saved. History will refresh shortly.",
+  dashboardSessionOfflineHelp: "ESP32 internet is offline.",
+  dashboardSessionOverloadHelp: "Power exceeded the configured threshold.",
+  dashboardRelayOnHelp: "Relay is energized by ESP32.",
+  dashboardRelayOffHelp: "Relay is off and safe.",
+  dashboardModeOnlineHelp: "Cloud telemetry is active.",
+  dashboardModeOfflineHelp: "ESP32 is keeping local safety state.",
+  dashboardModeTransitionHelp: "State transition in progress.",
+  dashboardLinkFresh: "Fresh live data received.",
+  dashboardLinkWaitingFresh: "ESP32 internet is online; waiting for fresh telemetry.",
+  dashboardLinkLastKnown: "Using last known ESP32 update.",
+  dashboardLinkWaitingFirst: "Waiting for first live packet.",
+  dashboardNoDeviceTitle: "No device paired yet",
+  dashboardNoDeviceSub: "Pair your VOLTIX device to unlock live monitoring.",
+  dashboardOpenDevice: "Open Device Page",
+  dashboardCurrentSession: "Current session",
+  dashboardEnergySummary: "Energy Summary",
+  dashboardTechnicalSnapshot: "Technical snapshot",
+  dashboardAdvancedCopy: "Quick power-quality indicators from the connected VOLTIX device.",
+  dashboardOpenAdvanced: "Open Advanced View",
+  dashboardLiveDemand: "Live demand",
+  dashboardPower: "Power",
+  dashboardAcInput: "AC input",
+  dashboardLoadDraw: "Load draw",
+  dashboardVoltage: "Voltage",
+  dashboardCurrent: "Current",
+  dashboardDuration: "Duration",
+  dashboardDurationValue: "Duration: {duration}",
+  dashboardDeviceReportedElapsed: "Device-reported elapsed time",
+  dashboardSessionsUnit: "sessions",
+  dashboardSavedHistoryTotal: "Saved history total",
+  dashboardWebWaitingEsp: "Web: waiting for ESP32...",
+  dashboardWebOnline: "Web: online",
+  dashboardWebOnlineWaiting: "Web: online (waiting for fresh data)",
+  dashboardWebOfflineSeconds: "Web: offline ({seconds}s)",
+  dashboardWebOfflineMinutes: "Web: offline ({minutes}m)",
+  dashboardTariff: "Tariff: {symbol} {tariff}/kWh",
+  dashboardConnected: "Connected",
+  dashboardLive: "Live",
+  dashboardNoLoad: "No Load",
+  dashboardOfflineModeBanner: "Mode: OFFLINE - Relay: ON",
+  dashboardPendingSync: "{count} Pending Sync",
+  dashboardRelayReady: "Tap + to start a new monitoring session",
+  dashboardOfflineSessionTitle: "ESP32 is measuring in offline mode",
+  dashboardOfflineSessionSub: "Data will appear when ESP32 reconnects to the internet",
+  dashboardOfflineSessionNamed: "{device} (Offline Mode)",
+  dashboardOfflineSessionLocal: "Relay ON - data is saved locally - will sync when online",
+  dashboardOverloadBanner: "OVERLOAD - Power is above {threshold}W. Relay was turned off automatically.",
+  dashboardManualModalTitle: "Add Device (Online Mode)",
+  dashboardManualModalSub: "Name the device, then click Start Monitoring to turn the relay on.",
+  dashboardAutoModalTitle: "Device Detected!",
+  dashboardAutoModalSub: "Give the newly connected device a name.",
+  dashboardNameTooLong: "Maximum 24 characters",
+  dashboardTurnRelayOn: "Turning relay on for \"{name}\"...",
+  dashboardStartOnlineOnly: "ESP32 is not connected. You can only start in Online Mode.",
+  dashboardStartAlreadyPending: "Start command is already waiting for ESP32 confirmation",
+  dashboardAlreadyMonitoring: "\"{name}\" is already being monitored",
+  dashboardNoSession: "No session is running",
+  dashboardStopToast: "Stopping and saving session...",
+  dashboardLoadNotDetected: "Monitoring \"{name}\" canceled: load was not detected",
+  dashboardDeviceDetected: "Device detected! Give it a name.",
+  dashboardDeviceNameReminder: "Device has been connected for {seconds}s. Please name it.",
+  dashboardSessionSavedSynced: "Session \"{name}\" saved and synced to History",
+  dashboardSessionEndedEsp: "Session \"{name}\" finished on ESP32",
+  dashboardDeviceUnpluggedBeforeName: "Device was unplugged before it was named",
+  dashboardDeviceUnpluggedWaitHistory: "Device \"{name}\" unplugged - waiting for ESP32 history",
+  dashboardEspOnlineSynced: "ESP32 online - offline data synced: {energy} kWh",
+  dashboardEspOnlineMode: "ESP32 online - Mode: {mode}",
+  dashboardOverloadToast: "OVERLOAD! {power}W >= {threshold}W",
+  dashboardMonitoringStarted: "Monitoring \"{name}\" started",
+  dashboardMonitoringStartedRetro: "Monitoring \"{name}\" started ({minutes} min counted)",
+  dashboardMonitoringLabel: "Monitoring: {name}",
+  dashboardLiveTelemetryLabel: "Live telemetry: {name}",
+  historyEyebrow: "Energy archive",
+  historyTitle: "Session History",
+  historyCountInitial: "0 sessions recorded",
+  historyUsageOverview: "Usage Overview",
+  historyPortfolioTotals: "Portfolio totals",
+  historyOverviewSub: "Combined metrics from all loaded VOLTIX sessions.",
+  historyTotalSessions: "Total Sessions",
+  historyCompletedRecords: "Completed records",
+  historyTotalDuration: "Total Duration",
+  historyTotalEnergy: "Total Energy",
+  historyAccumulatedConsumption: "Accumulated consumption",
+  historyTotalCost: "Total Cost",
+  historyEstimatedSpend: "Estimated spend",
+  historyAveragePower: "Average Power",
+  historyAcrossSessions: "Across all sessions",
+  historySessionBrowser: "Session browser",
+  historyCompletedSessions: "Completed Sessions",
+  historyBrowserSub: "Search, filter, sort, export, or inspect a completed report.",
+  historyExportAll: "Export All CSV",
+  historyDeleteAll: "Delete All",
+  historyDeleteNote: "Deletes cloud history and requests ESP32 local cleanup.",
+  historyResetFilters: "Reset Filters",
+  historyClearFiltersTitle: "Clear all history filters",
+  historySearchPlaceholder: "Search by device name...",
+  historyFilterDevice: "Device",
+  historyFilterMode: "Mode",
+  historyFilterStatus: "Status / End Reason",
+  historyFilterDate: "Date Range",
+  historySortBy: "Sort By",
+  historyAllDevices: "All Devices",
+  historyAllModes: "All Modes",
+  historyAllStatuses: "All Statuses",
+  historyAllTime: "All Time",
+  historyToday: "Today",
+  historyLast7: "Last 7 Days",
+  historyLast30: "Last 30 Days",
+  historyNewest: "Newest",
+  historyOldest: "Oldest",
+  historyHighestEnergy: "Highest Energy",
+  historyHighestCost: "Highest Cost",
+  historyLongestDuration: "Longest Duration",
+  historyLoadingCount: "Loading sessions...",
+  historyLoadingTitle: "Loading history...",
+  historyLoadingSub: "Fetching cloud history and device completed sessions.",
+  historyCount: "{shown} of {total} {label}",
+  historySessionSingular: "session",
+  historySessionPlural: "sessions",
+  historyAccessDenied: "Access denied for this device history",
+  historyNoDevicePaired: "No device paired",
+  historyNoSessionsYet: "No sessions yet",
+  historyNoSessionsFound: "No sessions found",
+  historyEmptySub: "No sessions yet. Start monitoring from Dashboard.",
+  historyAdjustFilters: "Adjust the filters or start monitoring from Dashboard.",
+  historyCompletedSession: "Completed session",
+  historyPower: "Power",
+  historyEnergy: "Energy",
+  historyCost: "Cost",
+  historySynced: "Synced",
+  historyPending: "Pending",
+  historySyncUnknown: "Sync Unknown",
+  historyStopByApp: "Stop by App",
+  historyDeviceRemoved: "Device Removed",
+  historyPowerLoss: "Power Loss",
+  historyOfflineMonitoring: "Offline Monitoring",
+  historyCompleted: "Completed",
+  historyOnlineToOffline: "Online to Offline",
+  historyOfflineToOnline: "Offline to Online",
+  historyExportCsvTitle: "Export CSV",
+  historyExportCsvAria: "Export session CSV",
+  historyDeleteSessionTitle: "Delete session",
+  historyDeleteSessionConfirm: "Delete this session?",
+  historyDeleteAllConfirm: "Delete all history? Cloud data will be deleted and ESP32 will be asked to clean local history.",
+  historyCloudDeletedNoCleanup: "Cloud history deleted. Device cleanup request unavailable.",
+  historyCloudDeletedCleanupPending: "Cloud history deleted. Device cleanup pending",
+  historyDeviceCleanupPending: "Device cleanup pending",
+  historyDeviceLocalCleared: "Device local history cleared",
+  historyResolveSourceFail: "Unable to resolve history source",
+  historyResolveDeviceFail: "Unable to resolve device history",
+  historyDeleteDenied: "Delete denied by Firebase rules",
+  historyCleanupRequestFailed: "Cloud history deleted. Device cleanup request failed.",
+  historyDeleteFailed: "Failed to delete",
+  historyNoExportData: "No data to export",
+  historyNothingDelete: "Nothing to delete",
+  historyExported: "Exported successfully",
+  historyExportedSession: "Exported {name}",
+  membersEyebrow: "Access control",
+  membersTitle: "Member Management",
+  membersSub: "Owner, operator, and viewer support will be added later.",
+  membersComingSoon: "Coming Soon",
+  membersComingSoonTitle: "Member Management Coming Soon",
+  membersComingSoonSub: "Owner/operator/viewer controls will be added later.",
+  membersPlaceholderSub: "VOLTIX will support owner, operator, and viewer roles in a future release. This page is a visual placeholder only and does not change account sharing, device access, Firebase paths, or member rules.",
+  membersBackDashboard: "Back to Dashboard",
+  membersFullControl: "Full Control",
+  membersOwnerDesc: "Device management and member invitations.",
+  membersOperate: "Operate",
+  membersOperatorDesc: "Start, stop, and monitor assigned devices.",
+  membersReadOnly: "Read Only",
+  membersViewerDesc: "View live status and history reports.",
+  deviceTitle: "Device",
+  deviceSub: "Pair and view your current VOLTIX device.",
+  devicePairTitle: "Pair your VOLTIX device",
+  devicePairPrompt: "Enter the 6-digit code shown on the OLED display.",
+  devicePairSub: "Stage A claims work only when the documented development pairing rules are active.",
+  devicePairingCode: "Pairing code",
+  devicePairButton: "Pair Device",
+  devicePairing: "Pairing...",
+  deviceCurrentTitle: "Current Device",
+  deviceName: "Name",
+  deviceId: "Device ID",
+  deviceRole: "Role",
+  deviceFirmware: "Firmware",
+  deviceStatus: "Status",
+  deviceFoundationNote: "Device actions and pairing management remain intentionally unavailable in this foundation sprint.",
+  deviceOpenDashboard: "Open Dashboard",
+  deviceCodeInvalid: "Enter the 6-digit code shown on the device.",
+  devicePairingUnavailable: "Pairing is unavailable in local visual mode.",
+  devicePairedSuccess: "Device \"{name}\" paired successfully",
+  devicePairingFailed: "Pairing failed.",
+  deviceStateLoadFailed: "Device state could not be loaded.",
+  detailTitle: "Session Detail",
+  detailExported: "Detail exported",
+  settingsValidTariff: "Enter a valid tariff value",
+  settingsValidThreshold: "Enter a valid threshold value",
+  settingsSaved: "Settings saved",
+  settingsSaveFailed: "Failed to save settings - check your internet connection",
+  settingsNameRequired: "Name cannot be empty",
+  settingsProfileUpdated: "Profile updated",
+  settingsProfileFailed: "Failed to update profile",
+  settingsAppearanceUpdated: "Appearance updated",
+  settingsAppearanceFailed: "Failed to save appearance",
+  settingsPreferencesSaved: "Preferences saved",
+  settingsPreferencesFailed: "Failed to save preferences",
+  settingsExportNoData: "No history data to export",
+  settingsExportSuccess: "History exported",
+  settingsDeleteConfirm: "Delete all history? This removes your account history in the cloud.",
+  settingsDeleteSuccess: "History deleted",
+  settingsDeleteFailed: "Failed to delete history"
+});
+
+Object.assign(LANG.en, {
+  detailBack: "Back to History",
+  detailReportEyebrow: "Completed session report",
+  detailLoading: "Loading selected session...",
+  detailExport: "Export Detail CSV",
+  detailEmptyTitle: "No selected session",
+  detailEmptySub: "Return to History and choose a monitoring session.",
+  detailOpenHistory: "Open History",
+  detailSessionReport: "Session report",
+  detailCorePerformance: "Core performance",
+  detailMainSummary: "Main Session Summary",
+  detailPowerQuality: "Power quality",
+  detailReadings: "Electrical Readings",
+  detailTraceability: "Traceability",
+  detailMetadata: "Session Metadata",
+  detailForecast: "Forecast",
+  detailProjection: "Usage Projection",
+  detailModeUnknown: "Mode Unknown",
+  detailEnergyTotal: "Energy Total",
+  detailCostTotal: "Cost Total",
+  detailMaxPower: "Max Power",
+  detailVoltageAverage: "Voltage Average",
+  detailVoltageRange: "Voltage Min / Max",
+  detailCurrentAverage: "Current Average",
+  detailCurrentMax: "Current Max",
+  detailPowerAverage: "Power Average",
+  detailPowerMax: "Power Max",
+  detailPowerFactorAverage: "Power Factor Average",
+  detailFrequencyAverage: "Frequency Average",
+  detailApparentPowerAverage: "Apparent Power Average",
+  detailOverloadThreshold: "Overload Threshold",
+  detailSessionId: "Session ID",
+  detailOwnerUid: "Owner UID",
+  detailStartTime: "Start Time",
+  detailEndTime: "End Time",
+  detailStartMode: "Start Mode",
+  detailEndMode: "End Mode",
+  detailEndReason: "End Reason",
+  detailOverloadStatus: "Overload Status",
+  detailOverloadDetected: "Overload detected",
+  detailNoOverload: "No overload",
+  detailRelayFinal: "Relay Final State",
+  detailSyncStatus: "Sync Status",
+  detailPendingSync: "Pending Sync",
+  detailCreatedFrom: "Created From",
+  detailSyncedAt: "Synced At",
+  detailProjectionUnavailable: "Average power is unavailable, so usage projections cannot be calculated.",
+  detailProjectionIntro: "Estimated usage for {name} based on {power} W average power.",
+  detailHour: "{count} hour",
+  detailHours: "{count} hours",
+  yes: "Yes",
+  no: "No"
+});
+
+Object.assign(LANG.en, {
+  advLive: "LIVE",
+  advPfDescLong: "Ratio of active power (W) to apparent power (VA). Closer to 1.0 means more efficient. Most home appliances: 0.7-0.95.",
+  advFreqLabel: "Grid Frequency",
+  advFreqStandard: "Standard: 50 Hz (Indonesia PLN)",
+  advFreqDescLong: "AC grid frequency from PLN. Normal range: 49.5-50.5 Hz. Deviation may indicate grid instability or heavy load conditions.",
+  advApparentDescLong: "Total power drawn from the grid (V x I). Includes both active and reactive power. Always >= active power (W).",
+  advReactiveLabel: "Reactive Power",
+  advReactiveDescLong: "Calculated from apparent and active power. This is power that oscillates between source and load without doing useful work.",
+  advFormulaTitle: "Live Calculation Reference",
+  advPowerOverTime: "Power Factor over time",
+  advFreqOverTime: "Frequency over time",
+  advPowerCompare: "Active vs Apparent Power",
+  advReactiveOverTime: "Reactive Power over time",
+  advTime: "Time",
+  advWaitingData: "Waiting for live data..."
+});
+
+Object.assign(LANG.id, {
+  loading: "Memuat...",
+  saving: "Menyimpan...",
+  commonDelete: "Hapus",
+  commonUnknown: "Tidak diketahui",
+  paired: "Terpasang",
+  pairingPending: "Menunggu pairing",
+  statusUnavailable: "Status tidak tersedia",
+  notReported: "Belum dilaporkan",
+  deviceAccessUnavailable: "Akses device tidak tersedia",
+  noDevicePairedYet: "Belum ada device terpasang",
+  pairDeviceToMonitor: "Pasangkan device VOLTIX untuk mulai monitoring.",
+  dashboardEyebrow: "Pusat kendali energi pintar",
+  dashboardLiveTitle: "Dasbor Energi Langsung",
+  dashboardHeroInitial: "Siap monitoring saat ESP32 online.",
+  dashboardActiveDevice: "Device aktif",
+  dashboardConnection: "Koneksi",
+  dashboardSession: "Sesi",
+  dashboardRelay: "Relay",
+  dashboardMode: "Mode",
+  dashboardWaiting: "Menunggu",
+  dashboardTransition: "Transisi",
+  dashboardCommandNote: "Menggunakan alur command START/STOP yang sudah ada.",
+  dashboardStart: "Mulai Monitoring",
+  dashboardStop: "Hentikan Sesi",
+  dashboardStartTitle: "Mulai sesi monitoring baru",
+  dashboardStopTitle: "Hentikan monitoring dan simpan sesi",
+  dashboardStarting: "Memulai...",
+  dashboardSaving: "Menyimpan...",
+  dashboardMonitoringActive: "Monitoring Aktif",
+  dashboardStartWaitingTitle: "Command START terkirim. Menunggu konfirmasi ESP32.",
+  dashboardStopSavingTitle: "STOP sedang menyimpan sesi saat ini.",
+  dashboardEspOnlineRequiredTitle: "ESP32 harus online sebelum mulai.",
+  dashboardReady: "Siap memulai monitoring",
+  dashboardWaitingLoad: "Menunggu beban terdeteksi",
+  dashboardMonitoring: "Monitoring aktif",
+  dashboardStopping: "Menghentikan dan menyimpan sesi",
+  dashboardSaved: "Sesi tersimpan",
+  dashboardOffline: "Device offline",
+  dashboardOverload: "Proteksi overload aktif",
+  dashboardSessionIdleHelp: "Siap untuk pembacaan langsung.",
+  dashboardSessionStartingHelp: "START terkirim. Menunggu konfirmasi beban.",
+  dashboardSessionMonitoringHelp: "Mengumpulkan data daya dan energi langsung.",
+  dashboardSessionStoppingHelp: "Menyimpan laporan akhir sesi.",
+  dashboardSessionFinishedHelp: "Sesi tersimpan. Riwayat akan segera diperbarui.",
+  dashboardSessionOfflineHelp: "Internet ESP32 sedang offline.",
+  dashboardSessionOverloadHelp: "Daya melewati batas yang dikonfigurasi.",
+  dashboardRelayOnHelp: "Relay sedang aktif dari ESP32.",
+  dashboardRelayOffHelp: "Relay mati dan aman.",
+  dashboardModeOnlineHelp: "Telemetri cloud sedang aktif.",
+  dashboardModeOfflineHelp: "ESP32 menjaga status lokal.",
+  dashboardModeTransitionHelp: "Transisi status sedang berlangsung.",
+  dashboardLinkFresh: "Data langsung terbaru diterima.",
+  dashboardLinkWaitingFresh: "Internet ESP32 online; menunggu telemetri terbaru.",
+  dashboardLinkLastKnown: "Menggunakan update ESP32 terakhir.",
+  dashboardLinkWaitingFirst: "Menunggu paket data langsung pertama.",
+  dashboardNoDeviceTitle: "Belum ada device terpasang",
+  dashboardNoDeviceSub: "Pasangkan device VOLTIX untuk membuka monitoring langsung.",
+  dashboardOpenDevice: "Buka Halaman Device",
+  dashboardCurrentSession: "Sesi saat ini",
+  dashboardEnergySummary: "Ringkasan Energi",
+  dashboardTechnicalSnapshot: "Snapshot teknis",
+  dashboardAdvancedCopy: "Indikator kualitas daya cepat dari device VOLTIX yang terhubung.",
+  dashboardOpenAdvanced: "Buka Tampilan Lanjutan",
+  dashboardLiveDemand: "Beban langsung",
+  dashboardPower: "Daya",
+  dashboardAcInput: "Input AC",
+  dashboardLoadDraw: "Tarikan beban",
+  dashboardVoltage: "Tegangan",
+  dashboardCurrent: "Arus",
+  dashboardDuration: "Durasi",
+  dashboardDurationValue: "Durasi: {duration}",
+  dashboardDeviceReportedElapsed: "Durasi yang dilaporkan device",
+  dashboardSessionsUnit: "sesi",
+  dashboardSavedHistoryTotal: "Total riwayat tersimpan",
+  dashboardWebWaitingEsp: "Web: menunggu ESP32...",
+  dashboardWebOnline: "Web: online",
+  dashboardWebOnlineWaiting: "Web: online (menunggu data terbaru)",
+  dashboardWebOfflineSeconds: "Web: offline ({seconds}d)",
+  dashboardWebOfflineMinutes: "Web: offline ({minutes}m)",
+  dashboardTariff: "Tarif: {symbol} {tariff}/kWh",
+  dashboardConnected: "Terhubung",
+  dashboardLive: "Langsung",
+  dashboardNoLoad: "Tanpa Beban",
+  dashboardOfflineModeBanner: "Mode: OFFLINE - Relay: ON",
+  dashboardPendingSync: "{count} Pending Sync",
+  dashboardRelayReady: "Ketuk + untuk memulai sesi pengukuran baru",
+  dashboardOfflineSessionTitle: "ESP32 mengukur dalam mode offline",
+  dashboardOfflineSessionSub: "Data akan tampil saat ESP32 kembali terhubung ke internet",
+  dashboardOfflineSessionNamed: "{device} (Mode Offline)",
+  dashboardOfflineSessionLocal: "Relay ON - data disimpan lokal - akan sinkron saat online",
+  dashboardOverloadBanner: "OVERLOAD - Daya melebihi {threshold}W. Relay dimatikan otomatis.",
+  dashboardManualModalTitle: "Tambah Device (Mode Online)",
+  dashboardManualModalSub: "Beri nama device, lalu klik Mulai Monitoring untuk menyalakan relay.",
+  dashboardAutoModalTitle: "Device Terdeteksi!",
+  dashboardAutoModalSub: "Berikan nama untuk device yang baru terhubung.",
+  dashboardNameTooLong: "Maksimal 24 karakter",
+  dashboardTurnRelayOn: "Menyalakan relay untuk \"{name}\"...",
+  dashboardStartOnlineOnly: "ESP32 tidak terhubung. Monitoring hanya bisa dimulai dalam Mode Online.",
+  dashboardStartAlreadyPending: "Command START sedang menunggu konfirmasi ESP32",
+  dashboardAlreadyMonitoring: "\"{name}\" sedang dimonitor",
+  dashboardNoSession: "Tidak ada sesi yang berjalan",
+  dashboardStopToast: "Menghentikan dan menyimpan sesi...",
+  dashboardLoadNotDetected: "Monitoring \"{name}\" dibatalkan: beban tidak terdeteksi",
+  dashboardDeviceDetected: "Device terdeteksi! Berikan nama.",
+  dashboardDeviceNameReminder: "Device sudah {seconds}d terhubung. Segera beri nama.",
+  dashboardSessionSavedSynced: "Sesi \"{name}\" tersimpan dan tersinkron ke Riwayat",
+  dashboardSessionEndedEsp: "Sesi \"{name}\" selesai di ESP32",
+  dashboardDeviceUnpluggedBeforeName: "Device dicabut sebelum diberi nama",
+  dashboardDeviceUnpluggedWaitHistory: "Device \"{name}\" dicabut - menunggu riwayat ESP32",
+  dashboardEspOnlineSynced: "ESP32 online - data offline tersinkron: {energy} kWh",
+  dashboardEspOnlineMode: "ESP32 online - Mode: {mode}",
+  dashboardOverloadToast: "OVERLOAD! {power}W >= {threshold}W",
+  dashboardMonitoringStarted: "Monitoring \"{name}\" dimulai",
+  dashboardMonitoringStartedRetro: "Monitoring \"{name}\" dimulai ({minutes} menit terhitung)",
+  dashboardMonitoringLabel: "Monitoring: {name}",
+  dashboardLiveTelemetryLabel: "Telemetri langsung: {name}",
+  historyEyebrow: "Arsip energi",
+  historyTitle: "Riwayat Sesi",
+  historyCountInitial: "0 sesi terekam",
+  historyUsageOverview: "Ringkasan Pemakaian",
+  historyPortfolioTotals: "Total portofolio",
+  historyOverviewSub: "Gabungan metrik dari semua sesi VOLTIX yang dimuat.",
+  historyTotalSessions: "Total Sesi",
+  historyCompletedRecords: "Catatan selesai",
+  historyTotalDuration: "Total Durasi",
+  historyTotalEnergy: "Total Energi",
+  historyAccumulatedConsumption: "Akumulasi konsumsi",
+  historyTotalCost: "Total Biaya",
+  historyEstimatedSpend: "Estimasi pengeluaran",
+  historyAveragePower: "Daya Rata-rata",
+  historyAcrossSessions: "Di semua sesi",
+  historySessionBrowser: "Pencari sesi",
+  historyCompletedSessions: "Sesi Selesai",
+  historyBrowserSub: "Cari, filter, urutkan, ekspor, atau periksa laporan selesai.",
+  historyExportAll: "Ekspor Semua CSV",
+  historyDeleteAll: "Hapus Semua",
+  historyDeleteNote: "Menghapus riwayat cloud dan meminta ESP32 membersihkan riwayat lokal.",
+  historyResetFilters: "Reset Filter",
+  historyClearFiltersTitle: "Hapus semua filter riwayat",
+  historySearchPlaceholder: "Cari nama device...",
+  historyFilterDevice: "Device",
+  historyFilterMode: "Mode",
+  historyFilterStatus: "Status / Alasan Selesai",
+  historyFilterDate: "Rentang Tanggal",
+  historySortBy: "Urutkan",
+  historyAllDevices: "Semua Device",
+  historyAllModes: "Semua Mode",
+  historyAllStatuses: "Semua Status",
+  historyAllTime: "Semua Waktu",
+  historyToday: "Hari Ini",
+  historyLast7: "7 Hari Terakhir",
+  historyLast30: "30 Hari Terakhir",
+  historyNewest: "Terbaru",
+  historyOldest: "Terlama",
+  historyHighestEnergy: "Energi Tertinggi",
+  historyHighestCost: "Biaya Tertinggi",
+  historyLongestDuration: "Durasi Terlama",
+  historyLoadingCount: "Memuat sesi...",
+  historyLoadingTitle: "Memuat riwayat...",
+  historyLoadingSub: "Mengambil riwayat cloud dan sesi selesai dari device.",
+  historyCount: "{shown} dari {total} {label}",
+  historySessionSingular: "sesi",
+  historySessionPlural: "sesi",
+  historyAccessDenied: "Akses riwayat device ini ditolak",
+  historyNoDevicePaired: "Belum ada device terpasang",
+  historyNoSessionsYet: "Belum ada sesi",
+  historyNoSessionsFound: "Tidak ada sesi ditemukan",
+  historyEmptySub: "Belum ada sesi. Mulai monitoring dari Dasbor.",
+  historyAdjustFilters: "Sesuaikan filter atau mulai monitoring dari Dasbor.",
+  historyCompletedSession: "Sesi selesai",
+  historyPower: "Daya",
+  historyEnergy: "Energi",
+  historyCost: "Biaya",
+  historySynced: "Tersinkron",
+  historyPending: "Tertunda",
+  historySyncUnknown: "Status sinkron tidak diketahui",
+  historyStopByApp: "Dihentikan dari App",
+  historyDeviceRemoved: "Device Dicabut",
+  historyPowerLoss: "Listrik Terputus",
+  historyOfflineMonitoring: "Monitoring Offline",
+  historyCompleted: "Selesai",
+  historyOnlineToOffline: "Online ke Offline",
+  historyOfflineToOnline: "Offline ke Online",
+  historyExportCsvTitle: "Ekspor CSV",
+  historyExportCsvAria: "Ekspor CSV sesi",
+  historyDeleteSessionTitle: "Hapus sesi",
+  historyDeleteSessionConfirm: "Hapus sesi ini?",
+  historyDeleteAllConfirm: "Hapus semua riwayat? Data cloud akan dihapus dan ESP32 akan diminta membersihkan riwayat lokal.",
+  historyCloudDeletedNoCleanup: "Riwayat cloud dihapus. Request cleanup device tidak tersedia.",
+  historyCloudDeletedCleanupPending: "Riwayat cloud dihapus. Cleanup device menunggu",
+  historyDeviceCleanupPending: "Cleanup device menunggu",
+  historyDeviceLocalCleared: "Riwayat lokal device dibersihkan",
+  historyResolveSourceFail: "Sumber riwayat tidak dapat ditentukan",
+  historyResolveDeviceFail: "Riwayat device tidak dapat ditentukan",
+  historyDeleteDenied: "Penghapusan ditolak oleh Firebase rules",
+  historyCleanupRequestFailed: "Riwayat cloud dihapus. Request cleanup device gagal.",
+  historyDeleteFailed: "Gagal menghapus",
+  historyNoExportData: "Tidak ada data untuk diekspor",
+  historyNothingDelete: "Tidak ada yang bisa dihapus",
+  historyExported: "Berhasil diekspor",
+  historyExportedSession: "{name} diekspor",
+  membersEyebrow: "Kontrol akses",
+  membersTitle: "Manajemen Anggota",
+  membersSub: "Dukungan owner, operator, dan viewer akan ditambahkan nanti.",
+  membersComingSoon: "Segera Hadir",
+  membersComingSoonTitle: "Manajemen Anggota Segera Hadir",
+  membersComingSoonSub: "Kontrol owner/operator/viewer akan ditambahkan nanti.",
+  membersPlaceholderSub: "VOLTIX akan mendukung peran owner, operator, dan viewer di rilis mendatang. Halaman ini hanya placeholder visual dan tidak mengubah berbagi akun, akses device, path Firebase, atau rules anggota.",
+  membersBackDashboard: "Kembali ke Dasbor",
+  membersFullControl: "Kontrol Penuh",
+  membersOwnerDesc: "Manajemen device dan undangan anggota.",
+  membersOperate: "Operasikan",
+  membersOperatorDesc: "Mulai, hentikan, dan monitor device yang ditugaskan.",
+  membersReadOnly: "Hanya Baca",
+  membersViewerDesc: "Melihat status langsung dan laporan riwayat.",
+  deviceTitle: "Device",
+  deviceSub: "Pasangkan dan lihat device VOLTIX saat ini.",
+  devicePairTitle: "Pasangkan device VOLTIX",
+  devicePairPrompt: "Masukkan kode 6 digit yang tampil di OLED.",
+  devicePairSub: "Claim Tahap A hanya berjalan saat rules pairing development yang terdokumentasi aktif.",
+  devicePairingCode: "Kode pairing",
+  devicePairButton: "Pasangkan Device",
+  devicePairing: "Memasangkan...",
+  deviceCurrentTitle: "Device Saat Ini",
+  deviceName: "Nama",
+  deviceId: "Device ID",
+  deviceRole: "Peran",
+  deviceFirmware: "Firmware",
+  deviceStatus: "Status",
+  deviceFoundationNote: "Aksi device dan manajemen pairing sengaja belum tersedia di sprint fondasi ini.",
+  deviceOpenDashboard: "Buka Dasbor",
+  deviceCodeInvalid: "Masukkan kode 6 digit yang tampil di device.",
+  devicePairingUnavailable: "Pairing tidak tersedia dalam mode visual lokal.",
+  devicePairedSuccess: "Device \"{name}\" berhasil dipasangkan",
+  devicePairingFailed: "Pairing gagal.",
+  deviceStateLoadFailed: "Status device tidak dapat dimuat.",
+  detailTitle: "Detail Sesi",
+  detailExported: "Detail diekspor",
+  settingsValidTariff: "Masukkan nilai tarif yang valid",
+  settingsValidThreshold: "Masukkan nilai threshold yang valid",
+  settingsSaved: "Pengaturan tersimpan",
+  settingsSaveFailed: "Gagal menyimpan pengaturan - cek koneksi internet",
+  settingsNameRequired: "Nama tidak boleh kosong",
+  settingsProfileUpdated: "Profil diperbarui",
+  settingsProfileFailed: "Gagal memperbarui profil",
+  settingsAppearanceUpdated: "Tampilan diperbarui",
+  settingsAppearanceFailed: "Gagal menyimpan tampilan",
+  settingsPreferencesSaved: "Preferensi tersimpan",
+  settingsPreferencesFailed: "Gagal menyimpan preferensi",
+  settingsExportNoData: "Tidak ada riwayat untuk diekspor",
+  settingsExportSuccess: "Riwayat diekspor",
+  settingsDeleteConfirm: "Hapus semua riwayat? Ini menghapus riwayat akun kamu di cloud.",
+  settingsDeleteSuccess: "Riwayat dihapus",
+  settingsDeleteFailed: "Gagal menghapus riwayat"
+});
+
+Object.assign(LANG.id, {
+  detailBack: "Kembali ke Riwayat",
+  detailReportEyebrow: "Laporan sesi selesai",
+  detailLoading: "Memuat sesi terpilih...",
+  detailExport: "Ekspor Detail CSV",
+  detailEmptyTitle: "Belum ada sesi dipilih",
+  detailEmptySub: "Kembali ke Riwayat dan pilih sesi monitoring.",
+  detailOpenHistory: "Buka Riwayat",
+  detailSessionReport: "Laporan sesi",
+  detailCorePerformance: "Performa inti",
+  detailMainSummary: "Ringkasan Utama Sesi",
+  detailPowerQuality: "Kualitas daya",
+  detailReadings: "Pembacaan Listrik",
+  detailTraceability: "Keterlacakan",
+  detailMetadata: "Metadata Sesi",
+  detailForecast: "Proyeksi",
+  detailProjection: "Proyeksi Pemakaian",
+  detailModeUnknown: "Mode tidak diketahui",
+  detailEnergyTotal: "Total Energi",
+  detailCostTotal: "Total Biaya",
+  detailMaxPower: "Daya Maks",
+  detailVoltageAverage: "Tegangan Rata-rata",
+  detailVoltageRange: "Tegangan Min / Maks",
+  detailCurrentAverage: "Arus Rata-rata",
+  detailCurrentMax: "Arus Maks",
+  detailPowerAverage: "Daya Rata-rata",
+  detailPowerMax: "Daya Maks",
+  detailPowerFactorAverage: "Faktor Daya Rata-rata",
+  detailFrequencyAverage: "Frekuensi Rata-rata",
+  detailApparentPowerAverage: "Daya Semu Rata-rata",
+  detailOverloadThreshold: "Batas Overload",
+  detailSessionId: "Session ID",
+  detailOwnerUid: "Owner UID",
+  detailStartTime: "Waktu Mulai",
+  detailEndTime: "Waktu Selesai",
+  detailStartMode: "Mode Mulai",
+  detailEndMode: "Mode Selesai",
+  detailEndReason: "Alasan Selesai",
+  detailOverloadStatus: "Status Overload",
+  detailOverloadDetected: "Overload terdeteksi",
+  detailNoOverload: "Tidak ada overload",
+  detailRelayFinal: "Status Akhir Relay",
+  detailSyncStatus: "Status Sinkron",
+  detailPendingSync: "Pending Sync",
+  detailCreatedFrom: "Dibuat Dari",
+  detailSyncedAt: "Tersinkron Pada",
+  detailProjectionUnavailable: "Daya rata-rata tidak tersedia, jadi proyeksi pemakaian tidak dapat dihitung.",
+  detailProjectionIntro: "Estimasi pemakaian untuk {name} berdasarkan daya rata-rata {power} W.",
+  detailHour: "{count} jam",
+  detailHours: "{count} jam",
+  yes: "Ya",
+  no: "Tidak"
+});
+
+Object.assign(LANG.id, {
+  advLive: "LANGSUNG",
+  advPfDescLong: "Rasio daya aktif (W) terhadap daya semu (VA). Semakin dekat ke 1,0 berarti semakin efisien. Umumnya alat rumah: 0,7-0,95.",
+  advFreqLabel: "Frekuensi Grid",
+  advFreqStandard: "Standar: 50 Hz (PLN Indonesia)",
+  advFreqDescLong: "Frekuensi listrik AC dari PLN. Rentang normal: 49,5-50,5 Hz. Deviasi dapat menandakan instabilitas grid atau beban berat.",
+  advApparentDescLong: "Total daya yang ditarik dari grid (V x I). Mencakup daya aktif dan reaktif. Selalu >= daya aktif (W).",
+  advReactiveLabel: "Daya Reaktif",
+  advReactiveDescLong: "Dihitung dari daya semu dan daya aktif. Ini adalah daya yang berosilasi antara sumber dan beban tanpa menghasilkan kerja berguna.",
+  advFormulaTitle: "Referensi Perhitungan Langsung",
+  advPowerOverTime: "Faktor Daya sepanjang waktu",
+  advFreqOverTime: "Frekuensi sepanjang waktu",
+  advPowerCompare: "Daya Aktif vs Daya Semu",
+  advReactiveOverTime: "Daya Reaktif sepanjang waktu",
+  advTime: "Waktu",
+  advWaitingData: "Menunggu data langsung..."
+});
+
+let currentLanguage = "en";
+
+export function getCurrentLanguage() {
+  return currentLanguage;
+}
+
+export function tr(key, replacements = {}) {
+  const template = LANG[currentLanguage]?.[key] ?? LANG.en?.[key] ?? key;
+  return String(template).replace(/\{(\w+)\}/g, (_, name) =>
+    replacements[name] !== undefined ? String(replacements[name]) : `{${name}}`
+  );
+}
+
 // ── Utility: set text ─────────────────────────────
 function s(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+function attr(id, name, val) { const el = document.getElementById(id); if (el) el.setAttribute(name, val); }
+function optionText(selector, val) { const el = document.querySelector(selector); if (el) el.textContent = val; }
 
 // ================================================================
 // applyLanguage — apply ke semua halaman (bukan hanya settings)
 // Dipanggil dari renderShell setelah settings di-load
 // ================================================================
 export function applyLanguage(lang) {
-  const t = LANG[lang] || LANG.en;
+  currentLanguage = LANG[lang] ? lang : "en";
+  const t = LANG[currentLanguage] || LANG.en;
 
   // ── Settings page ──
   s("txt-settings-title",       t.settingsTitle);
@@ -237,6 +911,64 @@ export function applyLanguage(lang) {
   s("adv-hero-sub",             t.advHeroSub);
   s("btn-clear-log-txt",        t.clearLog);
   s("btn-export-log-txt",       t.exportLog);
+  s("adv-live-label",           t.advLive);
+  s("adv-pf-desc-long",         t.advPfDescLong);
+  s("adv-freq-label",           t.advFreqLabel);
+  s("freq-deviation",           t.advFreqStandard);
+  s("adv-freq-desc-long",       t.advFreqDescLong);
+  s("adv-apparent-desc-long",   t.advApparentDescLong);
+  s("adv-reactive-label",       t.advReactiveLabel);
+  s("adv-reactive-desc-long",   t.advReactiveDescLong);
+  s("adv-formula-title",        t.advFormulaTitle);
+  s("adv-chart-pf-title",       t.advPowerOverTime);
+  s("adv-chart-freq-title",     t.advFreqOverTime);
+  s("adv-chart-power-title",    t.advPowerCompare);
+  s("adv-chart-reactive-title", t.advReactiveOverTime);
+  s("adv-log-time",             t.advTime);
+
+  // ── Dashboard polish strings ──
+  s("dashboard-eyebrow-main",    t.dashboardEyebrow);
+  s("dashboard-live-title",      t.dashboardLiveTitle);
+  s("hero-active-device-label",  t.dashboardActiveDevice);
+  s("hero-state-text",           t.dashboardHeroInitial);
+  s("hero-label-connection",     t.dashboardConnection);
+  s("hero-label-session",        t.dashboardSession);
+  s("hero-label-relay",          t.dashboardRelay);
+  s("hero-label-mode",           t.dashboardMode);
+  s("command-panel-note",        t.dashboardCommandNote);
+  s("btn-start-inline",          t.dashboardStart);
+  s("no-device-title",           t.dashboardNoDeviceTitle);
+  s("no-device-sub",             t.dashboardNoDeviceSub);
+  s("no-device-link",            t.dashboardOpenDevice);
+  s("dashboard-current-session", t.dashboardCurrentSession);
+  s("dashboard-energy-summary",  t.dashboardEnergySummary);
+  s("dashboard-technical-snapshot", t.dashboardTechnicalSnapshot);
+  s("dashboard-advanced-copy",   t.dashboardAdvancedCopy);
+  s("dashboard-open-advanced",   t.dashboardOpenAdvanced);
+  s("dashboard-live-demand",     t.dashboardLiveDemand);
+  s("dashboard-power-label",     t.dashboardPower);
+  s("dashboard-ac-input",        t.dashboardAcInput);
+  s("dashboard-load-draw",       t.dashboardLoadDraw);
+  s("dashboard-voltage-label",   t.dashboardVoltage);
+  s("dashboard-current-label",   t.dashboardCurrent);
+  s("summary-label-energy",      t.labelEnergy);
+  s("summary-label-cost",        t.labelCost);
+  s("summary-label-duration",    t.dashboardDuration);
+  s("summary-label-sessions",    t.labelSessionCount);
+  s("summary-label-device",      t.labelDeviceName);
+  s("summary-duration-note",     t.dashboardDeviceReportedElapsed);
+  s("summary-sessions-unit",     t.dashboardSessionsUnit);
+  s("summary-sessions-note",     t.dashboardSavedHistoryTotal);
+  s("advanced-preview-title",    t.advReadings);
+  s("advanced-preview-pf-label", t.labelPF);
+  s("advanced-preview-pf-desc",  t.pfDesc);
+  s("advanced-preview-freq-label", t.labelFreq);
+  s("advanced-preview-freq-desc", t.freqDesc);
+  s("advanced-preview-apparent-label", t.labelApparent);
+  s("advanced-preview-apparent-desc", t.apparentDesc);
+  attr("btn-stop", "title", t.dashboardStopTitle);
+  attr("btn-start-inline", "title", t.dashboardStartTitle);
+  attr("btn-start-inline", "aria-label", t.dashboardStartTitle);
 
   // ── Sidebar nav labels (rendered by renderShell) ──
   s("nav-label-dashboard",      t.navDashboard);
@@ -245,6 +977,109 @@ export function applyLanguage(lang) {
   s("nav-label-members",        t.navMembers);
   s("nav-label-settings",       t.navSettings);
   s("sidebar-signout-txt",      t.signOut);
+
+  // ── History page ──
+  s("history-eyebrow-main",      t.historyEyebrow);
+  s("history-page-title",        t.historyTitle);
+  s("history-count",             t.historyCountInitial);
+  s("btn-export-all",            t.historyExportAll);
+  s("btn-delete-all",            t.historyDeleteAll);
+  s("history-danger-note",       t.historyDeleteNote);
+  s("history-summary-eyebrow",   t.historyPortfolioTotals);
+  s("history-summary-title",     t.historyUsageOverview);
+  s("history-summary-sub",       t.historyOverviewSub);
+  s("history-summary-sessions-label", t.historyTotalSessions);
+  s("history-summary-sessions-note", t.historyCompletedRecords);
+  s("history-summary-duration-label", t.historyTotalDuration);
+  s("history-summary-duration-note", t.dashboardDeviceReportedElapsed);
+  s("history-summary-energy-label", t.historyTotalEnergy);
+  s("history-summary-energy-note", t.historyAccumulatedConsumption);
+  s("history-summary-cost-label", t.historyTotalCost);
+  s("history-summary-cost-note", t.historyEstimatedSpend);
+  s("history-summary-power-label", t.historyAveragePower);
+  s("history-summary-power-note", t.historyAcrossSessions);
+  s("history-browser-eyebrow",   t.historySessionBrowser);
+  s("history-browser-title",     t.historyCompletedSessions);
+  s("history-browser-sub",       t.historyBrowserSub);
+  s("btn-reset-filters",         t.historyResetFilters);
+  s("filter-device-label",       t.historyFilterDevice);
+  s("filter-mode-label",         t.historyFilterMode);
+  s("filter-status-label",       t.historyFilterStatus);
+  s("filter-date-label",         t.historyFilterDate);
+  s("sort-history-label",        t.historySortBy);
+  attr("btn-export-all", "title", t.historyExportAll);
+  attr("btn-delete-all", "title", t.historyDeleteNote);
+  attr("btn-reset-filters", "title", t.historyClearFiltersTitle);
+  if (searchEl) searchEl.placeholder = t.historySearchPlaceholder;
+  optionText("#filter-device option[value='all']", t.historyAllDevices);
+  optionText("#filter-mode option[value='all']", t.historyAllModes);
+  optionText("#filter-mode option[value='online-offline']", t.historyOnlineToOffline);
+  optionText("#filter-mode option[value='offline-online']", t.historyOfflineToOnline);
+  optionText("#filter-status option[value='all']", t.historyAllStatuses);
+  optionText("#filter-status option[value='stop-app']", t.historyStopByApp);
+  optionText("#filter-status option[value='device-removed']", t.historyDeviceRemoved);
+  optionText("#filter-status option[value='power-loss']", t.historyPowerLoss);
+  optionText("#filter-status option[value='offline-monitoring']", t.historyOfflineMonitoring);
+  optionText("#filter-date option[value='all']", t.historyAllTime);
+  optionText("#filter-date option[value='today']", t.historyToday);
+  optionText("#filter-date option[value='7']", t.historyLast7);
+  optionText("#filter-date option[value='30']", t.historyLast30);
+  optionText("#sort-history option[value='newest']", t.historyNewest);
+  optionText("#sort-history option[value='oldest']", t.historyOldest);
+  optionText("#sort-history option[value='energy']", t.historyHighestEnergy);
+  optionText("#sort-history option[value='cost']", t.historyHighestCost);
+  optionText("#sort-history option[value='duration']", t.historyLongestDuration);
+
+  // ── Device page ──
+  s("device-page-title",         t.deviceTitle);
+  s("device-page-sub",           t.deviceSub);
+  s("device-pair-title",         t.devicePairTitle);
+  s("device-pair-prompt",        t.devicePairPrompt);
+  s("device-pair-sub",           t.devicePairSub);
+  s("device-pair-code-label",    t.devicePairingCode);
+  s("btn-pair-device",           t.devicePairButton);
+  s("device-current-title",      t.deviceCurrentTitle);
+  s("device-name-label",         t.deviceName);
+  s("device-id-label",           t.deviceId);
+  s("device-role-label",         t.deviceRole);
+  s("device-firmware-label",     t.deviceFirmware);
+  s("device-status-label",       t.deviceStatus);
+  s("device-foundation-note",    t.deviceFoundationNote);
+  s("device-open-dashboard",     t.deviceOpenDashboard);
+
+  // ── Members page ──
+  s("members-eyebrow-main",      t.membersEyebrow);
+  s("members-page-title",        t.membersTitle);
+  s("members-page-sub",          t.membersSub);
+  s("members-coming-soon",       t.membersComingSoon);
+  s("placeholder-title",         t.membersComingSoonTitle);
+  s("placeholder-sub",           t.membersPlaceholderSub);
+  s("members-back-dashboard",    t.membersBackDashboard);
+  s("members-owner-title",       t.membersFullControl);
+  s("members-owner-desc",        t.membersOwnerDesc);
+  s("members-operator-title",    t.membersOperate);
+  s("members-operator-desc",     t.membersOperatorDesc);
+  s("members-viewer-title",      t.membersReadOnly);
+  s("members-viewer-desc",       t.membersViewerDesc);
+
+  // ── History detail page ──
+  s("detail-back-link",          t.detailBack);
+  s("detail-report-eyebrow",     t.detailReportEyebrow);
+  s("detail-device-name",        t.detailTitle);
+  s("detail-date",               t.detailLoading);
+  s("btn-export",                t.detailExport);
+  s("detail-empty-title",        t.detailEmptyTitle);
+  s("detail-empty-sub",          t.detailEmptySub);
+  s("detail-open-history",       t.detailOpenHistory);
+  s("detail-session-report-label", t.detailSessionReport);
+  s("detail-core-performance-label", t.detailCorePerformance);
+  s("detail-main-summary-label", t.detailMainSummary);
+  s("detail-power-quality-label", t.detailPowerQuality);
+  s("detail-readings-label",     t.detailReadings);
+  s("detail-traceability-label", t.detailTraceability);
+  s("detail-metadata-label",     t.detailMetadata);
+  s("detail-forecast-label",     t.detailForecast);
+  s("detail-projection-label",   t.detailProjection);
 }
 
 // ================================================================

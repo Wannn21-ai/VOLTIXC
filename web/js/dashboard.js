@@ -1,7 +1,7 @@
 import {
   requireAuth, renderShell, fillUserInfo, setSystemStatus,
   showToast, applyTheme, updateChartColors, startStatusWatcher,
-  loadAndApplySettings, isEspOnlineStatus
+  loadAndApplySettings, isEspOnlineStatus, tr
 } from "./auth-guard.js";
 import { db, ref, onValue, set, push, get } from "./firebase-config.js";
 import { loadDeviceHistory } from "./local-history.js";
@@ -158,7 +158,7 @@ function makeId(prefix) {
 
 async function sendRelayCommand(type, payload = {}) {
   if (!selectedDevice?.id) {
-    showToast("Pair a device before sending a command", "error");
+    showToast(tr("pairDeviceToMonitor"), "error");
     return false;
   }
 
@@ -314,10 +314,10 @@ function updateModeStatusBanner(explicitOfflineMode, relayOn, pendingCount = 0) 
     modeStatusBanner.style.display = "flex";
     const textEl = document.getElementById("mode-status-text");
     const badgeEl = document.getElementById("pending-sync-badge");
-    if (textEl) textEl.textContent = `📡 Mode: OFFLINE • Relay: ON`;
+    if (textEl) textEl.textContent = tr("dashboardOfflineModeBanner");
     if (badgeEl) {
       badgeEl.style.display = pendingCount > 0 ? "inline-block" : "none";
-      badgeEl.textContent = `${pendingCount} Pending Sync`;
+      badgeEl.textContent = tr("dashboardPendingSync", { count: pendingCount });
     }
   } else {
     modeStatusBanner.style.display = "none";
@@ -337,7 +337,7 @@ if (!relayBanner) {
     border-radius:var(--radius-md); padding:14px 20px; margin-bottom:20px;
     color:var(--cyan); font-size:13px; font-weight:500;`;
   relayBanner.innerHTML = `
-    <span>⚡ Klik <strong>+</strong> untuk memulai sesi pengukuran baru</span>`;
+    <span id="relay-banner-text">${tr("dashboardRelayReady")}</span>`;
 
   const ob = document.getElementById("overload-banner");
   if (ob?.parentNode) ob.parentNode.insertBefore(relayBanner, ob.nextSibling);
@@ -364,10 +364,10 @@ if (!offlineSessionBanner) {
     <span style="font-size:18px;">📡</span>
     <div>
       <div style="font-weight:600;margin-bottom:2px;" id="offline-session-title">
-        ESP32 mengukur dalam mode offline
+        ${tr("dashboardOfflineSessionTitle")}
       </div>
       <div style="font-size:12px;color:var(--text-muted);" id="offline-session-sub">
-        Data akan ditampilkan saat ESP32 kembali terhubung ke internet
+        ${tr("dashboardOfflineSessionSub")}
       </div>
     </div>`;
 
@@ -381,8 +381,8 @@ function setOfflineSessionBanner(show, deviceName = "—") {
   if (show && deviceName && deviceName !== "—") {
     const titleEl = document.getElementById("offline-session-title");
     const subEl = document.getElementById("offline-session-sub");
-    if (titleEl) titleEl.textContent = `📡 ${deviceName} (Mode Offline)`;
-    if (subEl) subEl.textContent = `Relay ON • Data disimpan lokal • Akan tersinkron saat online`;
+    if (titleEl) titleEl.textContent = tr("dashboardOfflineSessionNamed", { device: deviceName });
+    if (subEl) subEl.textContent = tr("dashboardOfflineSessionLocal");
   }
 }
 
@@ -524,21 +524,21 @@ function getDuration() {
   return formatDurationSeconds(firebaseElapsedSec);
 }
 function updateTimer() {
-  if (subDuration) subDuration.textContent = `Duration: ${getDuration()}`;
+  if (subDuration) subDuration.textContent = tr("dashboardDurationValue", { duration: getDuration() });
 }
 function setDeviceBadge(state) {
   if (!badgeStatus) return;
   const map = {
-    connected: ["badge online",  "● Connected"],
-    live:      ["badge online",  "● Live"],
-    overload:  ["badge offline", "⚠ Overload!"],
-    starting:  ["badge idle",    "Starting"],
-    stopping:  ["badge idle",    "Stopping"],
-    finished:  ["badge online",  "Finished"],
-    noLoad:    ["badge idle",    "No Load"],
-    idle:      ["badge idle",    "● Idle"],
+    connected: ["badge online",  `● ${tr("dashboardConnected")}`],
+    live:      ["badge online",  `● ${tr("dashboardLive")}`],
+    overload:  ["badge offline", `⚠ ${tr("dashboardOverload")}`],
+    starting:  ["badge idle",    tr("dashboardStarting")],
+    stopping:  ["badge idle",    tr("dashboardStopping")],
+    finished:  ["badge online",  tr("dashboardSaved")],
+    noLoad:    ["badge idle",    tr("dashboardNoLoad")],
+    idle:      ["badge idle",    `● ${tr("dashboardReady")}`],
     offline:   ["badge offline", "● Offline"],
-    unknown:   ["badge unknown", "● Unknown"]
+    unknown:   ["badge unknown", `● ${tr("commonUnknown")}`]
   };
   const [cls, txt] = map[state] || map.unknown;
   badgeStatus.className = cls;
@@ -559,13 +559,13 @@ function setHelper(el, text) {
 }
 function visualStateText(visualState) {
   const copy = {
-    idle: "Ready to monitor",
-    starting: "Waiting for load",
-    monitoring: "Monitoring active",
-    stopping: "Stopping and saving",
-    finished: "Session saved",
-    offline: "Device offline",
-    overload: "Overload protection active",
+    idle: tr("dashboardReady"),
+    starting: tr("dashboardWaitingLoad"),
+    monitoring: tr("dashboardMonitoring"),
+    stopping: tr("dashboardStopping"),
+    finished: tr("dashboardSaved"),
+    offline: tr("dashboardOffline"),
+    overload: tr("dashboardOverload"),
   };
   return copy[visualState] || copy.idle;
 }
@@ -584,30 +584,30 @@ function applyActionState() {
   if (fab) {
     fab.disabled = starting || stopping || isRunning || !systemOnline;
     fab.title = starting
-      ? "Start command sent. Waiting for ESP32 confirmation."
+      ? tr("dashboardStartWaitingTitle")
       : stopping
-        ? "Stop is saving the current session."
+        ? tr("dashboardStopSavingTitle")
         : !systemOnline
-          ? "ESP32 must be online before starting."
-          : "Start a new monitoring session";
+          ? tr("dashboardEspOnlineRequiredTitle")
+          : tr("dashboardStartTitle");
     fab.setAttribute("aria-label", fab.title);
   }
   if (btnStartInline) {
     btnStartInline.disabled = starting || stopping || isRunning || !systemOnline;
     btnStartInline.textContent = starting
-      ? "Starting..."
+      ? tr("dashboardStarting")
       : stopping
-        ? "Saving..."
+        ? tr("dashboardSaving")
         : isRunning
-          ? "Monitoring Active"
-          : "Start Monitoring";
+          ? tr("dashboardMonitoringActive")
+          : tr("dashboardStart");
     btnStartInline.title = starting
-      ? "Start command sent. Waiting for ESP32 confirmation."
+      ? tr("dashboardStartWaitingTitle")
       : stopping
-        ? "Stop is saving the current session."
+        ? tr("dashboardStopSavingTitle")
         : !systemOnline
-          ? "ESP32 must be online before starting."
-          : "Start a new monitoring session";
+          ? tr("dashboardEspOnlineRequiredTitle")
+          : tr("dashboardStartTitle");
     btnStartInline.setAttribute("aria-label", btnStartInline.title);
   }
   if (btnSaveDev) {
@@ -627,30 +627,30 @@ function updateHeroStatuses(systemOnline) {
     idle: firebaseTimestamp > 0 && !firebaseRelay && !firebaseSessionActive ? "NO LOAD" : "IDLE",
   };
   const sessionHelpers = {
-    starting: "Relay command sent. Waiting for stable load detection.",
-    monitoring: "Session is active and accumulating energy.",
-    stopping: "Stopping and saving session...",
-    finished: "Final data published. History sync is being confirmed.",
-    offline: "ESP32 internet is offline.",
-    overload: "Overload detected. Relay protection is active.",
-    idle: "No active load. Start monitoring from the action button.",
+    starting: tr("dashboardSessionStartingHelp"),
+    monitoring: tr("dashboardSessionMonitoringHelp"),
+    stopping: tr("dashboardSessionStoppingHelp"),
+    finished: tr("dashboardSessionFinishedHelp"),
+    offline: tr("dashboardSessionOfflineHelp"),
+    overload: tr("dashboardSessionOverloadHelp"),
+    idle: tr("dashboardSessionIdleHelp"),
   };
   const healthyState = visualState === "monitoring" || visualState === "finished";
   const warningState = visualState === "offline" || visualState === "overload";
   const panelState = healthyState ? "online" : warningState ? "offline" : "transition";
-  const deviceLabel = activeDevice?.name || pendingDeviceName || selectedDevice?.name || deviceNameFromEsp || "No active device";
+  const deviceLabel = activeDevice?.name || pendingDeviceName || selectedDevice?.name || deviceNameFromEsp || tr("noActiveDevice");
   if (heroDeviceName) heroDeviceName.textContent = deviceLabel;
   if (heroStateText) heroStateText.textContent = visualStateText(visualState);
   setPanelPill(
     heroConnectionState,
-    systemOnline ? "Online" : firebaseTimestamp > 0 ? "Offline" : "Waiting",
+    systemOnline ? "Online" : firebaseTimestamp > 0 ? "Offline" : tr("dashboardWaiting"),
     systemOnline ? "online" : firebaseTimestamp > 0 ? "offline" : "transition"
   );
   setPanelPill(heroSessionState, visualStateText(visualState), panelState);
   setPanelPill(heroRelayState, firebaseRelay ? "Relay ON" : "Relay OFF", firebaseRelay ? "online" : "offline");
   setPanelPill(
     heroModeState,
-    mode === SystemMode.ONLINE ? "Online" : mode === SystemMode.OFFLINE ? "Offline" : "Transition",
+    mode === SystemMode.ONLINE ? "Online" : mode === SystemMode.OFFLINE ? "Offline" : tr("dashboardTransition"),
     mode === SystemMode.ONLINE ? "online" : mode === SystemMode.OFFLINE ? "offline" : "transition"
   );
   setHeroStatus(
@@ -674,16 +674,16 @@ function updateHeroStatuses(systemOnline) {
     systemOnline ? "online" : firebaseTimestamp > 0 ? "offline" : "transition"
   );
   setHelper(valSessionHelper, sessionHelpers[visualState] || sessionHelpers.idle);
-  setHelper(valRelayHelper, firebaseRelay ? "Relay is energized by ESP32." : "Relay is off and safe.");
+  setHelper(valRelayHelper, firebaseRelay ? tr("dashboardRelayOnHelp") : tr("dashboardRelayOffHelp"));
   setHelper(
     valModeHelper,
-    mode === SystemMode.ONLINE ? "Cloud telemetry is active." :
-      mode === SystemMode.OFFLINE ? "ESP32 is keeping local safety state." : "State transition in progress."
+    mode === SystemMode.ONLINE ? tr("dashboardModeOnlineHelp") :
+      mode === SystemMode.OFFLINE ? tr("dashboardModeOfflineHelp") : tr("dashboardModeTransitionHelp")
   );
   setHelper(
     valLinkHelper,
-    systemOnline ? (liveDataFresh ? "Fresh live data received." : "ESP32 internet is online; waiting for fresh telemetry.") :
-      firebaseTimestamp > 0 ? "Using last known ESP32 update." : "Waiting for first live packet."
+    systemOnline ? (liveDataFresh ? tr("dashboardLinkFresh") : tr("dashboardLinkWaitingFresh")) :
+      firebaseTimestamp > 0 ? tr("dashboardLinkLastKnown") : tr("dashboardLinkWaitingFirst")
   );
   applyActionState();
 }
@@ -697,7 +697,7 @@ function setOverloadBanner(active) {
   if (!overloadBanner) return;
   overloadBanner.style.display = active ? "flex" : "none";
   if (active) overloadBanner.textContent =
-    `⚠ OVERLOAD — Daya melebihi ${settings.overloadThreshold}W! Relay dimatikan otomatis.`;
+    tr("dashboardOverloadBanner", { threshold: settings.overloadThreshold });
 }
 
 // ================= DEVICE TABS =================
@@ -753,9 +753,9 @@ async function resetMonitoring() {
   pendingStartCommandAt = null;
   pendingRelayConfirmed = false;
   pendingUiState = "";
-  if (subDuration)    subDuration.textContent    = "Duration: 00:00:00";
+  if (subDuration)    subDuration.textContent    = tr("dashboardDurationValue", { duration: "00:00:00" });
   if (valDeviceName)  valDeviceName.textContent  = "—";
-  if (activeDevLabel) activeDevLabel.textContent = "No active device";
+  if (activeDevLabel) activeDevLabel.textContent = tr("noActiveDevice");
   if (btnStop) {
     btnStop.disabled = false;
     btnStop.style.display = "none";
@@ -787,7 +787,7 @@ async function startMonitoring(name) {
   pendingUiState = "";
 
   if (valDeviceName)  valDeviceName.textContent  = name;
-  if (activeDevLabel) activeDevLabel.textContent = `Monitoring: ${name}`;
+  if (activeDevLabel) activeDevLabel.textContent = tr("dashboardMonitoringLabel", { name });
   if (btnStop) {
     btnStop.disabled = false;
     btnStop.style.display = "inline-flex";
@@ -801,9 +801,9 @@ async function startMonitoring(name) {
   const retroMs  = Date.now() - startTime;
   const retroMin = Math.round(retroMs / 60000);
   if (retroMin >= 1)
-    showToast(`Monitoring "${name}" dimulai (${retroMin} mnt terhitung)`, "success");
+    showToast(tr("dashboardMonitoringStartedRetro", { name, minutes: retroMin }), "success");
   else
-    showToast(`Monitoring "${name}" dimulai ▶`, "success");
+    showToast(tr("dashboardMonitoringStarted", { name }), "success");
 }
 
 function getEspStartTimeMs() {
@@ -838,7 +838,7 @@ async function alignActiveSessionFromEsp() {
     clearInterval(timerInterval);
     timerInterval = setInterval(updateTimer, 1000);
     if (valDeviceName)  valDeviceName.textContent  = activeDevice.name;
-    if (activeDevLabel) activeDevLabel.textContent = `Monitoring: ${activeDevice.name}`;
+    if (activeDevLabel) activeDevLabel.textContent = tr("dashboardMonitoringLabel", { name: activeDevice.name });
     if (btnStop) {
       btnStop.disabled = false;
       btnStop.style.display = "inline-flex";
@@ -878,9 +878,9 @@ async function openModalAuto() {
   const history   = await getHistory();
   const usedNames = history.map(h => h.name);
   document.querySelector("#modal-add-device .modal-title")
-    .textContent = "⚡ Device Terdeteksi!";
+    .textContent = tr("dashboardAutoModalTitle");
   document.querySelector("#modal-add-device .modal-sub")
-    .textContent = "Berikan nama untuk device yang baru terhubung.";
+    .textContent = tr("dashboardAutoModalSub");
   inputDevName.value = "";
   inputDevName.dataset.usedNames = JSON.stringify(usedNames);
   modalAdd.classList.add("open");
@@ -890,31 +890,31 @@ async function openModalAuto() {
     if (waitingForName) {
       const elapsed = deviceConnectTime
         ? Math.round((Date.now() - deviceConnectTime) / 1000) : "?";
-      showToast(`⚠ Device sudah ${elapsed}s terhubung. Segera beri nama!`, "error");
+      showToast(tr("dashboardDeviceNameReminder", { seconds: elapsed }), "error");
     }
   }, 30000);
 }
 
 async function openModalManual() {
   if (!systemOnline) {
-    showToast("⚠ ESP32 tidak terhubung — Hanya bisa memulai di Online Mode", "error"); 
+    showToast(tr("dashboardStartOnlineOnly"), "error");
     return;
   }
   if (pendingUiState === "starting" || pendingDeviceName) {
-    showToast("Start command is already waiting for ESP32 confirmation", "");
+    showToast(tr("dashboardStartAlreadyPending"), "");
     return;
   }
   if (isRunning && !deviceOnline) {
-    showToast(`⚠ "${activeDevice.name}" sedang dimonitor`, "error");
+    showToast(tr("dashboardAlreadyMonitoring", { name: activeDevice.name }), "error");
     return;
   }
   waitingForName = false;
   const history   = await getHistory();
   const usedNames = history.map(h => h.name);
   document.querySelector("#modal-add-device .modal-title")
-    .textContent = "Tambah Device (Online Mode)";
+    .textContent = tr("dashboardManualModalTitle");
   document.querySelector("#modal-add-device .modal-sub")
-    .textContent = "Berikan nama device, lalu klik Start Monitoring untuk menyalakan relay.";
+    .textContent = tr("dashboardManualModalSub");
   inputDevName.value = "";
   inputDevName.dataset.usedNames = JSON.stringify(usedNames);
   modalAdd.classList.add("open");
@@ -933,7 +933,7 @@ btnSaveDev.addEventListener("click", async () => {
   let name = inputDevName.value.trim();
   if (!name) name = generateUniqueName("Device", usedNames);
   else name = generateUniqueName(name, usedNames);
-  if (name.length > 24) { showToast("Maksimal 24 karakter", "error"); return; }
+  if (name.length > 24) { showToast(tr("dashboardNameTooLong"), "error"); return; }
   closeModal();
 
   if (waitingForName) {
@@ -943,7 +943,7 @@ btnSaveDev.addEventListener("click", async () => {
     // Manual FAB path: turn relay ON first, wait for device detection
     // pendingDeviceName is read in updateMeters when device comes online
     // State migration point: IDLE -> WAITING_LOAD until ESP32 reports load.
-    showToast(`Menyalakan relay untuk "${name}"...`, "");
+    showToast(tr("dashboardTurnRelayOn", { name }), "");
     pendingDeviceName = name;
     pendingSessionId = makeId("sess");
     pendingStartCommandAt = Date.now();
@@ -991,7 +991,7 @@ inputDevName.addEventListener("keydown", e => {
 if (btnStop) {
   btnStop.addEventListener("click", async () => {
     if (!isRunning || !activeDevice) {
-      showToast("Tidak ada sesi yang berjalan", "error"); return;
+      showToast(tr("dashboardNoSession"), "error"); return;
     }
     const sent = await sendRelayCommand("STOP", {
       sessionId: activeDevice.id,
@@ -1003,7 +1003,7 @@ if (btnStop) {
     pendingUiState = "stopping";
     if (btnStop) btnStop.disabled = true;
     updateHeroStatuses(systemOnline);
-    showToast("Stopping and saving session...", "");
+    showToast(tr("dashboardStopToast"), "");
   });
 }
 
@@ -1163,16 +1163,16 @@ async function updateMeters() {
   updateHeroStatuses(systemOnline);
   if (systemOnline) {
     if (subWebStatus) subWebStatus.textContent = liveDataFresh
-      ? "Web: online"
-      : "Web: online (menunggu data terbaru)";
+      ? tr("dashboardWebOnline")
+      : tr("dashboardWebOnlineWaiting");
   } else if (firebaseTimestamp > 0) {
     if (subWebStatus) subWebStatus.textContent = diff < 60
-      ? `Web: offline (${diff}s)` : `Web: offline (${Math.round(diff / 60)}m)`;
+      ? tr("dashboardWebOfflineSeconds", { seconds: diff }) : tr("dashboardWebOfflineMinutes", { minutes: Math.round(diff / 60) });
   } else {
-    if (subWebStatus) subWebStatus.textContent = "Web: menunggu ESP32...";
+    if (subWebStatus) subWebStatus.textContent = tr("dashboardWebWaitingEsp");
   }
   if (subTariff) subTariff.textContent =
-    `Tariff: ${symbol()} ${settings.tariff.toLocaleString("id-ID")}/kWh`;
+    tr("dashboardTariff", { symbol: symbol(), tariff: settings.tariff.toLocaleString("id-ID") });
 
   // ── Relay banner ────────────────────────────────────────
   const showRelayBanner = systemOnline && !firebaseRelay && !isRunning;
@@ -1188,7 +1188,7 @@ async function updateMeters() {
   const pendingStartExpired = pendingStartCommandAt && Date.now() - pendingStartCommandAt > 20000;
   if (systemOnline && pendingDeviceName && !firebaseRelay && !firebaseSessionActive &&
       (pendingRelayConfirmed || pendingStartExpired)) {
-    showToast(`Monitoring "${pendingDeviceName}" dibatalkan: load tidak terdeteksi`, "error");
+    showToast(tr("dashboardLoadNotDetected", { name: pendingDeviceName }), "error");
     pendingDeviceName = null;
     pendingSessionId = null;
     pendingStartCommandAt = null;
@@ -1210,8 +1210,8 @@ async function updateMeters() {
     if (settings.notifSession)
       showToast(
         pendingUiState === "stopping"
-          ? `Session "${activeDevice.name}" saved and synced to History`
-          : `Sesi "${activeDevice.name}" selesai di ESP32`,
+          ? tr("dashboardSessionSavedSynced", { name: activeDevice.name })
+          : tr("dashboardSessionEndedEsp", { name: activeDevice.name }),
         "success"
       );
     await resetMonitoring();
@@ -1240,7 +1240,7 @@ async function updateMeters() {
       } else if (!waitingForName) {
         // Auto-detect path: device plugged in without FAB
         if (settings.notifDevice)
-          showToast("⚡ Device terdeteksi! Berikan nama.", "success");
+          showToast(tr("dashboardDeviceDetected"), "success");
         openModalAuto();
       }
     }
@@ -1257,11 +1257,11 @@ async function updateMeters() {
       lastknownEnergy = firebaseEnergy;
       console.log(`[Transfer] Offline→Online: E=${firebaseEnergy.toFixed(4)} kWh`);
       showToast(
-        `✓ ESP32 online • Data offline tersinkron: ${firebaseEnergy.toFixed(4)} kWh`, 
+        tr("dashboardEspOnlineSynced", { energy: firebaseEnergy.toFixed(4) }),
         "success"
       );
     } else {
-      showToast(`✓ ESP32 online • Mode: ${firebaseOffline ? "OFFLINE" : "ONLINE"}`, "success");
+      showToast(tr("dashboardEspOnlineMode", { mode: firebaseOffline ? "OFFLINE" : "ONLINE" }), "success");
     }
     }
   }
@@ -1274,10 +1274,10 @@ async function updateMeters() {
     deviceConnectEnergy = 0;
     if (waitingForName) {
       closeModal();
-      showToast("Device dicabut sebelum diberi nama", "error");
+      showToast(tr("dashboardDeviceUnpluggedBeforeName"), "error");
     } else if (isRunning && activeDevice) {
       if (settings.notifDisconnect)
-        showToast(`Device "${activeDevice.name}" dicabut — menunggu history ESP32`, "");
+        showToast(tr("dashboardDeviceUnpluggedWaitHistory", { name: activeDevice.name }), "");
       await resetMonitoring();
     }
   }
@@ -1287,7 +1287,7 @@ async function updateMeters() {
   if (webOverload && !prevOverload) {
     // State migration point: MONITORING -> OVERLOAD.
     if (settings.notifOverload)
-      showToast(`⚠ OVERLOAD! ${firebasePower.toFixed(0)}W ≥ ${settings.overloadThreshold}W`, "error");
+      showToast(tr("dashboardOverloadToast", { power: firebasePower.toFixed(0), threshold: settings.overloadThreshold }), "error");
     setDeviceBadge("overload");
     setOverloadBanner(true);
   }
@@ -1306,7 +1306,7 @@ async function updateMeters() {
     const passiveName = selectedDevice?.nickname || selectedDevice?.name ||
       (deviceNameFromEsp !== "—" ? deviceNameFromEsp : "Paired Device");
     if (valDeviceName) valDeviceName.textContent = passiveName;
-    if (activeDevLabel) activeDevLabel.textContent = `Live telemetry: ${passiveName}`;
+    if (activeDevLabel) activeDevLabel.textContent = tr("dashboardLiveTelemetryLabel", { name: passiveName });
   }
   if (!webOverload) {
     const visualState = dashboardVisualState();

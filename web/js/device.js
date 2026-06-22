@@ -1,6 +1,6 @@
 import {
   requireAuth, renderShell, fillUserInfo,
-  startStatusWatcher, loadAndApplySettings, showToast
+  startStatusWatcher, loadAndApplySettings, showToast, tr
 } from "./auth-guard.js";
 import { db, ref, get, update, FIREBASE_CONFIGURED } from "./firebase-config.js";
 import {
@@ -49,12 +49,12 @@ async function renderDeviceState() {
     document.getElementById("device-name").textContent =
       currentDevice.nickname || device.name || "VOLTIX Device";
     document.getElementById("device-firmware").textContent =
-      device.firmwareVersion || "Not reported";
+      device.firmwareVersion || tr("notReported");
     document.getElementById("device-status").textContent =
-      device.paired === false ? "Pairing pending" : "Paired";
+      device.paired === false ? tr("pairingPending") : tr("paired");
   } catch (error) {
     document.getElementById("device-status").textContent =
-      readableFirebaseError(error, "Status unavailable");
+      readableFirebaseError(error, tr("statusUnavailable"));
   }
 }
 
@@ -67,26 +67,26 @@ pairButton.addEventListener("click", async () => {
   hidePairingError();
   const code = pairingCode.value.trim();
   if (!/^\d{6}$/.test(code)) {
-    showPairingError("Enter the 6-digit code shown on the device.");
+    showPairingError(tr("deviceCodeInvalid"));
     return;
   }
   if (!FIREBASE_CONFIGURED) {
-    showPairingError("Pairing is unavailable in local visual mode.");
+    showPairingError(tr("devicePairingUnavailable"));
     return;
   }
 
   pairButton.disabled = true;
-  pairButton.textContent = "Pairing...";
+  pairButton.textContent = tr("devicePairing");
   try {
     const claimed = await claimPairingCode(user, code);
-    showToast(`Device "${claimed.nickname}" paired successfully`, "success");
+    showToast(tr("devicePairedSuccess", { name: claimed.nickname }), "success");
     await renderDeviceState();
   } catch (error) {
     console.warn("[Pairing] Claim failed:", error?.code || error?.message || error);
-    showPairingError(readableFirebaseError(error, error?.message || "Pairing failed."));
+    showPairingError(readableFirebaseError(error, error?.message || tr("devicePairingFailed")));
   } finally {
     pairButton.disabled = false;
-    pairButton.textContent = "Pair Device";
+    pairButton.textContent = tr("devicePairButton");
   }
 });
 
@@ -98,5 +98,5 @@ try {
   await renderDeviceState();
 } catch (error) {
   pairingPanel.style.display = "block";
-  showPairingError(readableFirebaseError(error, "Device state could not be loaded."));
+  showPairingError(readableFirebaseError(error, tr("deviceStateLoadFailed")));
 }

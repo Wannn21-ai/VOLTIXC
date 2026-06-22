@@ -303,19 +303,19 @@
       <!-- PAGE HEADER -->
       <div class="page-header">
         <div>
-          <div class="page-header-title">Advanced Readings</div>
-          <div class="page-header-sub">Technical data for engineers & enthusiasts</div>
+          <div class="page-header-title" id="page-title-advanced">Advanced Readings</div>
+          <div class="page-header-sub" id="page-sub-advanced">Technical data for engineers & enthusiasts</div>
         </div>
         <div class="live-badge">
           <div class="live-dot"></div>
-          LIVE
+          <span id="adv-live-label">LIVE</span>
         </div>
       </div>
 
       <!-- HERO INFO -->
       <div class="adv-hero">
-        <div class="adv-hero-title">⚠ Technical Reference</div>
-        <div class="adv-hero-sub">
+        <div class="adv-hero-title" id="adv-hero-title">⚠ Technical Reference</div>
+        <div class="adv-hero-sub" id="adv-hero-sub">
           Data on this page is intended for technical analysis. Power Factor and Frequency readings
           require an active device to be meaningful. The dashboard shows simplified data
           suitable for everyday use.
@@ -329,7 +329,7 @@
         <div class="adv-metric">
           <div class="adv-metric-accent" style="background: linear-gradient(90deg, var(--red), var(--amber), var(--green));"></div>
           <span class="adv-metric-icon">⚡</span>
-          <div class="adv-metric-label">Power Factor</div>
+          <div class="adv-metric-label" id="adv-label-pf">Power Factor</div>
           <div>
             <span class="adv-metric-value" id="adv-pf">—</span>
             <span class="adv-metric-unit"></span>
@@ -343,7 +343,7 @@
           <div class="pf-quality" id="pf-quality" style="background:var(--bg-elevated);color:var(--text-muted);">
             ● Waiting for data
           </div>
-          <div class="adv-metric-desc">
+          <div class="adv-metric-desc" id="adv-pf-desc-long">
             Ratio of active power (W) to apparent power (VA).
             Closer to 1.0 = more efficient. Most home appliances: 0.7–0.95.
           </div>
@@ -353,7 +353,7 @@
         <div class="adv-metric">
           <div class="adv-metric-accent" style="background: var(--cyan);"></div>
           <span class="adv-metric-icon">〜</span>
-          <div class="adv-metric-label">Grid Frequency</div>
+          <div class="adv-metric-label" id="adv-freq-label">Grid Frequency</div>
           <div>
             <span class="adv-metric-value" id="adv-freq">—</span>
             <span class="adv-metric-unit">Hz</span>
@@ -361,7 +361,7 @@
           <div class="freq-deviation" id="freq-deviation">
             Standard: 50 Hz (Indonesia PLN)
           </div>
-          <div class="adv-metric-desc">
+          <div class="adv-metric-desc" id="adv-freq-desc-long">
             AC grid frequency from PLN. Normal range: 49.5–50.5 Hz.
             Deviation may indicate grid instability or heavy load conditions.
           </div>
@@ -371,12 +371,12 @@
         <div class="adv-metric">
           <div class="adv-metric-accent" style="background: var(--amber);"></div>
           <span class="adv-metric-icon">◈</span>
-          <div class="adv-metric-label">Apparent Power</div>
+          <div class="adv-metric-label" id="adv-label-apparent">Apparent Power</div>
           <div>
             <span class="adv-metric-value" id="adv-apparent">—</span>
             <span class="adv-metric-unit">VA</span>
           </div>
-          <div class="adv-metric-desc">
+          <div class="adv-metric-desc" id="adv-apparent-desc-long">
             Total power drawn from the grid (V × I).
             Includes both active (useful) and reactive (wasted) power.
             Always ≥ active power (W).
@@ -387,12 +387,12 @@
         <div class="adv-metric">
           <div class="adv-metric-accent" style="background: var(--green);"></div>
           <span class="adv-metric-icon">∿</span>
-          <div class="adv-metric-label">Reactive Power</div>
+          <div class="adv-metric-label" id="adv-reactive-label">Reactive Power</div>
           <div>
             <span class="adv-metric-value" id="adv-reactive">—</span>
             <span class="adv-metric-unit">VAR</span>
           </div>
-          <div class="adv-metric-desc">
+          <div class="adv-metric-desc" id="adv-reactive-desc-long">
             Calculated: √(VA² − W²). Power that oscillates between source
             and load without doing useful work. Caused by inductive/capacitive loads.
           </div>
@@ -402,7 +402,7 @@
       <!-- FORMULA REFERENCE -->
       <div class="formula-section">
         <div class="chart-card">
-          <div class="chart-card-title" style="margin-bottom:16px;">Live Calculation Reference</div>
+          <div class="chart-card-title" id="adv-formula-title" style="margin-bottom:16px;">Live Calculation Reference</div>
           <div class="formula-grid">
 
             <div class="formula-card">
@@ -460,25 +460,25 @@
       <!-- LIVE CHARTS -->
       <div class="adv-chart-grid">
         <div class="chart-card">
-          <div class="chart-card-title">Power Factor over time</div>
+          <div class="chart-card-title" id="adv-chart-pf-title">Power Factor over time</div>
           <div style="position:relative;height:200px;">
             <canvas id="chart-pf"></canvas>
           </div>
         </div>
         <div class="chart-card">
-          <div class="chart-card-title">Frequency over time</div>
+          <div class="chart-card-title" id="adv-chart-freq-title">Frequency over time</div>
           <div style="position:relative;height:200px;">
             <canvas id="chart-freq"></canvas>
           </div>
         </div>
         <div class="chart-card">
-          <div class="chart-card-title">Active vs Apparent Power</div>
+          <div class="chart-card-title" id="adv-chart-power-title">Active vs Apparent Power</div>
           <div style="position:relative;height:200px;">
             <canvas id="chart-power-compare"></canvas>
           </div>
         </div>
         <div class="chart-card">
-          <div class="chart-card-title">Reactive Power over time</div>
+          <div class="chart-card-title" id="adv-chart-reactive-title">Reactive Power over time</div>
           <div style="position:relative;height:200px;">
             <canvas id="chart-reactive"></canvas>
           </div>
@@ -491,7 +491,7 @@
           <table class="log-table">
             <thead>
               <tr>
-                <th>Time</th>
+                <th id="adv-log-time">Time</th>
                 <th>V (V)</th>
                 <th>I (A)</th>
                 <th>P Active (W)</th>
@@ -502,13 +502,13 @@
               </tr>
             </thead>
             <tbody id="log-tbody">
-              <tr><td colspan="8" class="log-empty">Waiting for live data...</td></tr>
+              <tr><td colspan="8" class="log-empty" id="adv-log-empty">Waiting for live data...</td></tr>
             </tbody>
           </table>
         </div>
         <div style="display:flex;justify-content:flex-end;margin-top:10px;gap:10px;">
-          <button class="btn btn-ghost" id="btn-clear-log">✕ Clear Log</button>
-          <button class="btn btn-ghost" id="btn-export-log">↓ Export CSV</button>
+          <button class="btn btn-ghost" id="btn-clear-log"><span id="btn-clear-log-txt">✕ Clear Log</span></button>
+          <button class="btn btn-ghost" id="btn-export-log"><span id="btn-export-log-txt">↓ Export CSV</span></button>
         </div>
       </div>
 
@@ -518,7 +518,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script type="module">
-import { requireAuth, renderShell, fillUserInfo, startStatusWatcher, applyTheme } from "./js/auth-guard.js";
+import { requireAuth, renderShell, fillUserInfo, startStatusWatcher, loadAndApplySettings, tr } from "./js/auth-guard.js";
 import { db, ref, onValue, DEVICE_ID } from "./js/firebase-config.js";
 
 const user = await requireAuth();
@@ -527,17 +527,11 @@ fillUserInfo(user);
 startStatusWatcher();
 const uid = user.uid;
 
-// Apply saved theme
-const savedTheme = localStorage.getItem(`sem_theme_${uid}`);
-if (savedTheme) applyTheme(savedTheme);
-
 // Load settings for tariff
 const SETTING_DEFAULTS = { currency: "IDR", tariff: 1444.70 };
-let settings = { ...SETTING_DEFAULTS };
-try {
-  const saved = JSON.parse(localStorage.getItem(`sem_settings_${uid}`));
-  if (saved) settings = { ...SETTING_DEFAULTS, ...saved };
-} catch {}
+let settings = { ...SETTING_DEFAULTS, ...(await loadAndApplySettings(uid)) };
+const logEmptyEl = document.getElementById("adv-log-empty");
+if (logEmptyEl) logEmptyEl.textContent = tr("advWaitingData");
 
 const formatCost = v => settings.currency === "USD"
   ? `$ ${v.toFixed(2)}`
@@ -616,7 +610,7 @@ function pfQuality(pf) {
 
 // ── Frequency deviation helper ──
 function freqStatus(freq) {
-  if (freq <= 0) return { text: "Standard: 50 Hz (Indonesia PLN)", color: "var(--text-muted)" };
+  if (freq <= 0) return { text: tr("advFreqStandard"), color: "var(--text-muted)" };
   const dev = (freq - 50).toFixed(2);
   const abs = Math.abs(freq - 50);
   if (abs <= 0.2)  return { text: `${freq.toFixed(1)} Hz — Normal (deviation: ${dev > 0 ? "+" : ""}${dev} Hz)`, color: "var(--green)" };
@@ -639,7 +633,7 @@ function pushChart(chart, label, ...values) {
 function renderLog() {
   const tbody = document.getElementById("log-tbody");
   if (logData.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="log-empty">Waiting for live data...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="log-empty">${tr("advWaitingData")}</td></tr>`;
     return;
   }
   tbody.innerHTML = logData.slice().reverse().map(r => `

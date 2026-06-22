@@ -28,8 +28,8 @@
 
         <header class="dashboard-heading">
           <div>
-            <div class="dashboard-eyebrow">Smart energy command center</div>
-            <h1>Live Energy Dashboard</h1>
+            <div class="dashboard-eyebrow" id="dashboard-eyebrow-main">Smart energy command center</div>
+            <h1 id="dashboard-live-title">Live Energy Dashboard</h1>
             <p id="active-device-label">No active device</p>
           </div>
           <button id="btn-stop" class="btn btn-danger dashboard-stop-button" title="Stop monitoring and save the session">Stop Session</button>
@@ -38,40 +38,40 @@
         <section class="dashboard-command-panel" aria-label="Device command status">
           <div class="command-panel-orb" aria-hidden="true"></div>
           <div class="command-panel-main">
-            <div class="dashboard-eyebrow">Active device</div>
+            <div class="dashboard-eyebrow" id="hero-active-device-label">Active device</div>
             <h2 id="hero-device-name">No active device</h2>
             <p id="hero-state-text">Ready to monitor when ESP32 is online.</p>
           </div>
           <div class="command-panel-grid" aria-label="Current monitoring state">
             <div class="command-panel-pill">
-              <span>Connection</span>
+              <span id="hero-label-connection">Connection</span>
               <strong id="hero-connection-state">Waiting</strong>
             </div>
             <div class="command-panel-pill">
-              <span>Session</span>
+              <span id="hero-label-session">Session</span>
               <strong id="hero-session-state">Idle</strong>
             </div>
             <div class="command-panel-pill">
-              <span>Relay</span>
+              <span id="hero-label-relay">Relay</span>
               <strong id="hero-relay-state">OFF</strong>
             </div>
             <div class="command-panel-pill">
-              <span>Mode</span>
+              <span id="hero-label-mode">Mode</span>
               <strong id="hero-mode-state">Transition</strong>
             </div>
           </div>
           <div class="command-panel-actions">
             <button class="btn btn-primary btn-command-start" id="btn-start-inline" type="button" title="Start a new monitoring session">Start Monitoring</button>
-            <span class="command-panel-note">Uses the existing START/STOP command flow.</span>
+            <span class="command-panel-note" id="command-panel-note">Uses the existing START/STOP command flow.</span>
           </div>
         </section>
 
         <section class="card placeholder-card dashboard-empty" id="no-device-state">
           <div class="empty-state">
             <div class="empty-state-icon">V</div>
-            <div class="empty-state-title">No device paired yet</div>
-            <div class="empty-state-sub">Pair your VOLTIX device to unlock live monitoring.</div>
-            <a class="btn btn-primary" href="device.html">Open Device Page</a>
+            <div class="empty-state-title" id="no-device-title">No device paired yet</div>
+            <div class="empty-state-sub" id="no-device-sub">Pair your VOLTIX device to unlock live monitoring.</div>
+            <a class="btn btn-primary" href="device.html" id="no-device-link">Open Device Page</a>
           </div>
         </section>
 
@@ -81,8 +81,8 @@
           <article class="power-focus-card">
             <div class="power-focus-top">
               <div>
-                <div class="dashboard-card-kicker">Live demand</div>
-                <div class="power-focus-label">Power</div>
+                <div class="dashboard-card-kicker" id="dashboard-live-demand">Live demand</div>
+                <div class="power-focus-label" id="dashboard-power-label">Power</div>
               </div>
               <div class="badge idle" id="badge-device-status">Idle</div>
             </div>
@@ -125,8 +125,8 @@
             <article class="gauge-card dashboard-gauge-card">
               <div class="gauge-heading">
                 <div>
-                  <div class="dashboard-card-kicker">AC input</div>
-                  <div class="gauge-label">Voltage</div>
+                <div class="dashboard-card-kicker" id="dashboard-ac-input">AC input</div>
+                <div class="gauge-label" id="dashboard-voltage-label">Voltage</div>
                 </div>
                 <span class="gauge-range">190-240 V</span>
               </div>
@@ -146,8 +146,8 @@
             <article class="gauge-card dashboard-gauge-card">
               <div class="gauge-heading">
                 <div>
-                  <div class="dashboard-card-kicker">Load draw</div>
-                  <div class="gauge-label">Current</div>
+                <div class="dashboard-card-kicker" id="dashboard-load-draw">Load draw</div>
+                <div class="gauge-label" id="dashboard-current-label">Current</div>
                 </div>
                 <span class="gauge-range">0-16 A</span>
               </div>
@@ -169,34 +169,34 @@
         <section class="dashboard-section">
           <div class="dashboard-section-heading">
             <div>
-              <div class="dashboard-eyebrow">Current session</div>
-              <h2>Energy Summary</h2>
+              <div class="dashboard-eyebrow" id="dashboard-current-session">Current session</div>
+              <h2 id="dashboard-energy-summary">Energy Summary</h2>
             </div>
           </div>
 
           <div class="dashboard-summary-grid">
             <article class="summary-card cyan">
-              <span>Energy</span>
+              <span id="summary-label-energy">Energy</span>
               <strong><b id="val-energy">0</b><small>Wh</small></strong>
               <p id="sub-energy-kwh">0.00000 kWh</p>
             </article>
             <article class="summary-card amber">
-              <span>Estimated Cost</span>
+              <span id="summary-label-cost">Estimated Cost</span>
               <strong><b id="val-cost">0</b></strong>
               <p id="sub-tariff">Tariff: Rp 1,444.70/kWh</p>
             </article>
             <article class="summary-card green">
-              <span>Duration</span>
+              <span id="summary-label-duration">Duration</span>
               <strong class="summary-duration" id="sub-duration">Duration: 00:00:00</strong>
-              <p>Device reported elapsed time</p>
+              <p id="summary-duration-note">Device reported elapsed time</p>
             </article>
             <article class="summary-card violet">
-              <span>Session Count</span>
-              <strong><b id="val-session-count">0</b><small>sessions</small></strong>
-              <p>Saved history total</p>
+              <span id="summary-label-sessions">Session Count</span>
+              <strong><b id="val-session-count">0</b><small id="summary-sessions-unit">sessions</small></strong>
+              <p id="summary-sessions-note">Saved history total</p>
             </article>
             <article class="summary-card device-summary-card">
-              <span>Device Name</span>
+              <span id="summary-label-device">Device Name</span>
               <strong class="summary-device-name" id="val-device-name">-</strong>
               <p id="sub-web-status">Web: waiting for ESP32...</p>
             </article>
@@ -206,26 +206,26 @@
         <section class="dashboard-section">
           <div class="advanced-preview">
             <div class="advanced-preview-copy">
-              <div class="dashboard-eyebrow">Technical snapshot</div>
-              <h2>Advanced Readings</h2>
-              <p>Quick power-quality indicators from the connected VOLTIX device.</p>
-              <a class="btn btn-ghost" href="advanced.html">Open Advanced View</a>
+              <div class="dashboard-eyebrow" id="dashboard-technical-snapshot">Technical snapshot</div>
+              <h2 id="advanced-preview-title">Advanced Readings</h2>
+              <p id="dashboard-advanced-copy">Quick power-quality indicators from the connected VOLTIX device.</p>
+              <a class="btn btn-ghost" href="advanced.html" id="dashboard-open-advanced">Open Advanced View</a>
             </div>
             <div class="advanced-reading-grid">
               <article class="advanced-reading-card cyan">
-                <span>Power Factor</span>
+                <span id="advanced-preview-pf-label">Power Factor</span>
                 <strong id="val-pf">-</strong>
-                <p>Ideal range near 1.00</p>
+                <p id="advanced-preview-pf-desc">Ideal range near 1.00</p>
               </article>
               <article class="advanced-reading-card green">
-                <span>Frequency</span>
+                <span id="advanced-preview-freq-label">Frequency</span>
                 <strong><b id="val-freq">-</b><small>Hz</small></strong>
-                <p>Nominal mains frequency</p>
+                <p id="advanced-preview-freq-desc">Nominal mains frequency</p>
               </article>
               <article class="advanced-reading-card amber">
-                <span>Apparent Power</span>
+                <span id="advanced-preview-apparent-label">Apparent Power</span>
                 <strong><b id="val-apparent">-</b><small>VA</small></strong>
-                <p>Voltage multiplied by current</p>
+                <p id="advanced-preview-apparent-desc">Voltage multiplied by current</p>
               </article>
             </div>
           </div>

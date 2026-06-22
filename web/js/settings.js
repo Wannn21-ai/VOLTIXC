@@ -1,7 +1,7 @@
 import {
   requireAuth, renderShell, fillUserInfo, showToast,
   startStatusWatcher, applyTheme, applyLanguage,
-  loadAndApplySettings
+  loadAndApplySettings, tr
 } from "./auth-guard.js";
 import { auth, db, ref, set, get, update } from "./firebase-config.js";
 import { updateProfile } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -96,7 +96,7 @@ function setBtnLoading(btnId, loading, originalText) {
   const span = btn?.querySelector("span");
   if (!btn) return;
   btn.disabled = loading;
-  if (span) span.textContent = loading ? "Menyimpan..." : originalText;
+  if (span) span.textContent = loading ? tr("saving") : originalText;
 }
 
 async function saveSettingsToFirebase(partial) {
@@ -195,8 +195,8 @@ document.getElementById("btn-save-settings").addEventListener("click", async () 
   const tariff    = parseFloat(document.getElementById("tariff").value);
   const threshold = parseFloat(document.getElementById("overload-threshold").value);
 
-  if (isNaN(tariff)    || tariff    <= 0) { showToast("Masukkan nilai tarif yang valid",    "error"); return; }
-  if (isNaN(threshold) || threshold <= 0) { showToast("Masukkan nilai threshold yang valid", "error"); return; }
+  if (isNaN(tariff)    || tariff    <= 0) { showToast(tr("settingsValidTariff"),    "error"); return; }
+  if (isNaN(threshold) || threshold <= 0) { showToast(tr("settingsValidThreshold"), "error"); return; }
 
   const span = document.querySelector("#btn-save-settings span");
   const originalText = span?.textContent || "Save Settings";
@@ -220,10 +220,10 @@ document.getElementById("btn-save-settings").addEventListener("click", async () 
     } catch (e) {
       console.warn("[SEM] Gagal sync config device:", e);
     }
-    showToast("Pengaturan tersimpan ✓", "success");
+    showToast(tr("settingsSaved"), "success");
   } catch (e) {
     console.error("[SEM] Gagal simpan pricing settings:", e);
-    showToast("Gagal menyimpan pengaturan — cek koneksi internet", "error");
+    showToast(tr("settingsSaveFailed"), "error");
   } finally {
     setBtnLoading("btn-save-settings", false, originalText);
   }
@@ -232,7 +232,7 @@ document.getElementById("btn-save-settings").addEventListener("click", async () 
 // ── Save Profile ──
 document.getElementById("btn-save-profile").addEventListener("click", async () => {
   const name = document.getElementById("display-name").value.trim();
-  if (!name) { showToast("Nama tidak boleh kosong", "error"); return; }
+  if (!name) { showToast(tr("settingsNameRequired"), "error"); return; }
 
   const span = document.querySelector("#btn-save-profile span");
   const originalText = span?.textContent || "Update Profile";
@@ -241,10 +241,10 @@ document.getElementById("btn-save-profile").addEventListener("click", async () =
   try {
     await updateProfile(auth.currentUser, { displayName: name });
     fillUserInfo(auth.currentUser);
-    showToast("Profil diperbarui ✓", "success");
+    showToast(tr("settingsProfileUpdated"), "success");
   } catch (e) {
     console.error("[SEM] Gagal update profile:", e);
-    showToast("Gagal memperbarui profil", "error");
+    showToast(tr("settingsProfileFailed"), "error");
   } finally {
     setBtnLoading("btn-save-profile", false, originalText);
   }
@@ -265,10 +265,10 @@ document.getElementById("btn-save-appearance").addEventListener("click", async (
     localStorage.setItem(`sem_theme_${uid}`, theme);
     applyTheme(theme);
     applyLanguage(language);
-    showToast("Tampilan tersimpan ✓", "success");
+    showToast(tr("settingsAppearanceUpdated"), "success");
   } catch (e) {
     console.error("[SEM] Gagal simpan appearance:", e);
-    showToast("Gagal menyimpan tampilan", "error");
+    showToast(tr("settingsAppearanceFailed"), "error");
   } finally {
     setBtnLoading("btn-save-appearance", false, originalText);
   }
@@ -298,10 +298,10 @@ document.getElementById("btn-save-notif").addEventListener("click", async () => 
 
   try {
     await saveSettingsToFirebase(partial);
-    showToast("Preferensi tersimpan ✓", "success");
+    showToast(tr("settingsPreferencesSaved"), "success");
   } catch (e) {
     console.error("[SEM] Gagal simpan notifikasi:", e);
-    showToast("Gagal menyimpan preferensi", "error");
+    showToast(tr("settingsPreferencesFailed"), "error");
   } finally {
     setBtnLoading("btn-save-notif", false, originalText);
   }
@@ -313,7 +313,7 @@ document.getElementById("btn-export-all").addEventListener("click", async () => 
   btn.disabled = true;
   try {
     const snap = await get(ref(db, HISTORY_PATH));
-    if (!snap.exists()) { showToast("Tidak ada riwayat untuk diekspor", "error"); return; }
+    if (!snap.exists()) { showToast(tr("settingsExportNoData"), "error"); return; }
     const history = Object.values(snap.val()).sort((a, b) => b.timestamp - a.timestamp);
     let csv = "Name,Duration,Power (W),Energy (kWh),Cost,Date\n";
     history.forEach(s => { csv += `${s.name},${s.duration},${s.power},${s.energy},${s.cost},${s.date}\n`; });
@@ -323,10 +323,10 @@ document.getElementById("btn-export-all").addEventListener("click", async () => 
     a.href = url; a.download = "sem_all_history.csv";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast(`Berhasil diekspor (${history.length} sesi) ✓`, "success");
+    showToast(`${tr("settingsExportSuccess")} (${history.length})`, "success");
   } catch (e) {
     console.error("[SEM] Gagal export history:", e);
-    showToast("Gagal mengekspor riwayat", "error");
+    showToast(tr("settingsExportNoData"), "error");
   } finally {
     btn.disabled = false;
   }
@@ -338,20 +338,20 @@ document.getElementById("btn-delete-all").addEventListener("click", async () => 
   try {
     snap = await get(ref(db, HISTORY_PATH));
   } catch (e) {
-    showToast("Gagal memeriksa riwayat", "error"); return;
+    showToast(tr("settingsDeleteFailed"), "error"); return;
   }
-  if (!snap.exists()) { showToast("Tidak ada riwayat untuk dihapus", "error"); return; }
+  if (!snap.exists()) { showToast(tr("historyNothingDelete"), "error"); return; }
   const count = Object.keys(snap.val()).length;
-  if (!confirm(`Hapus SEMUA ${count} riwayat sesi? Tindakan ini tidak dapat dibatalkan.`)) return;
+  if (!confirm(`${tr("settingsDeleteConfirm")} (${count})`)) return;
 
   const btn = document.getElementById("btn-delete-all");
   btn.disabled = true;
   try {
     await set(ref(db, HISTORY_PATH), null);
-    showToast("Semua riwayat berhasil dihapus", "success");
+    showToast(tr("settingsDeleteSuccess"), "success");
   } catch (e) {
     console.error("[SEM] Gagal hapus semua history:", e);
-    showToast("Gagal menghapus riwayat", "error");
+    showToast(tr("settingsDeleteFailed"), "error");
   } finally {
     btn.disabled = false;
   }

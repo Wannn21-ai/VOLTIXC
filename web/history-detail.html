@@ -21,8 +21,8 @@
       <main class="page-content detail-shell">
         <header class="detail-page-header">
           <div>
-            <a class="detail-back-link" href="history.html">Back to History</a>
-            <div class="detail-eyebrow">Completed session report</div>
+            <a class="detail-back-link" href="history.html" id="detail-back-link">Back to History</a>
+            <div class="detail-eyebrow" id="detail-report-eyebrow">Completed session report</div>
             <h1 id="detail-device-name">Session Detail</h1>
             <div class="page-header-sub" id="detail-date">Loading selected session...</div>
           </div>
@@ -31,15 +31,15 @@
 
         <div class="empty-state detail-empty" id="detail-empty">
           <div class="empty-state-icon">V</div>
-          <div class="empty-state-title">No selected session</div>
-          <div class="empty-state-sub">Return to History and choose a monitoring session.</div>
-          <a class="btn btn-primary" href="history.html">Open History</a>
+          <div class="empty-state-title" id="detail-empty-title">No selected session</div>
+          <div class="empty-state-sub" id="detail-empty-sub">Return to History and choose a monitoring session.</div>
+          <a class="btn btn-primary" href="history.html" id="detail-open-history">Open History</a>
         </div>
 
         <div id="detail-report">
           <section class="detail-section detail-session-header">
             <div>
-              <div class="detail-eyebrow">Session report</div>
+              <div class="detail-eyebrow" id="detail-session-report-label">Session report</div>
               <div class="detail-header-name" id="detail-header-name">Device</div>
               <div class="detail-header-date" id="detail-header-date">-</div>
             </div>
@@ -49,8 +49,8 @@
           <section class="detail-section">
             <div class="detail-section-heading">
               <div>
-                <div class="detail-eyebrow">Core performance</div>
-                <div class="detail-section-title">Main Session Summary</div>
+                <div class="detail-eyebrow" id="detail-core-performance-label">Core performance</div>
+                <div class="detail-section-title" id="detail-main-summary-label">Main Session Summary</div>
               </div>
             </div>
             <div class="detail-summary-grid" id="detail-summary-grid"></div>
@@ -59,8 +59,8 @@
           <section class="detail-section">
             <div class="detail-section-heading">
               <div>
-                <div class="detail-eyebrow">Power quality</div>
-                <div class="detail-section-title">Electrical Readings</div>
+                <div class="detail-eyebrow" id="detail-power-quality-label">Power quality</div>
+                <div class="detail-section-title" id="detail-readings-label">Electrical Readings</div>
               </div>
             </div>
             <div class="detail-reading-grid" id="detail-reading-grid"></div>
@@ -68,13 +68,13 @@
 
           <section class="detail-section detail-two-column">
             <div class="detail-column-panel">
-              <div class="detail-eyebrow">Traceability</div>
-              <div class="detail-section-title">Session Metadata</div>
+              <div class="detail-eyebrow" id="detail-traceability-label">Traceability</div>
+              <div class="detail-section-title" id="detail-metadata-label">Session Metadata</div>
               <div class="detail-metadata-card" id="detail-metadata"></div>
             </div>
             <div class="detail-column-panel">
-              <div class="detail-eyebrow">Forecast</div>
-              <div class="detail-section-title">Usage Projection</div>
+              <div class="detail-eyebrow" id="detail-forecast-label">Forecast</div>
+              <div class="detail-section-title" id="detail-projection-label">Usage Projection</div>
               <div class="detail-projection-intro" id="detail-projection-intro"></div>
               <div class="detail-projection-grid" id="detail-projection-grid"></div>
             </div>
@@ -83,6 +83,6 @@
       </main>
     </div>
   </div>
-  <script type="module" src="js/advanced.js"></script>
+  <script type="module" src="js/history-detail.js"></script>
 </body>
 </html>
