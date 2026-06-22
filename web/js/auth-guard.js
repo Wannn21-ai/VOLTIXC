@@ -88,6 +88,10 @@ export const LANG = {
     advHeroSub:"Data on this page is intended for technical analysis. Power Factor and Frequency readings require an active device to be meaningful.",
     clearLog:"✕ Clear Log", exportLog:"↓ Export CSV",
     waitingData:"Waiting for live data...",
+    detailTraceability:"Traceability",
+    detailMetadata:"Session Metadata",
+    detailForecast:"Forecast",
+    detailProjection:"Usage Projection",
   },
   id: {
     settingsTitle:"Pengaturan", settingsSub:"Kelola preferensi kamu — tersinkron di semua perangkat",
@@ -146,6 +150,10 @@ export const LANG = {
     advHeroSub:"Data di halaman ini ditujukan untuk analisis teknis. Pembacaan Power Factor dan Frekuensi memerlukan device aktif.",
     clearLog:"✕ Hapus Log", exportLog:"↓ Ekspor CSV",
     waitingData:"Menunggu data langsung...",
+    detailTraceability:"Keterlacakan",
+    detailMetadata:"Metadata Sesi",
+    detailForecast:"Prakiraan",
+    detailProjection:"Proyeksi Penggunaan",
   }
 };
 
@@ -237,6 +245,10 @@ export function applyLanguage(lang) {
   s("adv-hero-sub",             t.advHeroSub);
   s("btn-clear-log-txt",        t.clearLog);
   s("btn-export-log-txt",       t.exportLog);
+  s("detail-traceability-label", t.detailTraceability);
+  s("detail-metadata-title",     t.detailMetadata);
+  s("detail-forecast-label",     t.detailForecast);
+  s("detail-projection-title",   t.detailProjection);
 
   // ── Sidebar nav labels (rendered by renderShell) ──
   s("nav-label-dashboard",      t.navDashboard);
