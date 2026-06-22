@@ -1,6 +1,6 @@
 import {
   requireAuth, renderShell, fillUserInfo, showToast,
-  startStatusWatcher, loadAndApplySettings
+  startStatusWatcher, loadAndApplySettings, tr
 } from "./auth-guard.js";
 import { db, ref, set, onValue } from "./firebase-config.js";
 import { getHistoryReadState, loadDeviceHistory } from "./local-history.js";
@@ -46,14 +46,14 @@ function cleanupStorageKey(deviceId) {
 
 async function queueDeviceCleanup(cleanupRequest, cloudDeleted = true) {
   if (!cleanupRequest) {
-    showToast("Cloud history deleted. Device cleanup request unavailable.", "error");
+    showToast(tr("historyCloudDeletedNoCleanup"), "error");
     return false;
   }
   await set(ref(db, cleanupRequest.path), cleanupRequest.payload);
   pendingCleanupRequestId = cleanupRequest.payload.requestId;
   const cleanupDeviceId = cleanupRequest.path.split("/")[1] || activeDeviceId;
   sessionStorage.setItem(cleanupStorageKey(cleanupDeviceId), pendingCleanupRequestId);
-  showToast(cloudDeleted ? "Cloud history deleted. Device cleanup pending" : "Device cleanup pending", "");
+  showToast(cloudDeleted ? tr("historyCloudDeletedCleanupPending") : tr("historyDeviceCleanupPending"), "");
   return true;
 }
 
@@ -141,22 +141,22 @@ function labelFor(value) {
   const labels = {
     "online": "Online",
     "offline": "Offline",
-    "online-offline": "Online → Offline",
-    "offline-online": "Offline → Online",
-    "stop-app": "Stop by App",
-    "device-removed": "Device Removed",
+    "online-offline": tr("historyOnlineToOffline"),
+    "offline-online": tr("historyOfflineToOnline"),
+    "stop-app": tr("historyStopByApp"),
+    "device-removed": tr("historyDeviceRemoved"),
     "overload": "Overload",
-    "power-loss": "Power Loss",
-    "offline-monitoring": "Offline Monitoring",
+    "power-loss": tr("historyPowerLoss"),
+    "offline-monitoring": tr("historyOfflineMonitoring"),
   };
-  return labels[value] || "Completed";
+  return labels[value] || tr("historyCompleted");
 }
 
 function syncInfo(session) {
   const raw = String(firstValue(session, ["syncStatus"]) || "").toUpperCase();
-  if (session.pendingSync === true || raw === "PENDING") return { label: "Pending", className: "amber" };
-  if (session.pendingSync === false || raw === "SYNCED" || session.synced === true) return { label: "Synced", className: "green" };
-  return { label: "Sync Unknown", className: "" };
+  if (session.pendingSync === true || raw === "PENDING") return { label: tr("historyPending"), className: "amber" };
+  if (session.pendingSync === false || raw === "SYNCED" || session.synced === true) return { label: tr("historySynced"), className: "green" };
+  return { label: tr("historySyncUnknown"), className: "" };
 }
 
 function sourceInfo(session) {
@@ -234,7 +234,7 @@ function buildDeviceFilter() {
   const names = [...new Set(historyData.map(session => session.name || "Device"))]
     .sort((a, b) => a.localeCompare(b));
 
-  deviceFilter.innerHTML = '<option value="all">All Devices</option>';
+  deviceFilter.innerHTML = `<option value="all">${tr("historyAllDevices")}</option>`;
   names.forEach(name => {
     const option = document.createElement("option");
     option.value = name;
@@ -283,26 +283,30 @@ function filteredSessions() {
 function render() {
   renderSummary();
   if (historyLoading) {
-    countEl.textContent = "Loading sessions...";
-    renderHistoryState("Loading history...", "Fetching cloud history and device completed sessions.", "...", "loading");
+    countEl.textContent = tr("historyLoadingCount");
+    renderHistoryState(tr("historyLoadingTitle"), tr("historyLoadingSub"), "...", "loading");
     return;
   }
   const data = filteredSessions();
-  countEl.textContent = `${data.length} of ${historyData.length} session${historyData.length !== 1 ? "s" : ""}`;
+  countEl.textContent = tr("historyCount", {
+    shown: data.length,
+    total: historyData.length,
+    label: historyData.length === 1 ? tr("historySessionSingular") : tr("historySessionPlural")
+  });
 
   if (data.length === 0) {
     const readState = getHistoryReadState();
     const title = readState.kind === "permission"
-      ? "Access denied for this device history"
+      ? tr("historyAccessDenied")
       : readState.kind === "no-device"
-        ? "No device paired"
+        ? tr("historyNoDevicePaired")
         : historyData.length === 0
-          ? "No sessions yet"
-          : "No sessions found";
+          ? tr("historyNoSessionsYet")
+          : tr("historyNoSessionsFound");
     const subtitle = readState.message ||
       (historyData.length === 0 && !hasActiveFilters()
-        ? "No sessions yet. Start monitoring from Dashboard."
-        : "Adjust the filters or start monitoring from Dashboard.");
+        ? tr("historyEmptySub")
+        : tr("historyAdjustFilters"));
     renderHistoryState(title, subtitle, historyData.length === 0 ? "V" : "Filter");
     return;
   }
@@ -324,17 +328,17 @@ function render() {
         <div class="history-card-main">
           <div class="history-card-topline">
             <div>
-              <div class="history-card-kicker">Completed session</div>
+              <div class="history-card-kicker">${escapeHtml(tr("historyCompletedSession"))}</div>
               <div class="history-card-name">${escapeHtml(session.name || "Device")}</div>
               <div class="history-card-sub">${escapeHtml(formatDateTime(session))}</div>
             </div>
             <span class="history-tag ${sync.className}">${escapeHtml(sync.label)}</span>
           </div>
           <div class="history-card-meta">
-            <div class="history-meta-item">Duration<span>${formatDuration(durationSeconds(session))}</span></div>
-            <div class="history-meta-item">Power<span>${powerOf(session).toFixed(0)} W</span></div>
-            <div class="history-meta-item">Energy<span>${energyOf(session).toFixed(3)} kWh</span></div>
-            <div class="history-meta-item">Cost<span>${escapeHtml(formatCost(costOf(session)))}</span></div>
+            <div class="history-meta-item">${escapeHtml(tr("dashboardDuration"))}<span>${formatDuration(durationSeconds(session))}</span></div>
+            <div class="history-meta-item">${escapeHtml(tr("historyPower"))}<span>${powerOf(session).toFixed(0)} W</span></div>
+            <div class="history-meta-item">${escapeHtml(tr("historyEnergy"))}<span>${energyOf(session).toFixed(3)} kWh</span></div>
+            <div class="history-meta-item">${escapeHtml(tr("historyCost"))}<span>${escapeHtml(formatCost(costOf(session)))}</span></div>
           </div>
           <div class="history-tags">
             ${mode ? `<span class="history-tag">${escapeHtml(labelFor(mode))}</span>` : ""}
@@ -343,8 +347,8 @@ function render() {
           </div>
         </div>
         <div class="history-card-actions">
-          <button class="btn btn-icon btn-export" data-key="${escapeHtml(session._key)}" title="Export CSV" aria-label="Export session CSV">↓</button>
-          <button class="btn btn-danger btn-delete" data-key="${escapeHtml(session._key)}" title="Delete session" aria-label="Delete session">Delete</button>
+          <button class="btn btn-icon btn-export" data-key="${escapeHtml(session._key)}" title="${escapeHtml(tr("historyExportCsvTitle"))}" aria-label="${escapeHtml(tr("historyExportCsvAria"))}">↓</button>
+          <button class="btn btn-danger btn-delete" data-key="${escapeHtml(session._key)}" title="${escapeHtml(tr("historyDeleteSessionTitle"))}" aria-label="${escapeHtml(tr("historyDeleteSessionTitle"))}">${escapeHtml(tr("commonDelete"))}</button>
         </div>
       </article>`;
   }).join("");
@@ -384,7 +388,7 @@ try {
       if (ack?.status === "DONE") {
         sessionStorage.removeItem(cleanupStorageKey(activeDeviceId));
         pendingCleanupRequestId = "";
-        showToast("Device local history cleared", "success");
+        showToast(tr("historyDeviceLocalCleared"), "success");
       }
     });
   }
@@ -421,22 +425,22 @@ listEl.addEventListener("click", async event => {
     const deletePaths = deletePathsForSession(session, activeDeviceId);
     const cleanupRequest = cleanupRequestForSession(session, activeDeviceId, uid);
     if (deletePaths.length === 0 && !cleanupRequest) {
-      showToast("Unable to resolve history source", "error");
+      showToast(tr("historyResolveSourceFail"), "error");
       return;
     }
-    if (!confirm("Delete this session?")) return;
+    if (!confirm(tr("historyDeleteSessionConfirm"))) return;
     const result = await deleteFirebasePaths(deletePaths, path => set(ref(db, path), null));
     if (result.permissionDenied) {
-      showToast("Delete denied by Firebase rules", "error");
+      showToast(tr("historyDeleteDenied"), "error");
     } else if (result.successCount > 0 || deletePaths.length === 0) {
       try {
         await queueDeviceCleanup(cleanupRequest, result.successCount > 0);
       } catch (error) {
         console.error("[history] Device cleanup request failed", error);
-        showToast("Cloud history deleted. Device cleanup request failed.", "error");
+        showToast(tr("historyCleanupRequestFailed"), "error");
       }
     } else {
-      showToast("Failed to delete", "error");
+      showToast(tr("historyDeleteFailed"), "error");
     }
     return;
   }
@@ -451,7 +455,7 @@ listEl.addEventListener("click", async event => {
 
 btnExportAll.addEventListener("click", () => {
   if (historyData.length === 0) {
-    showToast("No data to export", "error");
+    showToast(tr("historyNoExportData"), "error");
     return;
   }
   let csv = "Name,Duration,Power (W),Energy (kWh),Cost,Date\n";
@@ -459,40 +463,40 @@ btnExportAll.addEventListener("click", () => {
     csv += `${session.name},${formatDuration(durationSeconds(session))},${powerOf(session)},${energyOf(session)},${costOf(session)},${formatDateTime(session)}\n`;
   });
   downloadCSV(csv, "sem_all_history.csv");
-  showToast("Exported successfully ✓", "success");
+  showToast(tr("historyExported"), "success");
 });
 
 btnDeleteAll.addEventListener("click", async () => {
   if (historyData.length === 0) {
-    showToast("Nothing to delete", "error");
+    showToast(tr("historyNothingDelete"), "error");
     return;
   }
   const deletePaths = deleteAllPathsForSessions(historyData, activeDeviceId);
   const cleanupRequest = cleanupRequestForAll(historyData, activeDeviceId, uid);
   if (deletePaths.length === 0 && !cleanupRequest) {
-    showToast("Unable to resolve device history", "error");
+    showToast(tr("historyResolveDeviceFail"), "error");
     return;
   }
-  if (!confirm("Hapus semua riwayat? Data cloud akan dihapus dan ESP32 akan diminta membersihkan riwayat lokal.")) return;
+  if (!confirm(tr("historyDeleteAllConfirm"))) return;
   const result = await deleteFirebasePaths(deletePaths, path => set(ref(db, path), null));
   if (result.permissionDenied) {
-    showToast("Delete denied by Firebase rules", "error");
+    showToast(tr("historyDeleteDenied"), "error");
   } else if (result.successCount > 0 || deletePaths.length === 0) {
     try {
       await queueDeviceCleanup(cleanupRequest, result.successCount > 0);
     } catch (error) {
       console.error("[history] Device cleanup request failed", error);
-      showToast("Cloud history deleted. Device cleanup request failed.", "error");
+      showToast(tr("historyCleanupRequestFailed"), "error");
     }
   } else {
-    showToast("Failed to delete", "error");
+    showToast(tr("historyDeleteFailed"), "error");
   }
 });
 
 function exportSingleCSV(session) {
   const csv = `Name,Duration,Power (W),Energy (kWh),Cost,Date\n${session.name},${formatDuration(durationSeconds(session))},${powerOf(session)},${energyOf(session)},${costOf(session)},${formatDateTime(session)}`;
   downloadCSV(csv, `${session.name}_session.csv`);
-  showToast(`Exported ${session.name} ✓`, "success");
+  showToast(tr("historyExportedSession", { name: session.name || "Device" }), "success");
 }
 
 function downloadCSV(content, filename) {

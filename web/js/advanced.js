@@ -1,6 +1,6 @@
 import {
   requireAuth, renderShell, fillUserInfo, showToast,
-  startStatusWatcher, loadAndApplySettings
+  startStatusWatcher, loadAndApplySettings, tr
 } from "./auth-guard.js";
 import { db, ref, get } from "./firebase-config.js";
 import { loadDeviceHistory } from "./local-history.js";
@@ -100,29 +100,29 @@ function modeInfo(session) {
   const start = String(firstValue(session, ["modeStart", "startMode"]) || "").toLowerCase();
   const end = String(firstValue(session, ["modeEnd", "endMode"]) || "").toLowerCase();
   const combined = `${explicit} ${start} ${end}`.replace(/[_>→-]+/g, " ");
-  if ((start.includes("online") && end.includes("offline")) || /online(?:\s+to)?\s+offline/.test(combined)) return { key: "online-offline", label: "Online → Offline" };
-  if ((start.includes("offline") && end.includes("online")) || /offline(?:\s+to)?\s+online/.test(combined)) return { key: "offline-online", label: "Offline → Online" };
+  if ((start.includes("online") && end.includes("offline")) || /online(?:\s+to)?\s+offline/.test(combined)) return { key: "online-offline", label: tr("historyOnlineToOffline") };
+  if ((start.includes("offline") && end.includes("online")) || /offline(?:\s+to)?\s+online/.test(combined)) return { key: "offline-online", label: tr("historyOfflineToOnline") };
   if (combined.includes("offline")) return { key: "offline", label: "Offline" };
   if (combined.includes("online")) return { key: "online", label: "Online" };
-  return { key: "", label: "Mode Unknown" };
+  return { key: "", label: tr("detailModeUnknown") };
 }
 
 function reasonInfo(session) {
   const raw = String(firstValue(session, ["endReason", "status", "tag", "stopReason"]) || "");
   const text = raw.toLowerCase();
   if (/overload/.test(text)) return { key: "overload", label: "Overload" };
-  if (/device.*removed|removed|unplug|load.*removed/.test(text)) return { key: "device-removed", label: "Device Removed" };
-  if (/power.*loss|lost.*power|blackout/.test(text)) return { key: "power-loss", label: "Power Loss" };
-  if (/offline.*monitor/.test(text)) return { key: "offline-monitoring", label: "Offline Monitoring" };
-  if (/stop.*app|app.*stop|manual|user.*stop/.test(text)) return { key: "stop-app", label: "Stop by App" };
-  return { key: "", label: raw || "Completed" };
+  if (/device.*removed|removed|unplug|load.*removed/.test(text)) return { key: "device-removed", label: tr("historyDeviceRemoved") };
+  if (/power.*loss|lost.*power|blackout/.test(text)) return { key: "power-loss", label: tr("historyPowerLoss") };
+  if (/offline.*monitor/.test(text)) return { key: "offline-monitoring", label: tr("historyOfflineMonitoring") };
+  if (/stop.*app|app.*stop|manual|user.*stop/.test(text)) return { key: "stop-app", label: tr("historyStopByApp") };
+  return { key: "", label: raw || tr("historyCompleted") };
 }
 
 function syncInfo(session) {
   const raw = String(firstValue(session, ["syncStatus"]) || "").toLowerCase();
-  if (session.pendingSync === true || raw.includes("pending")) return { key: "pending", label: "Pending Sync" };
-  if (session.synced === true || raw.includes("sync")) return { key: "synced", label: "Synced" };
-  return { key: "", label: "Sync Unknown" };
+  if (session.pendingSync === true || raw.includes("pending")) return { key: "pending", label: tr("detailPendingSync") };
+  if (session.synced === true || raw.includes("sync")) return { key: "synced", label: tr("historySynced") };
+  return { key: "", label: tr("historySyncUnknown") };
 }
 
 function overloadInfo(session) {
@@ -182,8 +182,8 @@ function renderSession(session) {
   const sessionId = firstValue(session, ["sessionId", "id", "_key"]) || "-";
   const deviceId = firstValue(session, ["deviceId"]) || "-";
   const ownerUid = firstValue(session, ["uid"]) || "-";
-  const pendingSync = session.pendingSync === true ? "Yes" : session.pendingSync === false ? "No" : "Unknown";
-  const source = humanize(firstValue(session, ["createdFrom", "_source", "source"]), "Unknown");
+  const pendingSync = session.pendingSync === true ? tr("yes") : session.pendingSync === false ? tr("no") : tr("commonUnknown");
+  const source = humanize(firstValue(session, ["createdFrom", "_source", "source"]), tr("commonUnknown"));
   const syncedAt = formatDate(firstValue(session, ["syncedAt", "syncedTimestamp"]));
   const endReasonCode = firstValue(session, ["endReason", "status", "tag", "stopReason"]) || "COMPLETED";
 
@@ -197,27 +197,27 @@ function renderSession(session) {
     <span class="detail-tag ${sync.key === "synced" ? "green" : "amber"}">${escapeHtml(sync.label)}</span>`;
 
   document.getElementById("detail-summary-grid").innerHTML = [
-    metricCard("Duration", formatDuration(duration), "", "cyan"),
-    metricCard("Energy Total", energy.toFixed(3), "kWh", "green"),
-    metricCard("Cost Total", formatCost(cost), "", "amber"),
-    metricCard("Average Power", formatNumber(avgPower, 1), "W"),
-    metricCard("Max Power", formatNumber(maxPower, 1), "W", "red"),
+    metricCard(tr("dashboardDuration"), formatDuration(duration), "", "cyan"),
+    metricCard(tr("detailEnergyTotal"), energy.toFixed(3), "kWh", "green"),
+    metricCard(tr("detailCostTotal"), formatCost(cost), "", "amber"),
+    metricCard(tr("historyAveragePower"), formatNumber(avgPower, 1), "W"),
+    metricCard(tr("detailMaxPower"), formatNumber(maxPower, 1), "W", "red"),
   ].join("");
 
   const voltageRange = minVoltage || maxVoltage
     ? `${formatNumber(minVoltage, 1)} / ${formatNumber(maxVoltage, 1)} V`
     : "—";
   document.getElementById("detail-reading-grid").innerHTML = [
-    metricCard("Voltage Average", formatNumber(avgVoltage, 1), "V", "cyan"),
-    metricCard("Voltage Min / Max", voltageRange),
-    metricCard("Current Average", formatNumber(avgCurrent, 2), "A", "green"),
-    metricCard("Current Max", formatNumber(maxCurrent, 2), "A"),
-    metricCard("Power Average", formatNumber(avgPower, 1), "W", "amber"),
-    metricCard("Power Max", formatNumber(maxPower, 1), "W", "red"),
-    metricCard("Power Factor Average", formatNumber(pf, 2)),
-    metricCard("Frequency Average", formatNumber(frequency, 1), "Hz"),
-    metricCard("Apparent Power Average", formatNumber(apparent, 1), "VA"),
-    metricCard("Overload Threshold", formatNumber(threshold, 0), "W"),
+    metricCard(tr("detailVoltageAverage"), formatNumber(avgVoltage, 1), "V", "cyan"),
+    metricCard(tr("detailVoltageRange"), voltageRange),
+    metricCard(tr("detailCurrentAverage"), formatNumber(avgCurrent, 2), "A", "green"),
+    metricCard(tr("detailCurrentMax"), formatNumber(maxCurrent, 2), "A"),
+    metricCard(tr("detailPowerAverage"), formatNumber(avgPower, 1), "W", "amber"),
+    metricCard(tr("detailPowerMax"), formatNumber(maxPower, 1), "W", "red"),
+    metricCard(tr("detailPowerFactorAverage"), formatNumber(pf, 2)),
+    metricCard(tr("detailFrequencyAverage"), formatNumber(frequency, 1), "Hz"),
+    metricCard(tr("detailApparentPowerAverage"), formatNumber(apparent, 1), "VA"),
+    metricCard(tr("detailOverloadThreshold"), formatNumber(threshold, 0), "W"),
   ].join("");
 
   const startTime = formatDate(firstValue(session, ["startTime", "start_ts", "sessionStartTs"]));
@@ -231,31 +231,31 @@ function renderSession(session) {
       ? "OFF"
       : "—";
   document.getElementById("detail-metadata").innerHTML = [
-    metadataRow("Session ID", sessionId),
-    metadataRow("Device ID", deviceId),
-    metadataRow("Owner UID", ownerUid),
-    metadataRow("Start Time", startTime),
-    metadataRow("End Time", endTime),
-    metadataRow("Start Mode", startMode),
-    metadataRow("End Mode", endMode),
-    metadataRow("End Reason", `${reason.label} / ${endReasonCode}`),
-    metadataRow("Overload Status", overloadInfo(session) ? "Overload detected" : "No overload"),
-    metadataRow("Relay Final State", relayLabel),
-    metadataRow("Sync Status", sync.label),
-    metadataRow("Pending Sync", pendingSync),
-    metadataRow("Created From", source),
-    metadataRow("Synced At", syncedAt),
+    metadataRow(tr("detailSessionId"), sessionId),
+    metadataRow(tr("deviceId"), deviceId),
+    metadataRow(tr("detailOwnerUid"), ownerUid),
+    metadataRow(tr("detailStartTime"), startTime),
+    metadataRow(tr("detailEndTime"), endTime),
+    metadataRow(tr("detailStartMode"), startMode),
+    metadataRow(tr("detailEndMode"), endMode),
+    metadataRow(tr("detailEndReason"), `${reason.label} / ${endReasonCode}`),
+    metadataRow(tr("detailOverloadStatus"), overloadInfo(session) ? tr("detailOverloadDetected") : tr("detailNoOverload")),
+    metadataRow(tr("detailRelayFinal"), relayLabel),
+    metadataRow(tr("detailSyncStatus"), sync.label),
+    metadataRow(tr("detailPendingSync"), pendingSync),
+    metadataRow(tr("detailCreatedFrom"), source),
+    metadataRow(tr("detailSyncedAt"), syncedAt),
   ].join("");
 
   const hours = [1, 5, 8, 24];
   document.getElementById("detail-projection-intro").textContent = avgPower > 0
-    ? `Estimated usage for ${name} based on ${avgPower.toFixed(1)} W average power.`
-    : "Average power is unavailable, so usage projections cannot be calculated.";
+    ? tr("detailProjectionIntro", { name, power: avgPower.toFixed(1) })
+    : tr("detailProjectionUnavailable");
   document.getElementById("detail-projection-grid").innerHTML = hours.map(hour => {
     const projectedEnergy = avgPower > 0 ? avgPower * hour / 1000 : 0;
     const projectedCost = projectedEnergy * tariff;
     return `<div class="detail-projection-card">
-      <div class="detail-projection-hours">${hour} hour${hour === 1 ? "" : "s"}</div>
+      <div class="detail-projection-hours">${hour === 1 ? tr("detailHour", { count: hour }) : tr("detailHours", { count: hour })}</div>
       <div class="detail-projection-energy">${avgPower > 0 ? projectedEnergy.toFixed(3) : "—"} kWh</div>
       <div class="detail-projection-cost">${avgPower > 0 ? formatCost(projectedCost, tariffAvailable) : "—"}</div>
     </div>`;
@@ -312,5 +312,5 @@ btnExport.addEventListener("click", () => {
   link.download = `${firstValue(selectedSession, ["name", "deviceName"]) || "session"}_detail.csv`;
   link.click();
   URL.revokeObjectURL(url);
-  showToast("Detail exported ✓", "success");
+  showToast(tr("detailExported"), "success");
 });
