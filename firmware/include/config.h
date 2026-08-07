@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 namespace Config {
 static constexpr const char* PROJECT_NAME = "Voltix";
 static constexpr const char* DEVICE_ID = "esp32-voltix-001";
@@ -24,6 +26,9 @@ static constexpr int WIFI_LED_PIN = 2;
 static constexpr int GREEN_LED_PIN = 25;
 static constexpr int RED_LED_PIN = 26;
 static constexpr int BUZZER_PIN = 5;
+static constexpr int OLED_SDA_PIN = 21;
+static constexpr int OLED_SCL_PIN = 22;
+static constexpr uint8_t OLED_ADDRESS = 0x3C;
 
 static constexpr bool RELAY_ACTIVE_LOW = true;
 

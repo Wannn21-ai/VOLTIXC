@@ -14,7 +14,6 @@ namespace {
 constexpr int SCREEN_WIDTH = 128;
 constexpr int SCREEN_HEIGHT = 64;
 constexpr int OLED_RESET = -1;
-constexpr uint8_t OLED_ADDRESS = 0x3C;
 constexpr unsigned long DISPLAY_INTERVAL_MS = 500UL;
 constexpr unsigned long BUTTON_DISPLAY_INTERVAL_MS = 200UL;
 constexpr unsigned long BUTTON_FEEDBACK_MS = 1200UL;
@@ -458,15 +457,29 @@ void renderScreen() {
 }
 
 void displayBegin() {
-  oledReady = oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS);
+  Serial.println("[display] OLED init start");
+  Serial.print("[display] Wire.begin SDA=");
+  Serial.print(Config::OLED_SDA_PIN);
+  Serial.print(" SCL=");
+  Serial.println(Config::OLED_SCL_PIN);
+  Wire.begin(Config::OLED_SDA_PIN, Config::OLED_SCL_PIN);
+  Serial.println("[display] Wire initialized");
+
+  Serial.print("[display] SSD1306 begin address=0x");
+  Serial.println(Config::OLED_ADDRESS, HEX);
+  oledReady = oled.begin(SSD1306_SWITCHCAPVCC, Config::OLED_ADDRESS);
   if (!oledReady) {
     Serial.println("[display] SSD1306 init failed");
     return;
   }
 
-  oled.clearDisplay();
-  oled.display();
   Serial.println("[display] SSD1306 initialized");
+  startScreen();
+  drawLine(0, "Voltix");
+  drawLine(2, "Booting...");
+  finishScreen();
+  lastDisplayMs = millis();
+  Serial.println("[display] Boot screen rendered");
 }
 
 void displayUpdate() {

@@ -621,12 +621,9 @@ void setup() {
   networkBegin();
   firebaseBegin();
 
-  if (sessionRecoveryIsActive() || networkIsPortalActive()) {
-    displayShowStatus();
-  } else {
-    displayShowBoot();
-  }
   systemMode = networkIsPortalActive() ? SystemMode::SETUP : (networkIsConnected() ? SystemMode::ONLINE : SystemMode::OFFLINE);
+  displayShowStatus();
+  Serial.println("[display] Startup status rendered");
   wasRecoveryActive = sessionRecoveryIsActive();
 
   Serial.println("[boot] Complete");
