@@ -633,7 +633,6 @@ void setup() {
 
   Serial.println("[boot] Complete");
   printHelp();
-  networkMarkBootComplete();
 }
 
 void loop() {
