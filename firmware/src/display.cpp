@@ -8,8 +8,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
-#include <string>
-#include <vector>
 #include <Wire.h>
 
 namespace {
@@ -554,4 +552,52 @@ void displayShowButtonFeedback(const char* message) {
   copyDisplayText(message, buttonFeedbackMessage, sizeof(buttonFeedbackMessage));
   lastDisplayMs = millis();
   renderScreen();
+}
+
+void displayShowMenu(const char* title, const std::vector<std::string>& options, int selectedOption) {
+  if (!oledReady) {
+    return;
+  }
+  startScreen();
+  oled.setTextSize(1);
+  oled.setCursor(0, 0);
+  oled.println(title);
+  oled.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
+
+  int y = 15;
+  for (size_t i = 0; i < options.size(); ++i) {
+    oled.setCursor(10, y);
+    if (i == (size_t)selectedOption) {
+      oled.print("> ");
+    } else {
+      oled.print("  ");
+    }
+    oled.println(options[i].c_str());
+    y += 10;
+  }
+  finishScreen();
+}
+
+void displayClear() {
+  if (!oledReady) {
+    return;
+  }
+  oled.clearDisplay();
+  oled.display();
+}
+
+void displayShowMessage(const char* title, const char* message, int size) {
+  if (!oledReady) {
+    return;
+  }
+  startScreen();
+  if (title != nullptr && title[0] != '\0') {
+    // Menggunakan ukuran 2 untuk judul agar lebih terlihat
+    drawCenteredText(title, 10, 2);
+  }
+  if (message != nullptr && message[0] != '\0') {
+    // Parameter 'size' diabaikan untuk menjaga tampilan UI yang konsisten.
+    drawCenteredText(message, 35, 1);
+  }
+  finishScreen();
 }
