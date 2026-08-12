@@ -593,6 +593,11 @@ static bool isSessionActiveForLive() {
          sessionData.state == SessionState::OVERLOAD;
 }
 
+static void writeServerTimestamp(JsonObject parent, const char* field) {
+  JsonObject timestamp = parent.createNestedObject(field);
+  timestamp[".sv"] = "timestamp";
+}
+
 static void setAck(const char* id, const char* type, const char* status, const char* message, const char* reason = "") {
   strlcpy(ackId, id == nullptr ? "" : id, sizeof(ackId));
   strlcpy(ackType, type == nullptr ? "" : type, sizeof(ackType));
@@ -667,10 +672,7 @@ static bool validateFinalCommand(JsonDocument& doc, uint64_t& updatedAt) {
   return true;
 }
 
-static bool finalCommandIsStale(uint64_t updatedAt) {
-  if (updatedAt <= lastProcessedFinalCommandAt) {
-    return true;
-  }
+static bool commandTimestampExpired(uint64_t updatedAt) {
   if (timeIsSynced()) {
     const uint64_t now = getUnixMs();
     if (updatedAt < now && now - updatedAt > FINAL_COMMAND_MAX_AGE_MS) {
@@ -678,6 +680,25 @@ static bool finalCommandIsStale(uint64_t updatedAt) {
     }
   }
   return false;
+}
+
+static bool finalCommandIsStale(uint64_t updatedAt) {
+  if (updatedAt <= lastProcessedFinalCommandAt) {
+    return true;
+  }
+  return commandTimestampExpired(updatedAt);
+}
+
+static bool primaryCommandIsStale(uint64_t updatedAt) {
+  return updatedAt == 0 || commandTimestampExpired(updatedAt);
+}
+
+static bool commandTypeIsStart(const char* type) {
+  return strcmp(type, "START") == 0 || strcmp(type, "START_SESSION") == 0;
+}
+
+static bool commandTypeIsStop(const char* type) {
+  return strcmp(type, "STOP") == 0 || strcmp(type, "STOP_SESSION") == 0;
 }
 
 static unsigned long commandAgeMs(uint64_t updatedAt) {
@@ -838,7 +859,7 @@ void firebasePublishLive() {
   }
   missingLiveDeviceIdLogged = false;
 
-  StaticJsonDocument<1536> doc;
+  StaticJsonDocument<1792> doc;
   JsonObject system = doc.createNestedObject("system");
   // Compatibility fields remain until web readers migrate relay/timestamp.
   system["timestamp"] = millis();
@@ -849,6 +870,7 @@ void firebasePublishLive() {
   system["deviceId"] = Config::DEVICE_ID;
   // Final live/system fields that do not conflict with compatibility readers.
   system["timestampUnixMs"] = timeIsSynced() ? getUnixMs() : static_cast<uint64_t>(0);
+  writeServerTimestamp(system, "lastSeen");
   system["mode"] = systemModeToString(systemMode);
   system["relayState"] = relayIsOn() ? "ON" : "OFF";
   system["wifiStatus"] = networkIsPortalActive() ? "AP_MODE" : (networkIsConnected() ? "CONNECTED" : "DISCONNECTED");
@@ -860,6 +882,7 @@ void firebasePublishLive() {
     sessionData.state != SessionState::IDLE &&
     sessionData.state != SessionState::FINISHED;
   JsonObject device = doc.createNestedObject("device");
+  writeServerTimestamp(device, "timestamp");
   device["connected"] = liveElectricalActive && sensorData.valid;
   device["voltage"] = sensorData.voltage;
   device["current"] = liveElectricalActive ? sensorData.current : 0.0f;
@@ -881,6 +904,7 @@ void firebasePublishLive() {
   session["sessionId"] = sessionData.sessionId;
   session["uid"] = sessionData.uid;
   session["deviceName"] = sessionData.deviceName;
+  session["sessionState"] = sessionStateToString(sessionData.state);
   session["elapsedSec"] = sessionData.durationMs / 1000UL;
   session["energyWh"] = serialized(String(sessionData.energyWh, 6));
   session["energy"] = serialized(String(sessionData.energyKwh, 8));
@@ -1063,12 +1087,21 @@ void firebasePollCommand() {
   const char* uid = doc["uid"] | "";
   const char* commandSessionId = doc["sessionId"] | "";
   uint64_t commandUpdatedAt = 0;
-  readCommandTimestamp(doc, commandUpdatedAt);
+  const bool hasCommandTimestamp = readCommandTimestamp(doc, commandUpdatedAt);
   const unsigned long receivedAtMs = millis();
   const unsigned long ageAtReceiveMs = commandAgeMs(commandUpdatedAt);
 
   if (id[0] == '\0' || type[0] == '\0') {
     Serial.println("[firebase] Command missing id/type");
+    return;
+  }
+
+  if (!hasCommandTimestamp || primaryCommandIsStale(commandUpdatedAt)) {
+    strlcpy(lastProcessedCommandId, id, sizeof(lastProcessedCommandId));
+    Serial.println("[command] Ignored stale commands/current command");
+    setAck(id, type, "REJECTED", "Stale command ignored", "STALE");
+    firebaseAckCommand();
+    httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
     return;
   }
 
@@ -1084,7 +1117,8 @@ void firebasePollCommand() {
 
   strlcpy(lastProcessedCommandId, id, sizeof(lastProcessedCommandId));
 
-  if (strcmp(type, "START") == 0) {
+  if (commandTypeIsStart(type)) {
+    Serial.println("[COMMAND] START_SESSION received");
     Serial.print("[timing] START command received millis=");
     Serial.println(receivedAtMs);
     const char* deviceName = doc["deviceName"] | Config::DEFAULT_DEVICE_NAME;
@@ -1106,15 +1140,14 @@ void firebasePollCommand() {
     return;
   }
 
-  if (strcmp(type, "STOP") == 0) {
+  if (commandTypeIsStop(type)) {
+    Serial.println("[COMMAND] STOP_SESSION received");
     Serial.print("[timing] STOP command received millis=");
     Serial.println(receivedAtMs);
     sessionSetRemoteContext(uid, commandSessionId);
     pendingStartAck = false;
     pendingStartCommandId[0] = '\0';
-    if (sessionIsActive()) {
-      sessionStop(EndReason::USER_STOP);
-    }
+    sessionStop(EndReason::USER_STOP);
     logCommandLatency("STOP", "commands/current", ageAtReceiveMs, receivedAtMs);
     setAck(id, type, "DONE", "STOP command processed");
     transitionAckRequested = true;

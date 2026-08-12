@@ -19,6 +19,7 @@ void sessionBegin();
 bool sessionStart(const char* deviceName);
 void sessionSetRemoteContext(const char* uid, const char* sessionId);
 void sessionStop(EndReason reason);
+void sessionResetIdle(EndReason reason);
 void sessionUpdate();
 bool sessionIsActive();
 bool sessionConsumeStartValidationResult(StartValidationResult& result);

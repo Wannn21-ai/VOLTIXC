@@ -57,11 +57,7 @@ constexpr unsigned long BOOT_NEXT_ATTEMPT_MS = 1000UL;
 constexpr unsigned long BOOT_EXIT_MANUAL_MS = 3000UL;
 constexpr unsigned long BOOT_CLEAR_WIFI_MS = 5000UL;
 constexpr unsigned long BOOT_ENTER_OFFLINE_MS = 10000UL;
-constexpr unsigned long BUTTON_HOLD_DISPLAY_START_MS = 500UL;
-constexpr unsigned long BUTTON_PREVIEW_NEXT_MS = 500UL;
-constexpr unsigned long BUTTON_PREVIEW_ONLINE_MS = 2500UL;
-constexpr unsigned long BUTTON_PREVIEW_RESET_MS = 5000UL;
-constexpr unsigned long BUTTON_PREVIEW_OFFLINE_MS = 10000UL;
+constexpr unsigned long DEBOUNCE_DELAY_MS = 200UL;
 constexpr byte DNS_PORT = 53;
 
 enum class WifiSource {
@@ -70,13 +66,24 @@ enum class WifiSource {
   FALLBACK
 };
 
-enum class ButtonPreview {
+enum class MenuScreen {
   NONE,
-  NEXT_DEVICE,
-  TRY_ONLINE,
-  RESET_WIFI,
-  MANUAL_OFFLINE
+  BOOT_CHOICE,
+  OFFLINE_CHOICE
 };
+
+void updateTwoButtonMenu();
+void enterBootChoiceMenu();
+void enterOfflineChoiceMenu();
+void executeSelectedOption();
+
+static MenuScreen currentMenu = MenuScreen::NONE;
+static int selectedOption = 0;
+static int optionCount = 0;
+
+// Debouncing
+static unsigned long lastOkPressMs = 0;
+static unsigned long lastNavPressMs = 0;
 
 static unsigned long lastReconnectAttemptMs = 0;
 static unsigned long connectStartedAtMs = 0;
@@ -88,11 +95,7 @@ static bool wasConnecting = false;
 static bool wasConnected = false;
 static bool restartPending = false;
 static bool portalOfflinePending = false;
-static bool bootComplete = false;
-static bool bootButtonArmed = false;
-static bool bootButtonHoldDisplayActive = false;
 static bool initialNetworkSetup = true;
-static ButtonPreview lastBootButtonPreview = ButtonPreview::NONE;
 static String savedWifiSsid;
 static String savedWifiPassword;
 static String activeWifiSsid;
@@ -203,77 +206,6 @@ bool isSessionBusyForNetwork() {
          sessionIsActive() ||
          relayIsOn() ||
          sessionRecoveryIsActive();
-}
-
-ButtonPreview buttonPreviewForDuration(unsigned long heldMs) {
-  if (heldMs >= BUTTON_PREVIEW_OFFLINE_MS) {
-    return ButtonPreview::MANUAL_OFFLINE;
-  }
-  if (heldMs >= BUTTON_PREVIEW_RESET_MS) {
-    return ButtonPreview::RESET_WIFI;
-  }
-  if (heldMs >= BUTTON_PREVIEW_ONLINE_MS) {
-    return ButtonPreview::TRY_ONLINE;
-  }
-  if (heldMs >= BUTTON_PREVIEW_NEXT_MS) {
-    return ButtonPreview::NEXT_DEVICE;
-  }
-  return ButtonPreview::NONE;
-}
-
-const char* buttonPreviewDisplayText(ButtonPreview preview) {
-  switch (preview) {
-    case ButtonPreview::NEXT_DEVICE:
-      return "Release: Next Device";
-    case ButtonPreview::TRY_ONLINE:
-      return "Release: Try Online";
-    case ButtonPreview::RESET_WIFI:
-      return "Release: Reset WiFi";
-    case ButtonPreview::MANUAL_OFFLINE:
-      return "Release: Offline";
-    default:
-      return "Hold...";
-  }
-}
-
-const char* buttonPreviewLogText(ButtonPreview preview) {
-  switch (preview) {
-    case ButtonPreview::NEXT_DEVICE:
-      return "Next Device";
-    case ButtonPreview::TRY_ONLINE:
-      return "Try Online";
-    case ButtonPreview::RESET_WIFI:
-      return "Reset WiFi";
-    case ButtonPreview::MANUAL_OFFLINE:
-      return "Manual Offline";
-    default:
-      return "None";
-  }
-}
-
-uint8_t buttonHoldProgressPercent(unsigned long heldMs) {
-  unsigned long startMs = 0;
-  unsigned long endMs = BUTTON_PREVIEW_NEXT_MS;
-
-  if (heldMs >= BUTTON_PREVIEW_OFFLINE_MS) {
-    return 100;
-  }
-  if (heldMs >= BUTTON_PREVIEW_RESET_MS) {
-    startMs = BUTTON_PREVIEW_RESET_MS;
-    endMs = BUTTON_PREVIEW_OFFLINE_MS;
-  } else if (heldMs >= BUTTON_PREVIEW_ONLINE_MS) {
-    startMs = BUTTON_PREVIEW_ONLINE_MS;
-    endMs = BUTTON_PREVIEW_RESET_MS;
-  } else if (heldMs >= BUTTON_PREVIEW_NEXT_MS) {
-    startMs = BUTTON_PREVIEW_NEXT_MS;
-    endMs = BUTTON_PREVIEW_ONLINE_MS;
-  }
-
-  const unsigned long spanMs = endMs - startMs;
-  if (spanMs == 0 || heldMs <= startMs) {
-    return 0;
-  }
-  return static_cast<uint8_t>(min(100UL, ((heldMs - startMs) * 100UL) / spanMs));
 }
 
 bool canStartCaptivePortal(const char* reason) {
@@ -522,113 +454,122 @@ bool credentialsFallbackAvailable() {
   return WIFI_SSID != nullptr && WIFI_SSID[0] != '\0';
 }
 
-void updateBootButton() {
-  if (!bootComplete) {
-    return;
-  }
+void enterBootChoiceMenu() {
+  currentMenu = MenuScreen::BOOT_CHOICE;
+  selectedOption = 0;
+  optionCount = 2; // "Online", "Offline"
+  // NOTE: Anda perlu membuat fungsi displayShowMenu di display.cpp
+  displayShowMenu("Pilih Mode", {"Online", "Offline"}, selectedOption);
+}
 
-  const bool pressed = digitalRead(Config::BUTTON_PIN) == LOW;
-  if (!pressed) {
-    if (bootButtonPressedAtMs > 0 && bootButtonArmed) {
-      const unsigned long heldMs = millis() - bootButtonPressedAtMs;
-      bool actionHandled = false;
+void enterOfflineChoiceMenu() {
+  currentMenu = MenuScreen::OFFLINE_CHOICE;
+  selectedOption = 0;
+  optionCount = 2; // "Next Device", "Beralih ke Mode Online"
+  // NOTE: Anda perlu membuat fungsi displayShowMenu di display.cpp
+  displayShowMenu("Opsi Offline", {"Next Device", "Mode Online"}, selectedOption);
+}
 
-      if (bootButtonHoldDisplayActive) {
-        displayClearButtonHold();
-      }
-
-      if (heldMs >= BOOT_ENTER_OFFLINE_MS) {
-        offlineModeEnter(OfflineEntryReason::MANUAL_BOOT_10S);
-        displayShowButtonFeedback("Offline Mode");
-        actionHandled = true;
-        Serial.println("[button] released action=Manual Offline");
-      } else if (heldMs >= BOOT_CLEAR_WIFI_MS) {
-        Serial.println("[network] BOOT 5s release detected, clearing WiFi");
-        clearWiFiCredentials();
-        scheduleRestart();
-        displayShowButtonFeedback("Reset WiFi");
-        actionHandled = true;
-        Serial.println("[button] released action=Reset WiFi");
-      } else if (heldMs >= BOOT_EXIT_MANUAL_MS) {
-        if (offlineModeExitManualLockAndTryOnline()) {
-          displayShowButtonFeedback("Trying Online");
-          actionHandled = true;
-          Serial.println("[button] released action=Try Online");
-        }
-      } else if (heldMs >= BOOT_NEXT_ATTEMPT_MS) {
-        if (offlineModeCanStartNextAttempt()) {
-          offlineModeStartNextAttempt(false);
-          displayShowButtonFeedback("Next Device");
-          actionHandled = true;
-          Serial.println("[button] released action=Next Device");
-        }
-      }
-
-      if (!actionHandled && bootButtonHoldDisplayActive) {
-        displayShowButtonFeedback("Button ignored");
-        Serial.println("[button] released action=ignored");
-      }
+void updateTwoButtonMenu() {
+  if (currentMenu == MenuScreen::NONE) {
+    // Jika dalam mode offline manual dan tidak ada sesi aktif, tampilkan menu offline
+    if (offlineModeIsManual() && !sessionIsActive()) {
+      enterOfflineChoiceMenu();
     }
-    bootButtonPressedAtMs = 0;
-    bootButtonArmed = true;
-    bootButtonHoldDisplayActive = false;
-    lastBootButtonPreview = ButtonPreview::NONE;
     return;
   }
 
-  if (!bootButtonArmed) {
-    return;
+  const unsigned long now = millis();
+  bool navPressed = false;
+  bool okPressed = false;
+
+  // Baca tombol NAV (PBM Switch) dengan debounce
+  if (digitalRead(Config::BUTTON_NAV_PIN) == LOW) {
+    if (now - lastNavPressMs > DEBOUNCE_DELAY_MS) {
+      navPressed = true;
+      lastNavPressMs = now;
+    }
+  } else {
+    lastNavPressMs = 0;
   }
 
-  if (bootButtonPressedAtMs == 0) {
-    bootButtonPressedAtMs = millis();
-    bootButtonHoldDisplayActive = false;
-    lastBootButtonPreview = ButtonPreview::NONE;
-    return;
+  // Baca tombol OK (PBM non-latching) dengan debounce
+  if (digitalRead(Config::BUTTON_OK_PIN) == LOW) {
+    if (now - lastOkPressMs > DEBOUNCE_DELAY_MS) {
+      okPressed = true;
+      lastOkPressMs = now;
+    }
+  } else {
+    lastOkPressMs = 0;
   }
 
-  const unsigned long heldMs = millis() - bootButtonPressedAtMs;
-  if (heldMs < BUTTON_HOLD_DISPLAY_START_MS) {
-    return;
+  if (navPressed) {
+    selectedOption = (selectedOption + 1) % optionCount;
+    Serial.print("[menu] Navigasi ke opsi: ");
+    Serial.println(selectedOption);
+    if (currentMenu == MenuScreen::BOOT_CHOICE) {
+      displayShowMenu("Pilih Mode", {"Online", "Offline"}, selectedOption);
+    } else if (currentMenu == MenuScreen::OFFLINE_CHOICE) {
+      displayShowMenu("Opsi Offline", {"Next Device", "Mode Online"}, selectedOption);
+    }
   }
 
-  const ButtonPreview preview = buttonPreviewForDuration(heldMs);
-  if (!bootButtonHoldDisplayActive) {
-    Serial.print("[button] hold display active duration=");
-    Serial.println(heldMs);
-    bootButtonHoldDisplayActive = true;
+  if (okPressed) {
+    Serial.print("[menu] OK ditekan pada opsi: ");
+    Serial.println(selectedOption);
+    executeSelectedOption();
   }
-  if (preview != lastBootButtonPreview) {
-    Serial.print("[button] preview action=");
-    Serial.println(buttonPreviewLogText(preview));
-    lastBootButtonPreview = preview;
-  }
+}
 
-  displayShowButtonHold(
-    heldMs,
-    buttonPreviewDisplayText(preview),
-    buttonHoldProgressPercent(heldMs)
-  );
+void executeSelectedOption() {
+  displayClear();
+
+  switch (currentMenu) {
+    case MenuScreen::BOOT_CHOICE:
+      if (selectedOption == 0) { // Online
+        displayShowMessage("Mode Online", "Mencari WiFi...");
+        Serial.println("[menu] Aksi: Mulai Mode Online");
+        if (loadSavedWiFiCredentials(savedWifiSsid, savedWifiPassword)) {
+          startWiFiConnection(savedWifiSsid, savedWifiPassword, WifiSource::SAVED, false);
+        } else {
+          Serial.println("[network] Tidak ada WiFi tersimpan, mulai portal setup");
+          startSetupPortal("boot no WiFi credentials");
+        }
+      } else { // Offline
+        displayShowMessage("Mode Offline", "Menyiapkan...");
+        Serial.println("[menu] Aksi: Mulai Mode Offline");
+        offlineModeEnter(OfflineEntryReason::MANUAL_MENU);
+      }
+      break;
+
+    case MenuScreen::OFFLINE_CHOICE:
+      if (selectedOption == 0) { // Next Device
+        displayShowMessage("Offline", "Device Berikutnya...");
+        Serial.println("[menu] Aksi: Device Berikutnya (Offline)");
+        offlineModeStartNextAttempt(false);
+      } else { // Beralih ke Mode Online
+        displayShowMessage("Beralih...", "Mencoba Online");
+        Serial.println("[menu] Aksi: Beralih ke Online dari Offline");
+        offlineModeExitManualLockAndTryOnline();
+      }
+      break;
+
+    default:
+      break;
+  }
+  currentMenu = MenuScreen::NONE; // Keluar dari menu setelah aksi
 }
 }
 
 void networkBegin() {
-  pinMode(Config::BUTTON_PIN, INPUT_PULLUP);
-  bootButtonArmed = digitalRead(Config::BUTTON_PIN) == HIGH;
-  Serial.println("[network] Normal reset, keeping saved WiFi");
-  Serial.println("[network] Checking saved WiFi credentials...");
-
-  if (loadSavedWiFiCredentials(savedWifiSsid, savedWifiPassword)) {
-    startWiFiConnection(savedWifiSsid, savedWifiPassword, WifiSource::SAVED, isSessionBusyForNetwork());
-    return;
-  }
-
-  Serial.println("[network] No saved WiFi, starting setup portal");
-  startSetupPortal("boot no WiFi credentials");
+  pinMode(Config::BUTTON_OK_PIN, INPUT_PULLUP);
+  pinMode(Config::BUTTON_NAV_PIN, INPUT_PULLUP);
+  Serial.println("[network] Menampilkan menu pilihan mode boot...");
+  enterBootChoiceMenu();
 }
 
 void networkUpdate() {
-  updateBootButton();
+  updateTwoButtonMenu();
 
   if (restartPending && millis() >= restartAtMs) {
     ESP.restart();
@@ -793,10 +734,6 @@ bool networkReconnectSavedWiFiFromManualOffline() {
 
   startWiFiConnection(savedWifiSsid, savedWifiPassword, WifiSource::SAVED, true);
   return true;
-}
-
-void networkMarkBootComplete() {
-  bootComplete = true;
 }
 
 bool loadSavedWiFiCredentials(String& ssid, String& pass) {

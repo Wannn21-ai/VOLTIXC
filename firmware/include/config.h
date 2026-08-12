@@ -20,8 +20,10 @@ static constexpr const char* FIREBASE_COMPLETED_SESSION_PATH_FORMAT = "/devices/
 static constexpr int RELAY_PIN = 27;
 static constexpr int PZEM_RX_PIN = 16;
 static constexpr int PZEM_TX_PIN = 17;
-// External DS-134 momentary button on GPIO32 to GND, active LOW.
-static constexpr int BUTTON_PIN = 32;
+// Tombol "OK" (non-latching) di GPIO 32
+static constexpr int BUTTON_OK_PIN = 32;
+// Tombol "Navigasi/Switch" di GPIO 33
+static constexpr int BUTTON_NAV_PIN = 33;
 static constexpr int WIFI_LED_PIN = 2;
 static constexpr int GREEN_LED_PIN = 25;
 static constexpr int RED_LED_PIN = 26;
@@ -38,10 +40,11 @@ static constexpr float OVERLOAD_THRESHOLD_W = 2000.0f;
 static constexpr float LOAD_CURRENT_THRESHOLD_A = 0.02f;
 static constexpr float LOAD_POWER_THRESHOLD_W = 1.0f;
 static constexpr float AC_PRESENT_MIN_VOLTAGE = 180.0f;
-static constexpr unsigned long LOAD_SETTLE_MS = 500UL;
-static constexpr unsigned long LOAD_DETECT_TIMEOUT_MS = 2500UL;
+static constexpr unsigned long LOAD_SETTLE_MS = 1000UL;
+static constexpr unsigned long LOAD_DETECT_TIMEOUT_MS = 6000UL;
 static constexpr unsigned long OFFLINE_LOAD_DETECT_TIMEOUT_MS = 12000UL;
-static constexpr unsigned int LOAD_DETECT_STABLE_SAMPLES = 1;
+static constexpr unsigned int LOAD_DETECT_MIN_VALID_SAMPLES = 5;
+static constexpr unsigned int LOAD_DETECT_STABLE_SAMPLES = 3;
 
 static constexpr unsigned long SENSOR_INTERVAL_MS = 1000UL;
 static constexpr unsigned long SESSION_INTERVAL_MS = 1000UL;

@@ -46,6 +46,7 @@ static bool serialCommandOverflow = false;
 static bool wasWifiConnected = false;
 static bool wasOnlineServicesAllowed = false;
 static bool wasRecoveryActive = false;
+static bool orphanRelayLoadLogged = false;
 
 static const char* transitionTimingLabel(SessionTransitionRefresh type) {
   switch (type) {
@@ -130,13 +131,14 @@ static void logCommandPollSkipped(const char* reason) {
 static bool pollCommandIfDue(
   bool onlineServicesAllowed,
   bool recoveryActive,
-  bool force = false
+  bool force = false,
+  bool allowWaitingLoadPreemption = false
 ) {
   if (!onlineServicesAllowed) {
     return false;
   }
 
-  if (localRealtimeTasksDue(recoveryActive)) {
+  if (!allowWaitingLoadPreemption && localRealtimeTasksDue(recoveryActive)) {
     logCommandPollSkipped("local tasks due");
     return false;
   }
@@ -172,10 +174,13 @@ static void serviceLocalRealtimeTasks(bool recoveryActive) {
     Serial.print("[timing] sensor update millis=");
     Serial.println(millis());
 
-    if (!sessionIsActive() &&
-        relayIsOn() &&
-        sensorData.loadDetected) {
-      sessionStart(TEST_DEVICE_NAME);
+    if (!sessionIsActive() && relayIsOn() && sensorData.loadDetected) {
+      if (!orphanRelayLoadLogged) {
+        orphanRelayLoadLogged = true;
+        Serial.println("[SESSION] Ignored load detection without START command");
+      }
+    } else if (!relayIsOn() || sessionIsActive()) {
+      orphanRelayLoadLogged = false;
     }
   }
 
@@ -655,19 +660,37 @@ void loop() {
   }
 
   if (!wifiConnected &&
-      !sessionIsActive() &&
       !recoveryActive &&
       !offlineModeIsActive()) {
-    if (offlineNoNetworkSinceMs == 0) {
-      offlineNoNetworkSinceMs = now;
-    }
-    const unsigned long timeoutSec = appConfig.offlineTimeoutSec > 0 ? appConfig.offlineTimeoutSec : 300UL;
-    if (now - offlineNoNetworkSinceMs >= timeoutSec * 1000UL) {
+    if (sessionData.state == SessionState::WAITING_LOAD) {
       offlineNoNetworkSinceMs = 0;
       offlineModeEnter(OfflineEntryReason::AUTO_NO_WIFI);
+    } else if (!sessionIsActive()) {
+      if (offlineNoNetworkSinceMs == 0) {
+        offlineNoNetworkSinceMs = now;
+      }
+      const unsigned long timeoutSec = appConfig.offlineTimeoutSec > 0 ? appConfig.offlineTimeoutSec : 300UL;
+      if (now - offlineNoNetworkSinceMs >= timeoutSec * 1000UL) {
+        offlineNoNetworkSinceMs = 0;
+        offlineModeEnter(OfflineEntryReason::AUTO_NO_WIFI);
+      }
+    } else {
+      offlineNoNetworkSinceMs = 0;
     }
   } else {
     offlineNoNetworkSinceMs = 0;
+  }
+
+  bool commandPollRan = false;
+  if (onlineServicesAllowed &&
+      sessionData.state == SessionState::WAITING_LOAD &&
+      !storageFastHistoryUploadRequested()) {
+    commandPollRan = pollCommandIfDue(
+      onlineServicesAllowed,
+      recoveryActive,
+      false,
+      true
+    );
   }
 
   serviceLocalRealtimeTasks(recoveryActive);
@@ -675,7 +698,6 @@ void loop() {
   flushSessionTransitionPriority(onlineServicesAllowed);
   displayUpdate();
 
-  bool commandPollRan = false;
   if (onlineRestoredThisLoop) {
     const bool restoredFromManualOffline = offlineModeHandleOnlineRestored();
     systemMode = SystemMode::ONLINE;

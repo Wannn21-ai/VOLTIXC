@@ -5,6 +5,10 @@ import {
 } from "./auth-guard.js";
 import { auth, db, ref, set, get, update } from "./firebase-config.js";
 import { updateProfile } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { loadDeviceHistory } from "./local-history.js";
+import {
+  deleteAllPathsForSessions, cleanupRequestForAll, deleteFirebasePaths
+} from "./history-delete.js";
 import { getCurrentDevice, readableFirebaseError } from "./user-state.js";
 
 const user = await requireAuth();
@@ -155,6 +159,25 @@ async function syncSharedConfigToSettings() {
   } catch (e) {
     console.warn("[SEM] Gagal sync config global ke settings:", e);
   }
+}
+
+function cleanupStorageKey(deviceId) {
+  return `sem_pending_history_cleanup_${uid}_${deviceId || ""}`;
+}
+
+async function queueDeviceCleanup(cleanupRequest, cloudDeleted = true) {
+  if (!cleanupRequest) {
+    showToast(tr("historyCloudDeletedNoCleanup"), "error");
+    return false;
+  }
+  await set(ref(db, cleanupRequest.path), cleanupRequest.payload);
+  const cleanupDeviceId = cleanupRequest.path.split("/")[1] || currentDevice?.id;
+  const requestId = cleanupRequest.payload.requestId;
+  if (cleanupDeviceId) {
+    sessionStorage.setItem(cleanupStorageKey(cleanupDeviceId), requestId);
+  }
+  showToast(cloudDeleted ? tr("historyCloudDeletedCleanupPending") : tr("historyDeviceCleanupPending"), "");
+  return true;
 }
 
 // ================= LOAD SETTINGS =================
@@ -334,24 +357,39 @@ document.getElementById("btn-export-all").addEventListener("click", async () => 
 
 // ── Delete All History ──
 document.getElementById("btn-delete-all").addEventListener("click", async () => {
-  let snap;
-  try {
-    snap = await get(ref(db, HISTORY_PATH));
-  } catch (e) {
-    showToast(tr("settingsDeleteFailed"), "error"); return;
-  }
-  if (!snap.exists()) { showToast(tr("historyNothingDelete"), "error"); return; }
-  const count = Object.keys(snap.val()).length;
-  if (!confirm(`${tr("settingsDeleteConfirm")} (${count})`)) return;
-
   const btn = document.getElementById("btn-delete-all");
   btn.disabled = true;
+
   try {
-    await set(ref(db, HISTORY_PATH), null);
-    showToast(tr("settingsDeleteSuccess"), "success");
+    const historyData = await loadDeviceHistory(uid);
+    if (historyData.length === 0) {
+      showToast(tr("historyNothingDelete"), "error");
+      return;
+    }
+
+    const activeDeviceId = currentDevice?.id || "";
+    const deletePaths = deleteAllPathsForSessions(historyData, activeDeviceId);
+    const cleanupRequest = cleanupRequestForAll(historyData, activeDeviceId, uid);
+
+    if (deletePaths.length === 0 && !cleanupRequest) {
+      showToast(tr("historyResolveDeviceFail"), "error");
+      return;
+    }
+    if (!confirm(tr("historyDeleteAllConfirm"))) return;
+
+    const result = await deleteFirebasePaths(deletePaths, path => set(ref(db, path), null));
+
+    if (result.permissionDenied) {
+      showToast(tr("historyDeleteDenied"), "error");
+    } else if (result.successCount > 0 || deletePaths.length === 0) {
+      await queueDeviceCleanup(cleanupRequest, result.successCount > 0);
+      showToast(tr("settingsDeleteSuccess"), "success");
+    } else {
+      showToast(tr("settingsDeleteFailed"), "error");
+    }
   } catch (e) {
     console.error("[SEM] Gagal hapus semua history:", e);
-    showToast(tr("settingsDeleteFailed"), "error");
+    showToast(tr("settingsDeleteFailed"), "error"); return;
   } finally {
     btn.disabled = false;
   }
