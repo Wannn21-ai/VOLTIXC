@@ -473,7 +473,7 @@ void enterOfflineChoiceMenu() {
 void updateTwoButtonMenu() {
   if (currentMenu == MenuScreen::NONE) {
     // Jika dalam mode offline manual dan tidak ada sesi aktif, tampilkan menu offline
-    if (offlineModeIsManual() && !sessionIsActive()) {
+    if (offlineModeIsManualLocked() && !sessionIsActive()) {
       enterOfflineChoiceMenu();
     }
     return;
