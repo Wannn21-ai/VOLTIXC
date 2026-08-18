@@ -16,39 +16,62 @@ const validationEnd = sessionSource.indexOf("\nvoid sessionBegin()", validationS
 const validationSource = sessionSource.slice(validationStart, validationEnd);
 
 test("START load validation uses the fast timing window", () => {
-  assert.match(configSource, /LOAD_SETTLE_MS = 500UL/);
-  assert.match(configSource, /LOAD_DETECT_TIMEOUT_MS = 2500UL/);
-  assert.match(configSource, /LOAD_DETECT_STABLE_SAMPLES = 1/);
+  assert.match(configSource, /LOAD_SETTLE_MS = 1000UL/);
+  assert.match(configSource, /LOAD_DETECT_TIMEOUT_MS = 6000UL/);
+  assert.match(configSource, /LOAD_DETECT_MIN_VALID_SAMPLES = 5/);
+  assert.match(configSource, /LOAD_DETECT_STABLE_SAMPLES = 3/);
 });
 
-test("START load validation preserves current and power threshold checks", () => {
+test("START load validation accepts current or power above configurable thresholds", () => {
   assert.match(
     sessionSource,
-    /sensorData\.current >= appConfig\.loadCurrentThresholdA[\s\S]*sensorData\.power >= appConfig\.loadPowerThresholdW/,
+    /sensorData\.current >= currentThreshold \|\|[\s\S]*sensorData\.power >= powerThreshold/,
   );
+  assert.match(sessionSource, /positiveThresholdOrDefault\(appConfig\.loadCurrentThresholdA, Config::LOAD_CURRENT_THRESHOLD_A\)/);
+  assert.match(sessionSource, /positiveThresholdOrDefault\(appConfig\.loadPowerThresholdW, Config::LOAD_POWER_THRESHOLD_W\)/);
 });
 
-test("START load validation accepts detected load before timeout rejection", () => {
+test("START load validation requires multiple fresh valid samples before monitoring", () => {
   const detectIndex = validationSource.indexOf("isLoadAboveStartThreshold()");
+  const duplicateGuardIndex = validationSource.indexOf("sensorData.lastReadMs == loadValidationLastSampleReadMs");
+  const validSamplesIndex = validationSource.indexOf("loadValidationValidSamples >= Config::LOAD_DETECT_MIN_VALID_SAMPLES");
+  const stableSamplesIndex = validationSource.indexOf("loadValidationStableSamples >= Config::LOAD_DETECT_STABLE_SAMPLES");
   const verifyIndex = validationSource.indexOf("verifyLoadAndStartMonitoring()");
   const timeoutIndex = validationSource.indexOf("elapsedMs >= timeoutMs");
   const rejectIndex = validationSource.indexOf("cancelLoadValidationNoHistory()");
 
   assert.equal(detectIndex >= 0, true);
-  assert.equal(detectIndex < verifyIndex, true);
+  assert.equal(duplicateGuardIndex >= 0, true);
+  assert.equal(detectIndex < validSamplesIndex, true);
+  assert.equal(validSamplesIndex < stableSamplesIndex, true);
+  assert.equal(stableSamplesIndex < verifyIndex, true);
   assert.equal(verifyIndex < timeoutIndex, true);
   assert.equal(timeoutIndex < rejectIndex, true);
 });
 
+test("START load validation uses no-load hysteresis before resetting stable samples", () => {
+  assert.match(sessionSource, /isLoadBelowNoLoadThreshold/);
+  assert.match(sessionSource, /\* 0\.5f/);
+  assert.match(validationSource, /else if \(noLoadSample\) \{\s+loadValidationStableSamples = 0;/);
+});
+
 test("START load validation logs actionable sensor diagnostics", () => {
   for (const field of [
+    "[LOAD DETECT] Relay ON",
+    "[LOAD DETECT] Settling...",
+    "[LOAD DETECT] Sample ",
+    "V=",
+    "I=",
+    "P=",
     "elapsedMs=",
-    "current=",
-    "power=",
     "loadDetected=",
     "stableSamples=",
+    "validSamples=",
     "timeoutMs=",
+    "[LOAD DETECT] Load detected",
+    "[LOAD DETECT] No load detected",
+    "[LOAD DETECT] Timeout -> Relay OFF",
   ]) {
-    assert.match(validationSource, new RegExp(field));
+    assert.match(sessionSource, new RegExp(field.replaceAll("[", "\\[").replaceAll("]", "\\]")));
   }
 });

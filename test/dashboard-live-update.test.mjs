@@ -112,12 +112,26 @@ test("idle display keeps voltage live and zeros session measurements", () => {
   const displayEnd = dashboardSource.indexOf("\nfunction formatDurationSeconds", displayStart);
   const displaySource = dashboardSource.slice(displayStart, displayEnd);
 
-  assert.match(displaySource, /sessionInactive = !firebaseRelay && !firebaseSessionActive/);
+  assert.match(dashboardSource, /function sessionHasLiveMeasurements\(\)/);
+  assert.match(displaySource, /sessionInactive = !sessionHasLiveMeasurements\(\)/);
   assert.match(displaySource, /valVoltage\.textContent = voltage\.toFixed\(1\)/);
   assert.match(displaySource, /shownCurrent = sessionInactive \? 0 : current/);
   assert.match(displaySource, /shownPower = sessionInactive \? 0 : firebasePower/);
   assert.match(displaySource, /shownEnergy = sessionInactive[\s\S]*\? 0/);
   assert.match(displaySource, /shownCost = sessionInactive[\s\S]*\? 0/);
+});
+
+test("dashboard session state does not infer active monitoring from relay alone", () => {
+  const deriveStart = dashboardSource.indexOf("function deriveSessionState");
+  const deriveEnd = dashboardSource.indexOf("\nfunction generateUniqueName", deriveStart);
+  const deriveSource = dashboardSource.slice(deriveStart, deriveEnd);
+  const displayStart = dashboardSource.indexOf("function updateDisplay()");
+  const displayEnd = dashboardSource.indexOf("\nfunction formatDurationSeconds", displayStart);
+  const displaySource = dashboardSource.slice(displayStart, displayEnd);
+
+  assert.doesNotMatch(deriveSource, /firebaseRelay && !loadDetected && !firebaseSessionActive/);
+  assert.doesNotMatch(displaySource, /!firebaseRelay && !firebaseSessionActive/);
+  assert.match(deriveSource, /SessionState\.WAITING_LOAD, SessionState\.MONITORING, SessionState\.OVERLOAD/);
 });
 
 test("STOP handling resets the display in the same meter update", () => {

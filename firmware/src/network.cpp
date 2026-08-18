@@ -12,7 +12,27 @@
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <vector>
+#include <string>
 
+enum class WifiSource {
+  NONE,
+  SAVED,
+  FALLBACK
+};
+
+// Forward declaration for function defined later in this file
+void startWiFiConnection(const String& ssid, const String& password, WifiSource source, bool background);
+
+enum class MenuScreen {
+  NONE,
+  BOOT_CHOICE,
+  OFFLINE_CHOICE
+};
+static MenuScreen currentMenu = MenuScreen::NONE;
+static int selectedOption = 0;
+static std::vector<std::string> menuOptions;
+static String menuTitle;
 namespace {
 constexpr size_t NVS_KEY_MAX_LENGTH = 15;
 constexpr char PREF_NAMESPACE[] = "voltix";
@@ -57,26 +77,17 @@ constexpr unsigned long BOOT_NEXT_ATTEMPT_MS = 1000UL;
 constexpr unsigned long BOOT_EXIT_MANUAL_MS = 3000UL;
 constexpr unsigned long BOOT_CLEAR_WIFI_MS = 5000UL;
 constexpr unsigned long BOOT_ENTER_OFFLINE_MS = 10000UL;
-constexpr unsigned long BUTTON_HOLD_DISPLAY_START_MS = 500UL;
-constexpr unsigned long BUTTON_PREVIEW_NEXT_MS = 500UL;
-constexpr unsigned long BUTTON_PREVIEW_ONLINE_MS = 2500UL;
-constexpr unsigned long BUTTON_PREVIEW_RESET_MS = 5000UL;
-constexpr unsigned long BUTTON_PREVIEW_OFFLINE_MS = 10000UL;
+constexpr unsigned long DEBOUNCE_DELAY_MS = 200UL;
 constexpr byte DNS_PORT = 53;
 
-enum class WifiSource {
-  NONE,
-  SAVED,
-  FALLBACK
-};
+void updateTwoButtonMenu();
+void enterBootChoiceMenu();
+void enterOfflineChoiceMenu();
+void executeSelectedOption();
 
-enum class ButtonPreview {
-  NONE,
-  NEXT_DEVICE,
-  TRY_ONLINE,
-  RESET_WIFI,
-  MANUAL_OFFLINE
-};
+// Debouncing
+static unsigned long lastOkPressMs = 0;
+static unsigned long lastNavPressMs = 0;
 
 static unsigned long lastReconnectAttemptMs = 0;
 static unsigned long connectStartedAtMs = 0;
@@ -88,11 +99,7 @@ static bool wasConnecting = false;
 static bool wasConnected = false;
 static bool restartPending = false;
 static bool portalOfflinePending = false;
-static bool bootComplete = false;
-static bool bootButtonArmed = false;
-static bool bootButtonHoldDisplayActive = false;
 static bool initialNetworkSetup = true;
-static ButtonPreview lastBootButtonPreview = ButtonPreview::NONE;
 static String savedWifiSsid;
 static String savedWifiPassword;
 static String activeWifiSsid;
@@ -103,8 +110,6 @@ static DNSServer dnsServer;
 static const IPAddress setupIp(192, 168, 4, 1);
 static const IPAddress setupGateway(192, 168, 4, 1);
 static const IPAddress setupSubnet(255, 255, 255, 0);
-
-void startWiFiConnection(const String& ssid, const String& password, WifiSource source, bool background);
 
 String htmlEscape(const String& value) {
   String escaped = value;
@@ -205,77 +210,6 @@ bool isSessionBusyForNetwork() {
          sessionRecoveryIsActive();
 }
 
-ButtonPreview buttonPreviewForDuration(unsigned long heldMs) {
-  if (heldMs >= BUTTON_PREVIEW_OFFLINE_MS) {
-    return ButtonPreview::MANUAL_OFFLINE;
-  }
-  if (heldMs >= BUTTON_PREVIEW_RESET_MS) {
-    return ButtonPreview::RESET_WIFI;
-  }
-  if (heldMs >= BUTTON_PREVIEW_ONLINE_MS) {
-    return ButtonPreview::TRY_ONLINE;
-  }
-  if (heldMs >= BUTTON_PREVIEW_NEXT_MS) {
-    return ButtonPreview::NEXT_DEVICE;
-  }
-  return ButtonPreview::NONE;
-}
-
-const char* buttonPreviewDisplayText(ButtonPreview preview) {
-  switch (preview) {
-    case ButtonPreview::NEXT_DEVICE:
-      return "Release: Next Device";
-    case ButtonPreview::TRY_ONLINE:
-      return "Release: Try Online";
-    case ButtonPreview::RESET_WIFI:
-      return "Release: Reset WiFi";
-    case ButtonPreview::MANUAL_OFFLINE:
-      return "Release: Offline";
-    default:
-      return "Hold...";
-  }
-}
-
-const char* buttonPreviewLogText(ButtonPreview preview) {
-  switch (preview) {
-    case ButtonPreview::NEXT_DEVICE:
-      return "Next Device";
-    case ButtonPreview::TRY_ONLINE:
-      return "Try Online";
-    case ButtonPreview::RESET_WIFI:
-      return "Reset WiFi";
-    case ButtonPreview::MANUAL_OFFLINE:
-      return "Manual Offline";
-    default:
-      return "None";
-  }
-}
-
-uint8_t buttonHoldProgressPercent(unsigned long heldMs) {
-  unsigned long startMs = 0;
-  unsigned long endMs = BUTTON_PREVIEW_NEXT_MS;
-
-  if (heldMs >= BUTTON_PREVIEW_OFFLINE_MS) {
-    return 100;
-  }
-  if (heldMs >= BUTTON_PREVIEW_RESET_MS) {
-    startMs = BUTTON_PREVIEW_RESET_MS;
-    endMs = BUTTON_PREVIEW_OFFLINE_MS;
-  } else if (heldMs >= BUTTON_PREVIEW_ONLINE_MS) {
-    startMs = BUTTON_PREVIEW_ONLINE_MS;
-    endMs = BUTTON_PREVIEW_RESET_MS;
-  } else if (heldMs >= BUTTON_PREVIEW_NEXT_MS) {
-    startMs = BUTTON_PREVIEW_NEXT_MS;
-    endMs = BUTTON_PREVIEW_ONLINE_MS;
-  }
-
-  const unsigned long spanMs = endMs - startMs;
-  if (spanMs == 0 || heldMs <= startMs) {
-    return 0;
-  }
-  return static_cast<uint8_t>(min(100UL, ((heldMs - startMs) * 100UL) / spanMs));
-}
-
 bool canStartCaptivePortal(const char* reason) {
   Serial.print("[portal] Request start captive portal: reason=");
   Serial.print(reason == nullptr ? "unknown" : reason);
@@ -297,45 +231,36 @@ bool canStartCaptivePortal(const char* reason) {
 
 void sendSetupForm() {
   String page;
-  page.reserve(3600);
-  page += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
-  page += F("<title>Voltix Setup</title><style>");
-  page += F("body{font-family:Arial,sans-serif;margin:0;background:#f6f7f9;color:#111}");
-  page += F("main{max-width:420px;margin:32px auto;padding:20px;background:#fff;border:1px solid #ddd;border-radius:8px}");
-  page += F("label{display:block;margin-top:14px;font-weight:600}input{box-sizing:border-box;width:100%;padding:10px;margin-top:6px;border:1px solid #bbb;border-radius:6px;font-size:16px}");
-  page += F("button{width:100%;margin-top:14px;padding:12px;border:0;border-radius:6px;background:#111;color:#fff;font-size:16px}");
-  page += F(".secondary{background:#444}.ghost{background:#0b6}small{display:block;margin-top:10px;color:#555}a{display:block;margin-top:16px;color:#333;text-align:center}</style></head><body><main>");
-  page += F("<h1>Voltix Setup</h1><form id='setupForm' method='post' action='/save'>");
-  page += F("<label>WiFi SSID<input name='ssid' value='");
+  page.reserve(2048);
+  page += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Voltix Setup</title><style>"
+            "*,:after,:before{box-sizing:border-box}"
+            "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:#0a0a0a;color:#f0f0f0;font-size:16px;line-height:1.5}"
+            "main{max-width:420px;margin:40px auto;padding:24px;background:#1a1a1a;border:1px solid rgba(255,255,255,.07);border-radius:12px}"
+            "h1{margin:0 0 8px;font-size:24px;font-weight:600}"
+            "p{margin:0 0 24px;color:#888}"
+            "label{display:block;margin-top:16px;font-weight:500;font-size:14px;color:#aaa}"
+            "input{display:block;box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid rgba(255,255,255,.15);border-radius:8px;font-size:16px;background:#111;color:#f0f0f0}"
+            "input:focus{outline:0;border-color:#0095ff}"
+            "button{width:100%;margin-top:24px;padding:14px;border:0;border-radius:8px;background:#007aff;color:#fff;font-size:16px;font-weight:600;cursor:pointer}"
+            "button:hover{background:#0056b3}"
+            "a{display:block;margin-top:20px;color:#888;text-align:center;font-size:14px;text-decoration:none}"
+            "</style></head><body><main>"
+            "<h1>Voltix WiFi Setup</h1>"
+            "<p>Connect your device to the internet.</p>"
+            "<form method='post' action='/save'>"
+            "<label for='ssid'>WiFi Network (SSID)</label>"
+            "<input id='ssid' name='ssid' value='");
   page += htmlEscape(savedWifiSsid);
-  page += F("'></label><label>WiFi Password<input name='password' type='password' value='");
+  page += F("' placeholder='Your WiFi Name' required>"
+            "<label for='password'>Password</label>"
+            "<input id='password' name='password' type='password' value='");
   page += htmlEscape(savedWifiPassword);
-  page += F("'></label><label>Tariff<input name='tariff' type='number' step='0.01' value='");
-  page += String(appConfig.tariffPerKwh, 2);
-  page += F("'></label><label>Currency<input name='currency' maxlength='7' value='");
-  page += htmlEscape(String(appConfig.currency));
-  page += F("'></label><label>Overload Threshold (W)<input name='overloadThreshold' type='number' step='0.1' value='");
-  page += String(appConfig.overloadThresholdW > 0.0f ? appConfig.overloadThresholdW : Config::OVERLOAD_THRESHOLD_W, 1);
-  page += F("'></label><label>Overload Warning (%)<input name='overloadWarningPercent' type='number' step='0.1' value='");
-  page += String(appConfig.overloadWarningPercent > 0.0f ? appConfig.overloadWarningPercent : 90.0f, 1);
-  page += F("'></label><label>Load Power Threshold (W)<input name='loadPowerThreshold' type='number' step='0.1' value='");
-  page += String(appConfig.loadPowerThresholdW, 1);
-  page += F("'></label><label>Load Current Threshold (A)<input name='loadCurrentThreshold' type='number' step='0.01' value='");
-  page += String(appConfig.loadCurrentThresholdA, 2);
-  page += F("'></label><label>Load Removed Delay (sec)<input name='loadRemovedDelaySec' type='number' step='1' value='");
-  page += String(appConfig.loadRemovedDelaySec);
-  page += F("'></label><label>Offline Timeout (sec)<input name='offlineTimeoutSec' type='number' step='1' value='");
-  page += String(appConfig.offlineTimeoutSec);
-  page += F("'></label><label>Checkpoint Interval (sec)<input name='checkpointIntervalSec' type='number' step='1' value='");
-  page += String(appConfig.checkpointIntervalSec > 0 ? appConfig.checkpointIntervalSec : 30UL);
-  page += F("'></label><small>Revision ");
-  page += configRevisionText();
-  page += F(" source ");
-  page += htmlEscape(String(appConfig.configSource));
-  page += F("</small><button class='ghost' type='submit' formaction='/save-config'>Save Config</button>");
-  page += F("<button type='submit'>Save WiFi + Config</button>");
-  page += F("<button class='secondary' type='submit' formaction='/offline'>Lanjutkan Mode Offline</button></form>");
-  page += F("<a href='/status'>Status</a><a href='/reset-wifi'>Reset WiFi</a></main></body></html>");
+  page += F("' placeholder='Your WiFi Password'>"
+            "<button type='submit'>Save & Connect</button>"
+            "</form>"
+            "<a href='/offline'>Or, enter Offline Mode</a>"
+            "</main></body></html>");
   portalServer.send(200, "text/html", page);
 }
 
@@ -498,6 +423,113 @@ void stopSetupPortalForActiveSession() {
   }
 }
 
+bool credentialsFallbackAvailable() {
+  return WIFI_SSID != nullptr && WIFI_SSID[0] != '\0';
+}
+
+void enterBootChoiceMenu() {
+  currentMenu = MenuScreen::BOOT_CHOICE;
+  selectedOption = 0;
+  menuTitle = "Pilih Mode";
+  menuOptions = {"Online", "Offline"};
+}
+
+void enterOfflineChoiceMenu() {
+  currentMenu = MenuScreen::OFFLINE_CHOICE;
+  selectedOption = 0;
+  menuTitle = "Opsi Offline";
+  menuOptions = {"Next Device", "Mode Online"};
+}
+
+void updateTwoButtonMenu() {
+  if (currentMenu == MenuScreen::NONE) {
+    // Jika dalam mode offline dan siap untuk aksi berikutnya (mis. setelah sesi selesai
+    // atau gagal deteksi beban), tampilkan menu pilihan.
+    if (offlineModeCanStartNextAttempt()) {
+      enterOfflineChoiceMenu();
+    }
+    return;
+  }
+
+  const unsigned long now = millis();
+  bool navPressed = false;
+  bool okPressed = false;
+
+  // Baca tombol NAV (PBM Switch) dengan debounce
+  if (digitalRead(Config::BUTTON_NAV_PIN) == LOW) {
+    if (now - lastNavPressMs > DEBOUNCE_DELAY_MS) {
+      navPressed = true;
+      lastNavPressMs = now;
+    }
+  } else {
+    lastNavPressMs = 0;
+  }
+
+  // Baca tombol OK (PBM non-latching) dengan debounce
+  if (digitalRead(Config::BUTTON_OK_PIN) == LOW) {
+    if (now - lastOkPressMs > DEBOUNCE_DELAY_MS) {
+      okPressed = true;
+      lastOkPressMs = now;
+    }
+  } else {
+    lastOkPressMs = 0;
+  }
+
+  if (navPressed) {
+    selectedOption = (selectedOption + 1) % menuOptions.size();
+    Serial.print("[menu] Navigasi ke opsi: ");
+    Serial.println(selectedOption);
+  }
+
+  if (okPressed) {
+    Serial.print("[menu] OK ditekan pada opsi: ");
+    Serial.println(selectedOption);
+    executeSelectedOption();
+  }
+}
+
+void executeSelectedOption() {
+  displayClear();
+
+  switch (currentMenu) {
+    case MenuScreen::BOOT_CHOICE:
+      if (selectedOption == 0) { // Online
+        displayShowButtonFeedback("Mencari WiFi...");
+        Serial.println("[menu] Aksi: Mulai Mode Online");
+        if (loadSavedWiFiCredentials(savedWifiSsid, savedWifiPassword)) {
+          startWiFiConnection(savedWifiSsid, savedWifiPassword, WifiSource::SAVED, false);
+        } else {
+          Serial.println("[network] Tidak ada WiFi tersimpan, mulai portal setup");
+          startSetupPortal("boot no WiFi credentials");
+        }
+      } else { // Offline
+        displayShowButtonFeedback("Mode Offline...");
+        Serial.println("[menu] Aksi: Mulai Mode Offline");
+        offlineModeEnter(OfflineEntryReason::MANUAL_MENU);
+      }
+      break;
+
+    case MenuScreen::OFFLINE_CHOICE:
+      if (selectedOption == 0) { // Next Device
+        displayShowButtonFeedback("Device Berikutnya...");
+        Serial.println("[menu] Aksi: Device Berikutnya (Offline)");
+        offlineModeStartNextAttempt(false);
+      } else { // Beralih ke Mode Online
+        displayShowButtonFeedback("Mencoba Online...");
+        Serial.println("[menu] Aksi: Beralih ke Online dari Offline");
+        offlineModeExitManualLockAndTryOnline(); // Ini akan mencoba menyambungkan WiFi
+      }
+      break;
+
+    default:
+      break;
+  }
+  currentMenu = MenuScreen::NONE;
+  menuOptions.clear();
+  menuTitle = "";
+}
+}
+
 void startWiFiConnection(const String& ssid, const String& password, WifiSource source, bool background) {
   activeWifiSsid = ssid;
   activeWifiPassword = password;
@@ -518,117 +550,30 @@ void startWiFiConnection(const String& ssid, const String& password, WifiSource 
   }
 }
 
-bool credentialsFallbackAvailable() {
-  return WIFI_SSID != nullptr && WIFI_SSID[0] != '\0';
+bool networkIsMenuActive() {
+  return currentMenu != MenuScreen::NONE;
 }
 
-void updateBootButton() {
-  if (!bootComplete) {
+void networkGetMenuDetails(String& title, std::vector<std::string>& options, int& selected) {
+  if (currentMenu == MenuScreen::NONE) {
     return;
   }
-
-  const bool pressed = digitalRead(Config::BUTTON_PIN) == LOW;
-  if (!pressed) {
-    if (bootButtonPressedAtMs > 0 && bootButtonArmed) {
-      const unsigned long heldMs = millis() - bootButtonPressedAtMs;
-      bool actionHandled = false;
-
-      if (bootButtonHoldDisplayActive) {
-        displayClearButtonHold();
-      }
-
-      if (heldMs >= BOOT_ENTER_OFFLINE_MS) {
-        offlineModeEnter(OfflineEntryReason::MANUAL_BOOT_10S);
-        displayShowButtonFeedback("Offline Mode");
-        actionHandled = true;
-        Serial.println("[button] released action=Manual Offline");
-      } else if (heldMs >= BOOT_CLEAR_WIFI_MS) {
-        Serial.println("[network] BOOT 5s release detected, clearing WiFi");
-        clearWiFiCredentials();
-        scheduleRestart();
-        displayShowButtonFeedback("Reset WiFi");
-        actionHandled = true;
-        Serial.println("[button] released action=Reset WiFi");
-      } else if (heldMs >= BOOT_EXIT_MANUAL_MS) {
-        if (offlineModeExitManualLockAndTryOnline()) {
-          displayShowButtonFeedback("Trying Online");
-          actionHandled = true;
-          Serial.println("[button] released action=Try Online");
-        }
-      } else if (heldMs >= BOOT_NEXT_ATTEMPT_MS) {
-        if (offlineModeCanStartNextAttempt()) {
-          offlineModeStartNextAttempt(false);
-          displayShowButtonFeedback("Next Device");
-          actionHandled = true;
-          Serial.println("[button] released action=Next Device");
-        }
-      }
-
-      if (!actionHandled && bootButtonHoldDisplayActive) {
-        displayShowButtonFeedback("Button ignored");
-        Serial.println("[button] released action=ignored");
-      }
-    }
-    bootButtonPressedAtMs = 0;
-    bootButtonArmed = true;
-    bootButtonHoldDisplayActive = false;
-    lastBootButtonPreview = ButtonPreview::NONE;
-    return;
-  }
-
-  if (!bootButtonArmed) {
-    return;
-  }
-
-  if (bootButtonPressedAtMs == 0) {
-    bootButtonPressedAtMs = millis();
-    bootButtonHoldDisplayActive = false;
-    lastBootButtonPreview = ButtonPreview::NONE;
-    return;
-  }
-
-  const unsigned long heldMs = millis() - bootButtonPressedAtMs;
-  if (heldMs < BUTTON_HOLD_DISPLAY_START_MS) {
-    return;
-  }
-
-  const ButtonPreview preview = buttonPreviewForDuration(heldMs);
-  if (!bootButtonHoldDisplayActive) {
-    Serial.print("[button] hold display active duration=");
-    Serial.println(heldMs);
-    bootButtonHoldDisplayActive = true;
-  }
-  if (preview != lastBootButtonPreview) {
-    Serial.print("[button] preview action=");
-    Serial.println(buttonPreviewLogText(preview));
-    lastBootButtonPreview = preview;
-  }
-
-  displayShowButtonHold(
-    heldMs,
-    buttonPreviewDisplayText(preview),
-    buttonHoldProgressPercent(heldMs)
-  );
-}
+  title = menuTitle;
+  options = menuOptions;
+  selected = selectedOption;
 }
 
 void networkBegin() {
-  pinMode(Config::BUTTON_PIN, INPUT_PULLUP);
-  bootButtonArmed = digitalRead(Config::BUTTON_PIN) == HIGH;
-  Serial.println("[network] Normal reset, keeping saved WiFi");
-  Serial.println("[network] Checking saved WiFi credentials...");
-
-  if (loadSavedWiFiCredentials(savedWifiSsid, savedWifiPassword)) {
-    startWiFiConnection(savedWifiSsid, savedWifiPassword, WifiSource::SAVED, isSessionBusyForNetwork());
-    return;
-  }
-
-  Serial.println("[network] No saved WiFi, starting setup portal");
-  startSetupPortal("boot no WiFi credentials");
+  pinMode(Config::BUTTON_OK_PIN, INPUT_PULLUP);
+  pinMode(Config::BUTTON_NAV_PIN, INPUT_PULLUP);
+  
+  // Tampilkan menu pilihan mode saat boot
+  Serial.println("[network] Menampilkan menu pilihan mode boot...");
+  enterBootChoiceMenu();
 }
 
 void networkUpdate() {
-  updateBootButton();
+  updateTwoButtonMenu();
 
   if (restartPending && millis() >= restartAtMs) {
     ESP.restart();
@@ -793,10 +738,6 @@ bool networkReconnectSavedWiFiFromManualOffline() {
 
   startWiFiConnection(savedWifiSsid, savedWifiPassword, WifiSource::SAVED, true);
   return true;
-}
-
-void networkMarkBootComplete() {
-  bootComplete = true;
 }
 
 bool loadSavedWiFiCredentials(String& ssid, String& pass) {

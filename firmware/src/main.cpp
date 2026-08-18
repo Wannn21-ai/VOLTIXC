@@ -46,6 +46,7 @@ static bool serialCommandOverflow = false;
 static bool wasWifiConnected = false;
 static bool wasOnlineServicesAllowed = false;
 static bool wasRecoveryActive = false;
+static bool orphanRelayLoadLogged = false;
 
 static const char* transitionTimingLabel(SessionTransitionRefresh type) {
   switch (type) {
@@ -130,13 +131,14 @@ static void logCommandPollSkipped(const char* reason) {
 static bool pollCommandIfDue(
   bool onlineServicesAllowed,
   bool recoveryActive,
-  bool force = false
+  bool force = false,
+  bool allowWaitingLoadPreemption = false
 ) {
   if (!onlineServicesAllowed) {
     return false;
   }
 
-  if (localRealtimeTasksDue(recoveryActive)) {
+  if (!allowWaitingLoadPreemption && localRealtimeTasksDue(recoveryActive)) {
     logCommandPollSkipped("local tasks due");
     return false;
   }
@@ -172,10 +174,13 @@ static void serviceLocalRealtimeTasks(bool recoveryActive) {
     Serial.print("[timing] sensor update millis=");
     Serial.println(millis());
 
-    if (!sessionIsActive() &&
-        relayIsOn() &&
-        sensorData.loadDetected) {
-      sessionStart(TEST_DEVICE_NAME);
+    if (!sessionIsActive() && relayIsOn() && sensorData.loadDetected) {
+      if (!orphanRelayLoadLogged) {
+        orphanRelayLoadLogged = true;
+        Serial.println("[SESSION] Ignored load detection without START command");
+      }
+    } else if (!relayIsOn() || sessionIsActive()) {
+      orphanRelayLoadLogged = false;
     }
   }
 
@@ -407,7 +412,7 @@ static void processSerialCommand(char* rawCommand) {
   Serial.println(command);
 
   if (strcmp(command, "on") == 0) {
-    if (sessionIsActive()) {
+    if (sessionIsActive()) { // Jika sesi sudah aktif, cukup pastikan relay ON
       relaySet(true);
       Serial.println("[serial] OK: relay ON, existing session kept active");
     } else {
@@ -419,7 +424,7 @@ static void processSerialCommand(char* rawCommand) {
 
   if (strcmp(command, "off") == 0) {
     if (sessionIsActive()) {
-      sessionStop(EndReason::USER_STOP);
+      sessionStop(EndReason::USER_STOP); // Hentikan sesi jika aktif
     } else {
       relaySet(false);
     }
@@ -429,7 +434,7 @@ static void processSerialCommand(char* rawCommand) {
 
   if (strcmp(command, "toggle") == 0) {
     const bool turnOn = !relayIsOn();
-    if (!turnOn && sessionIsActive()) {
+    if (!turnOn && sessionIsActive()) { // Jika ingin mematikan relay dan ada sesi aktif, hentikan sesi
       sessionStop(EndReason::USER_STOP);
       Serial.println("[serial] OK: relay toggled OFF, session stopped");
     } else {
@@ -620,7 +625,7 @@ void setup() {
   sessionRecoveryBegin();
   networkBegin();
   firebaseBegin();
-
+  // Tentukan systemMode awal berdasarkan status jaringan
   systemMode = networkIsPortalActive() ? SystemMode::SETUP : (networkIsConnected() ? SystemMode::ONLINE : SystemMode::OFFLINE);
   displayShowStatus();
   Serial.println("[display] Startup status rendered");
@@ -628,7 +633,6 @@ void setup() {
 
   Serial.println("[boot] Complete");
   printHelp();
-  networkMarkBootComplete();
 }
 
 void loop() {
@@ -650,24 +654,42 @@ void loop() {
   const bool onlineServicesAllowed = wifiConnected && !offlineModeBlocksAutoOnline();
   const bool onlineRestoredThisLoop = onlineServicesAllowed && !wasOnlineServicesAllowed;
   if (!wifiConnected && wasWifiConnected) {
-    sessionWriteCheckpoint();
+    sessionWriteCheckpoint(); // Simpan checkpoint jika WiFi terputus saat sesi aktif
     systemMode = SystemMode::OFFLINE;
   }
 
   if (!wifiConnected &&
-      !sessionIsActive() &&
       !recoveryActive &&
       !offlineModeIsActive()) {
-    if (offlineNoNetworkSinceMs == 0) {
-      offlineNoNetworkSinceMs = now;
-    }
-    const unsigned long timeoutSec = appConfig.offlineTimeoutSec > 0 ? appConfig.offlineTimeoutSec : 300UL;
-    if (now - offlineNoNetworkSinceMs >= timeoutSec * 1000UL) {
-      offlineNoNetworkSinceMs = 0;
+    if (sessionData.state == SessionState::WAITING_LOAD) {
+      offlineNoNetworkSinceMs = 0; // Reset timer jika sedang WAITING_LOAD
       offlineModeEnter(OfflineEntryReason::AUTO_NO_WIFI);
+    } else if (!sessionIsActive()) {
+      if (offlineNoNetworkSinceMs == 0) {
+        offlineNoNetworkSinceMs = now;
+      }
+      const unsigned long timeoutSec = appConfig.offlineTimeoutSec > 0 ? appConfig.offlineTimeoutSec : 300UL;
+      if (now - offlineNoNetworkSinceMs >= timeoutSec * 1000UL) {
+        offlineNoNetworkSinceMs = 0; // Reset timer setelah masuk offline mode
+        offlineModeEnter(OfflineEntryReason::AUTO_NO_WIFI);
+      }
+    } else {
+      offlineNoNetworkSinceMs = 0;
     }
   } else {
     offlineNoNetworkSinceMs = 0;
+  }
+
+  bool commandPollRan = false;
+  if (onlineServicesAllowed &&
+      sessionData.state == SessionState::WAITING_LOAD &&
+      !storageFastHistoryUploadRequested()) {
+    commandPollRan = pollCommandIfDue(
+      onlineServicesAllowed,
+      recoveryActive,
+      false,
+      true
+    );
   }
 
   serviceLocalRealtimeTasks(recoveryActive);
@@ -675,7 +697,6 @@ void loop() {
   flushSessionTransitionPriority(onlineServicesAllowed);
   displayUpdate();
 
-  bool commandPollRan = false;
   if (onlineRestoredThisLoop) {
     const bool restoredFromManualOffline = offlineModeHandleOnlineRestored();
     systemMode = SystemMode::ONLINE;
@@ -862,6 +883,11 @@ void loop() {
       lastFirebaseConfigMs = firebaseNow;
       firebaseReadConfig();
     }
+  }
+  
+  if (onlineServicesAllowed && appConfig.pairingCode[0] == '\0' && !sessionIsActive() && !wasRecoveryActive) {
+    // Coba ambil kode pairing jika belum ada
+    firebaseFetchPairingCode();
   }
 
   storageUpdate();

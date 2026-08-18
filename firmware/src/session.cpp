@@ -36,7 +36,10 @@ unsigned long lastCheckpointWriteMs = 0;
 unsigned long elapsedBeforeRecoveryMs = 0;
 unsigned long resumeMillis = 0;
 unsigned long loadValidationStartedAtMs = 0;
+unsigned long loadValidationLastSampleReadMs = 0;
 unsigned int loadValidationStableSamples = 0;
+unsigned int loadValidationValidSamples = 0;
+unsigned int loadValidationSampleIndex = 0;
 bool loadValidationWaitingLogged = false;
 StartValidationResult startValidationResult = StartValidationResult::NONE;
 SessionTransitionRefresh transitionRefreshType = SessionTransitionRefresh::NONE;
@@ -56,6 +59,39 @@ unsigned long offlineFinishedAtMs = 0;
 unsigned long manualOfflineIdleStartedAtMs = 0;
 unsigned long manualOfflineTryingOnlineAtMs = 0;
 unsigned long offlineDeviceCounter = 1UL;
+}
+
+static void logSessionStateTransition(SessionState from, SessionState to, const char* reason) {
+  Serial.print("[STATE] ");
+  Serial.print(sessionStateToString(from));
+  Serial.print(" -> ");
+  Serial.print(sessionStateToString(to));
+  if (reason != nullptr && reason[0] != '\0') {
+    Serial.print(" reason=");
+    Serial.print(reason);
+  }
+  Serial.print(" mode=");
+  Serial.println(systemModeToString(systemMode));
+}
+
+static void logModeStateTransition(const char* from, const char* to, const char* reason) {
+  Serial.print("[STATE] ");
+  Serial.print(from);
+  Serial.print(" -> ");
+  Serial.print(to);
+  if (reason != nullptr && reason[0] != '\0') {
+    Serial.print(" reason=");
+    Serial.print(reason);
+  }
+  Serial.print(" session=");
+  Serial.println(sessionStateToString(sessionData.state));
+}
+
+static void logOfflineModeState(const char* action, const char* reason) {
+  Serial.print("[offline] ");
+  Serial.print(action);
+  Serial.print(" reason=");
+  Serial.println(reason);
 }
 
 static void requestTransitionRefresh(SessionTransitionRefresh type) {
@@ -318,15 +354,36 @@ static void finalizeRecoveredNoLoad() {
   Serial.println("[recovery] No load found, recovery finalized once");
 }
 
+static float positiveThresholdOrDefault(float value, float fallback) {
+  return value > 0.0f ? value : fallback;
+}
+
 static bool isLoadAboveStartThreshold() {
+  const float currentThreshold =
+    positiveThresholdOrDefault(appConfig.loadCurrentThresholdA, Config::LOAD_CURRENT_THRESHOLD_A);
+  const float powerThreshold =
+    positiveThresholdOrDefault(appConfig.loadPowerThresholdW, Config::LOAD_POWER_THRESHOLD_W);
   return sensorData.valid &&
-         sensorData.current >= appConfig.loadCurrentThresholdA &&
-         sensorData.power >= appConfig.loadPowerThresholdW;
+         (sensorData.current >= currentThreshold ||
+          sensorData.power >= powerThreshold);
+}
+
+static bool isLoadBelowNoLoadThreshold() {
+  const float currentThreshold =
+    positiveThresholdOrDefault(appConfig.loadCurrentThresholdA, Config::LOAD_CURRENT_THRESHOLD_A) * 0.5f;
+  const float powerThreshold =
+    positiveThresholdOrDefault(appConfig.loadPowerThresholdW, Config::LOAD_POWER_THRESHOLD_W) * 0.5f;
+  return !sensorData.valid ||
+         (sensorData.current < currentThreshold &&
+          sensorData.power < powerThreshold);
 }
 
 static void resetLoadValidationState() {
   loadValidationStartedAtMs = 0;
+  loadValidationLastSampleReadMs = 0;
   loadValidationStableSamples = 0;
+  loadValidationValidSamples = 0;
+  loadValidationSampleIndex = 0;
   loadValidationWaitingLogged = false;
 }
 
@@ -336,7 +393,9 @@ static unsigned long currentLoadValidationTimeoutMs() {
 
 static void verifyLoadAndStartMonitoring() {
   const unsigned long now = millis();
+  const SessionState previousState = sessionData.state;
   assignOfflineDeviceNameIfNeeded();
+  // Reset acMissingDuringMonitoringLogged saat sesi dimulai
   acMissingDuringMonitoringLogged = false;
   sessionData.state = SessionState::MONITORING;
   sessionData.endReason = EndReason::NONE;
@@ -354,6 +413,7 @@ static void verifyLoadAndStartMonitoring() {
   resetLoadValidationState();
   startValidationResult = StartValidationResult::VERIFIED;
   requestTransitionRefresh(SessionTransitionRefresh::START_VERIFIED);
+  logSessionStateTransition(previousState, sessionData.state, offlineModeActive ? "offline_load_detected" : "load_detected");
   Serial.println("[LoadCheck] Load verified, monitoring started");
   Serial.print("[timing] load verified millis=");
   Serial.println(now);
@@ -368,36 +428,39 @@ static void verifyLoadAndStartMonitoring() {
   sessionWriteCheckpoint();
 }
 
-static void cancelLoadValidationNoHistory() {
+static void clearSessionRuntime(EndReason reason) {
+  const SessionState previousState = sessionData.state;
+  // Reset semua data sesi ke IDLE dan matikan relay
   relaySet(false);
-  sessionData.endReason = EndReason::NO_LOAD_DETECTED;
   sessionData.state = SessionState::IDLE;
+  sessionData.endReason = reason;
+  sessionData.sessionId[0] = '\0';
+  sessionData.uid[0] = '\0';
+  sessionData.deviceName[0] = '\0';
   sessionData.startedAtMs = 0;
   sessionData.endedAtMs = 0;
   sessionData.lastUpdateMs = 0;
   sessionData.durationMs = 0;
-  sessionData.startEnergyKwh = sensorData.energy;
+  sessionData.startEnergyKwh = sensorData.energy; // Simpan energi awal untuk sesi berikutnya
   sessionData.energyWh = 0.0f;
   sessionData.energyKwh = 0.0f;
   sessionData.cost = 0.0f;
   sessionData.averagePowerW = 0.0f;
   sessionData.peakPowerW = 0.0f;
   sessionData.pendingSync = false;
-  storageClearActiveSessionCheckpoint();
+  elapsedBeforeRecoveryMs = 0;
+  resumeMillis = 0;
+  acMissingDuringMonitoringLogged = false;
   resetLoadValidationState();
+  storageClearActiveSessionCheckpoint(); // Pastikan checkpoint dibersihkan
+
+  // Logging
+  logSessionStateTransition(previousState, sessionData.state, endReasonToString(reason));
+  Serial.println("[RELAY] OFF");
+  Serial.println("[SESSION] State -> IDLE");
+
+  // Khusus untuk load validation yang dibatalkan
   startValidationResult = StartValidationResult::REJECTED_NO_LOAD;
-  if (offlineModeActive) {
-    offlineNoLoadPrompt = true;
-    offlineReadyForNext = true;
-    offlineFinishedAtMs = 0;
-    manualOfflineTryingOnline = false;
-    offlineReadyLogged = true;
-    Serial.println("[offline] No load detected, relay OFF");
-    Serial.println("[offline] No load detected, counter not incremented");
-    Serial.println("[offline] Ready for next offline device");
-  } else {
-    Serial.println("[LoadCheck] No load detected, START rejected, relay OFF");
-  }
 }
 
 static void handleLoadValidation() {
@@ -408,9 +471,10 @@ static void handleLoadValidation() {
   const unsigned long now = millis();
   if (loadValidationStartedAtMs == 0) {
     loadValidationStartedAtMs = now;
-  }
+  } // Ini akan di-reset saat sesi dimulai atau di clearSessionRuntime
 
   if (!loadValidationWaitingLogged) {
+    Serial.println("[LOAD DETECT] Settling...");
     Serial.println(offlineModeActive ? "[offline] Waiting load..." : "[LoadCheck] Waiting load");
     loadValidationWaitingLogged = true;
   }
@@ -419,36 +483,70 @@ static void handleLoadValidation() {
   const unsigned long timeoutMs = currentLoadValidationTimeoutMs();
 
   if (elapsedMs < Config::LOAD_SETTLE_MS) {
-    return;
+    return; // Tunggu settling time
   }
 
+  if (sensorData.lastReadMs == 0 || // Pastikan ada data sensor baru
+      sensorData.lastReadMs == loadValidationLastSampleReadMs) {
+    return;
+  }
+  loadValidationLastSampleReadMs = sensorData.lastReadMs;
+  loadValidationSampleIndex++;
+
   const bool loadDetected = isLoadAboveStartThreshold();
-  if (loadDetected) {
+  const bool noLoadSample = isLoadBelowNoLoadThreshold();
+  if (sensorData.valid) {
+    loadValidationValidSamples++; // Hitung sampel yang valid
+  }
+  if (loadDetected && sensorData.valid) {
     loadValidationStableSamples++;
-  } else {
+  } else if (noLoadSample) {
     loadValidationStableSamples = 0;
   }
 
-  Serial.print("[LoadCheck] elapsedMs=");
-  Serial.print(elapsedMs);
-  Serial.print(" current=");
+  Serial.print("[LOAD DETECT] Sample ");
+  Serial.print(loadValidationSampleIndex);
+  Serial.print(": V=");
+  Serial.print(sensorData.voltage, 1);
+  Serial.print(" I=");
   Serial.print(sensorData.current, 3);
-  Serial.print(" power=");
+  Serial.print(" P=");
   Serial.print(sensorData.power, 2);
+  Serial.print(" valid=");
+  Serial.print(sensorData.valid ? "yes" : "no");
   Serial.print(" loadDetected=");
   Serial.print(loadDetected ? "yes" : "no");
   Serial.print(" stableSamples=");
   Serial.print(loadValidationStableSamples);
+  Serial.print(" validSamples=");
+  Serial.print(loadValidationValidSamples);
+  Serial.print(" elapsedMs=");
+  Serial.print(elapsedMs);
   Serial.print(" timeoutMs=");
   Serial.println(timeoutMs);
 
-  if (loadValidationStableSamples >= Config::LOAD_DETECT_STABLE_SAMPLES) {
+  if (loadValidationValidSamples >= Config::LOAD_DETECT_MIN_VALID_SAMPLES &&
+      loadValidationStableSamples >= Config::LOAD_DETECT_STABLE_SAMPLES) {
+    Serial.println("[LOAD DETECT] Load detected");
     verifyLoadAndStartMonitoring();
     return;
   }
 
   if (elapsedMs >= timeoutMs) {
-    cancelLoadValidationNoHistory();
+    Serial.println("[LOAD DETECT] No load detected");
+    Serial.println("[LOAD DETECT] Timeout -> Relay OFF"); // Relay dimatikan di clearSessionRuntime
+    clearSessionRuntime(EndReason::NO_LOAD_DETECTED);
+
+    if (offlineModeActive) {
+      offlineNoLoadPrompt = true;
+      offlineReadyForNext = true;
+      offlineFinishedAtMs = 0;
+      manualOfflineTryingOnline = false;
+      offlineReadyLogged = true;
+      logOfflineModeState("No load detected", "relay OFF, counter not incremented, ready for next device");
+    } else {
+      Serial.println("[LoadCheck] No load detected, START rejected, relay OFF");
+    }
   }
 }
 
@@ -475,7 +573,8 @@ bool sessionStart(const char* deviceName) {
   }
 
   const char* name = deviceName == nullptr ? appConfig.deviceName : deviceName;
-  const unsigned long now = millis();
+  const unsigned long now = millis(); // Waktu mulai sesi
+  const SessionState previousState = sessionData.state;
   strlcpy(sessionData.deviceName, name, sizeof(sessionData.deviceName));
   sessionData.state = SessionState::WAITING_LOAD;
   sessionData.endReason = EndReason::NONE;
@@ -498,10 +597,12 @@ bool sessionStart(const char* deviceName) {
   loadValidationStartedAtMs = now;
   loadValidationStableSamples = 0;
   loadValidationWaitingLogged = false;
+  loadValidationValidSamples = 0; // Reset valid samples
+  loadValidationSampleIndex = 0; // Reset sample index
   startValidationResult = StartValidationResult::NONE;
 
   relaySet(true);
-  Serial.println("[LoadCheck] START requested, validating load");
+  logSessionStateTransition(previousState, sessionData.state, offlineModeActive ? "offline_start_validation" : "start_validation");
   Serial.println("[LoadCheck] Relay ON for validation");
   Serial.print("[session] Validating load for device ");
   Serial.println(sessionData.deviceName);
@@ -510,30 +611,45 @@ bool sessionStart(const char* deviceName) {
 
 void sessionSetRemoteContext(const char* uid, const char* sessionId) {
   if (uid != nullptr) {
-    strlcpy(sessionData.uid, uid, sizeof(sessionData.uid));
+    strlcpy(sessionData.uid, uid, sizeof(sessionData.uid)); // UID dari Firebase
   }
   if (sessionId != nullptr && sessionId[0] != '\0') {
-    strlcpy(sessionData.sessionId, sessionId, sizeof(sessionData.sessionId));
+    strlcpy(sessionData.sessionId, sessionId, sizeof(sessionData.sessionId)); // Session ID dari Firebase
   }
   if (shouldCheckpointState()) {
-    sessionWriteCheckpoint();
-  }
+    sessionWriteCheckpoint(); // Simpan checkpoint jika ada perubahan konteks remote
+  } // Ini penting untuk recovery jika sesi dimulai dari remote
 }
 
 void sessionStop(EndReason reason) {
   if (!sessionIsActive()) {
+    clearSessionRuntime(reason); // Gunakan fungsi reset yang lebih umum
     return;
   }
 
+  Serial.println("[SESSION] Stop requested");
   if (sessionData.state == SessionState::WAITING_LOAD) {
-    cancelLoadValidationNoHistory();
+    clearSessionRuntime(reason); // Jika dihentikan saat validasi beban, cukup reset
+    // Tambahkan logic khusus untuk offline mode jika diperlukan setelah reset
+    if (offlineModeActive) {
+      offlineNoLoadPrompt = true;
+      offlineReadyForNext = true;
+      offlineFinishedAtMs = 0;
+      manualOfflineTryingOnline = false;
+      offlineReadyLogged = true;
+      logOfflineModeState("Session stopped during load validation", "relay OFF, ready for next device");
+    } else {
+      Serial.println("[SESSION] Aborting load detection");
+    }
     return;
   }
 
   updateSessionTotals();
+  const SessionState previousState = sessionData.state;
   sessionData.endedAtMs = millis();
   sessionData.endReason = reason;
   sessionData.state = SessionState::FINISHING;
+  logSessionStateTransition(previousState, sessionData.state, endReasonToString(reason));
   const CompletedSessionSnapshot snapshot = makeFinalSnapshot(reason);
   relaySet(false);
   Serial.print("[timing] relay OFF millis=");
@@ -587,7 +703,9 @@ void sessionStop(EndReason reason) {
   Serial.print(" timestamp=");
   Serial.println(timestampText);
 
+  const SessionState finishingState = sessionData.state;
   sessionData.state = SessionState::FINISHED;
+  logSessionStateTransition(finishingState, sessionData.state, endReasonToString(reason));
   requestTransitionRefresh(SessionTransitionRefresh::STOP_FINISHED);
   Serial.print("[timing] state FINISHED millis=");
   Serial.println(millis());
@@ -655,7 +773,7 @@ void sessionUpdate() {
     Serial.print(appConfig.overloadThresholdW, 2);
     Serial.print(" mode=");
     Serial.println(systemModeToString(systemMode));
-    sessionData.state = SessionState::OVERLOAD;
+    sessionData.state = SessionState::OVERLOAD; // Set state ke OVERLOAD sebelum stop
     sessionStop(EndReason::OVERLOAD);
     return;
   }
@@ -664,11 +782,11 @@ void sessionUpdate() {
       !sensorData.loadDetected) {
     if (sensorAcInputPresent()) {
       acMissingDuringMonitoringLogged = false;
-      Serial.println("[load] Load removed while AC present");
+      Serial.println("[load] Load removed while AC present, stopping session");
       sessionStop(EndReason::LOAD_REMOVED);
     } else if (!acMissingDuringMonitoringLogged) {
       acMissingDuringMonitoringLogged = true;
-      Serial.println("[powerloss] AC missing during monitoring; keeping checkpoint for recovery");
+      Serial.println("[powerloss] AC missing during monitoring; keeping checkpoint for recovery (relay will be OFF)");
     }
     return;
   }
@@ -756,7 +874,7 @@ void sessionRecoveryUpdate() {
   }
   if (sensorData.loadDetected) {
     restoreSessionFromCheckpoint(recoveryCheckpoint, SessionState::MONITORING);
-    relaySet(true);
+    relaySet(true); // Pastikan relay ON jika sesi dilanjutkan
     sessionWriteCheckpoint();
     recoveryState = RecoveryState::RESUMED;
     strlcpy(recoveryStatusText, "resumed", sizeof(recoveryStatusText));
@@ -765,6 +883,7 @@ void sessionRecoveryUpdate() {
   }
 
   finalizeRecoveredNoLoad();
+  // Setelah finalizeRecoveredNoLoad, recoveryState akan menjadi FINALIZED atau FAILED
 }
 
 bool sessionRecoveryIsActive() {
@@ -811,7 +930,7 @@ bool offlineModeStartNextAttempt(bool firstAttempt) {
   }
 
   const bool summaryWasVisible = offlineModeShowFinishedSummary();
-  if (summaryWasVisible) {
+  if (summaryWasVisible) { // Jika ringkasan sesi sebelumnya masih tampil, lewati
     Serial.println("[button] BOOT 1s accepted during finished summary");
     Serial.println("[display] Finished summary skipped by next device request");
   }
@@ -821,7 +940,7 @@ bool offlineModeStartNextAttempt(bool firstAttempt) {
   offlineReadyForNext = false;
   if (offlineManualLock && manualOfflineIdleStartedAtMs > 0) {
     manualOfflineIdleStartedAtMs = 0;
-    Serial.println("[offline] BOOT 1s next device, manual offline timer reset");
+    logOfflineModeState("BOOT 1s next device", "manual offline idle timer reset");
   }
   manualOfflineTryingOnline = false;
   offlineFinishedAtMs = 0;
@@ -832,10 +951,11 @@ bool offlineModeStartNextAttempt(bool firstAttempt) {
 
   const bool started = sessionStart("");
   if (!started) {
-    offlineReadyForNext = true;
+    offlineReadyForNext = true; // Jika gagal start, tetap siap untuk percobaan berikutnya
     return false;
   }
-
+  logSessionStateTransition(SessionState::IDLE, SessionState::WAITING_LOAD, firstAttempt ? "offline_first_attempt" : "offline_next_attempt");
+  logModeStateTransition("OFFLINE_MODE", "OFFLINE_MODE", firstAttempt ? "first_attempt_start_validation" : "next_attempt_start_validation");
   if (firstAttempt) {
     Serial.println("[offline] First offline attempt relay ON");
   } else {
@@ -846,7 +966,8 @@ bool offlineModeStartNextAttempt(bool firstAttempt) {
 }
 
 bool offlineModeEnter(OfflineEntryReason reason) {
-  offlineModeActive = true;
+  const bool adoptWaitingLoad = sessionData.state == SessionState::WAITING_LOAD;
+  offlineModeActive = true; // Aktifkan mode offline
   offlineReason = reason;
   offlineManualLock = reason == OfflineEntryReason::MANUAL_BOOT_10S ||
                       reason == OfflineEntryReason::MANUAL_CAPTIVE_PORTAL;
@@ -858,33 +979,45 @@ bool offlineModeEnter(OfflineEntryReason reason) {
   offlineFinishedAtMs = 0;
   offlineReadyLogged = false;
   systemMode = SystemMode::OFFLINE;
-  networkStopPortalForOffline();
+  networkStopPortalForOffline(); // Hentikan captive portal jika aktif
 
   if (offlineManualLock) {
-    Serial.print("[offline] Enter MANUAL offline reason=");
-    Serial.println(offlineEntryReasonToString(reason));
-    Serial.println("[offline] Manual offline lock enabled");
+    logOfflineModeState("Enter MANUAL offline", offlineEntryReasonToString(reason));
+    logOfflineModeState("Manual offline lock", "enabled");
   } else {
-    Serial.println("[offline] Enter AUTO offline reason=AUTO_NO_WIFI");
+    logOfflineModeState("Enter AUTO offline", offlineEntryReasonToString(reason));
   }
-  Serial.print("[offline] Using overload threshold=");
+  Serial.print("[offline] Using overload threshold="); // Log threshold yang digunakan
   Serial.print(appConfig.overloadThresholdW, 2);
   Serial.println(" W");
 
-  offlineModeStartNextAttempt(true);
+  if (adoptWaitingLoad) {
+    // Jika sebelumnya sudah di WAITING_LOAD (misal dari online), adopsi sesi tersebut
+    sessionData.startMode = SystemMode::OFFLINE;
+    resetLoadValidationState();
+    startValidationResult = StartValidationResult::NONE;
+    logModeStateTransition("WAITING_LOAD", "OFFLINE_MODE", offlineEntryReasonToString(reason));
+    Serial.println("[offline] Existing load validation adopted for offline mode");
+    return true;
+  }
+
+  offlineModeStartNextAttempt(true); // Mulai percobaan pertama deteksi beban
   return true;
 }
 
 bool offlineModeExitManualLockAndTryOnline() {
-  if (!offlineModeActive || !offlineManualLock) {
+  // This function is called when the user manually requests to switch to online mode from the offline menu.
+  // We should allow this regardless of whether the offline mode is "manually locked".
+  if (!offlineModeActive) {
     return false;
   }
 
-  offlineManualLock = false;
+  logModeStateTransition("OFFLINE_MODE", "ONLINE", "manual_unlock_menu");
+  offlineManualLock = false; // Always unlock when manually switching
   manualOfflineIdleStartedAtMs = 0;
   manualOfflineTryingOnline = true;
   manualOfflineTryingOnlineAtMs = millis();
-  Serial.println("[offline] BOOT 3s exit manual offline, trying online");
+  logOfflineModeState("Menu exit offline", "trying online");
   networkReconnectSavedWiFiFromManualOffline();
   return true;
 }
@@ -894,7 +1027,7 @@ void offlineModeUpdate() {
     return;
   }
 
-  if (!offlineManualLock && networkIsConnected()) {
+  if (!offlineManualLock && networkIsConnected()) { // Jika tidak terkunci manual dan ada koneksi, beralih ke ONLINE
     systemMode = SystemMode::ONLINE;
   } else {
     systemMode = SystemMode::OFFLINE;
@@ -905,8 +1038,10 @@ void offlineModeUpdate() {
   if (sessionData.state == SessionState::FINISHED &&
       offlineFinishedAtMs > 0 &&
       now - offlineFinishedAtMs >= OFFLINE_FINISHED_SUMMARY_MS) {
-    sessionData.state = SessionState::IDLE;
+    const SessionState previousState = sessionData.state;
+    sessionData.state = SessionState::IDLE; // Kembali ke IDLE setelah ringkasan
     offlineFinishedAtMs = 0;
+    logSessionStateTransition(previousState, sessionData.state, "offline summary elapsed");
   }
 
   if (offlineManualLock &&
@@ -917,7 +1052,7 @@ void offlineModeUpdate() {
     offlineManualLock = false;
     manualOfflineIdleStartedAtMs = 0;
     manualOfflineTryingOnline = true;
-    manualOfflineTryingOnlineAtMs = now;
+    manualOfflineTryingOnlineAtMs = now; // Mulai timer untuk display "Trying Online"
     Serial.println("[offline] Manual offline idle timeout, trying online");
     networkReconnectSavedWiFiFromManualOffline();
   }
@@ -927,7 +1062,7 @@ void offlineModeUpdate() {
       !offlineNoLoadPrompt &&
       offlineReadyForNext &&
       offlineFinishedAtMs == 0 &&
-      !offlineReadyLogged) {
+      !offlineReadyLogged) { // Log sekali saat siap untuk sesi berikutnya
     offlineReadyLogged = true;
     Serial.println("[offline] Ready for next offline device");
   }
@@ -967,6 +1102,9 @@ bool offlineModeHandleOnlineRestored() {
 
   const bool restoredFromManual = offlineReason != OfflineEntryReason::AUTO_NO_WIFI ||
                                   manualOfflineTryingOnline;
+  const char* restoredState = // Tentukan state yang akan dilanjutkan
+    sessionData.state == SessionState::WAITING_LOAD ? "WAITING_LOAD" :
+    (sessionData.state == SessionState::MONITORING ? "MONITORING" : "ONLINE");
   offlineModeActive = false;
   offlineNoLoadPrompt = false;
   offlineReadyForNext = false;
@@ -975,6 +1113,7 @@ bool offlineModeHandleOnlineRestored() {
   offlineFinishedAtMs = 0;
   offlineReadyLogged = false;
   systemMode = SystemMode::ONLINE;
+  logModeStateTransition("OFFLINE_MODE", restoredState, "wifi_restored");
 
   if (restoredFromManual) {
     Serial.println("[network] Online restored from manual offline");

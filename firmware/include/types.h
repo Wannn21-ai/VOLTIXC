@@ -30,7 +30,8 @@ enum class EndReason {
 enum class OfflineEntryReason {
   AUTO_NO_WIFI,
   MANUAL_BOOT_10S,
-  MANUAL_CAPTIVE_PORTAL
+  MANUAL_CAPTIVE_PORTAL,
+  MANUAL_MENU
 };
 
 const char* systemModeToString(SystemMode mode);

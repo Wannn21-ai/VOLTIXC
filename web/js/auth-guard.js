@@ -964,47 +964,6 @@ export function applyLanguage(lang) {
     document.title = `VOLTIX ${tr(topbarTitle.dataset.i18n)}`;
   }
 
-  // ── Settings page ──
-  s("txt-settings-title",       t.settingsTitle);
-  s("txt-settings-sub",         t.settingsSub);
-  s("txt-pricing-title",        t.pricingTitle);
-  s("txt-currency-label",       t.currencyLabel);
-  s("txt-tariff-label",         t.tariffLabel);
-  s("txt-threshold-label",      t.thresholdLabel);
-  s("txt-threshold-sub",        t.thresholdSub);
-  s("txt-save-pricing",         t.savePricing);
-  s("txt-account-title",        t.accountTitle);
-  s("txt-name-label",           t.nameLabel);
-  s("txt-email-label",          t.emailLabel);
-  s("txt-save-profile",         t.saveProfile);
-  s("txt-appearance-title",     t.appearanceTitle);
-  s("txt-theme-label",          t.themeLabel);
-  s("txt-theme-dark",           t.themeDark);
-  s("txt-theme-darker",         t.themeDarker);
-  s("txt-theme-light",          t.themeLight);
-  s("txt-lang-label",           t.langLabel);
-  s("txt-save-appearance",      t.saveAppearance);
-  s("txt-notif-title",          t.notifTitle);
-  s("txt-notif-device",         t.notifDevice);
-  s("txt-notif-device-sub",     t.notifDeviceSub);
-  s("txt-notif-disconnect",     t.notifDisconnect);
-  s("txt-notif-disconnect-sub", t.notifDisconnectSub);
-  s("txt-notif-session",        t.notifSession);
-  s("txt-notif-session-sub",    t.notifSessionSub);
-  s("txt-notif-overload",       t.notifOverload);
-  s("txt-notif-overload-sub",   t.notifOverloadSub);
-  s("txt-refresh-label",        t.refreshLabel);
-  s("txt-save-notif",           t.saveNotif);
-  s("txt-data-title",           t.dataTitle);
-  s("txt-data-sub",             t.dataSub);
-  s("txt-export-all",           t.exportAll);
-  s("txt-delete-all",           t.deleteAll);
-  s("txt-about-title",          t.aboutTitle);
-  s("txt-about-app",            t.aboutApp);
-  s("txt-about-ver",            t.aboutVer);
-  s("txt-about-hw",             t.aboutHw);
-  s("txt-about-cloud",          t.aboutCloud);
-
   // ── Dashboard page ──
   s("page-title-dash",          t.dashTitle);
   s("active-device-label-txt",  t.noActiveDevice);
@@ -1316,7 +1275,9 @@ export function renderShell(activePage, pageTitle) {
 export async function loadAndApplySettings(uid) {
   const DEFAULTS = {
     currency: "IDR", tariff: 1444.70, overloadThreshold: 2000,
-    overloadWarningPercent: 99,
+    overloadWarningPercent: 99, // Default value for overload warning percentage
+    // Default values for device-related thresholds and intervals
+    // These are typically configured on the device but can be overridden or synced
     loadPowerThreshold: 1,
     loadCurrentThreshold: 0.02,
     loadRemovedDelaySec: 2,
@@ -1330,7 +1291,9 @@ export async function loadAndApplySettings(uid) {
   // 1. Baca dari localStorage dulu (instant, tidak flicker)
   let settings = { ...DEFAULTS };
   try {
-    const cached = JSON.parse(localStorage.getItem(`sem_settings_${uid}`));
+    const cached = JSON.parse(localStorage.getItem(`sem_settings_${uid}`)); // Attempt to retrieve cached settings
+    // If cached settings exist, merge them with defaults
+    // This ensures new default settings are applied if not present in cache
     if (cached) settings = { ...DEFAULTS, ...cached };
   } catch {}
 
@@ -1341,14 +1304,14 @@ export async function loadAndApplySettings(uid) {
   // 2. Fetch dari Firebase (sumber kebenaran)
   try {
     const snap = await get(ref(db, `users/${uid}/settings`));
-    if (snap.exists()) {
-      const remote = { ...DEFAULTS, ...snap.val() };
-      // Sync ke localStorage supaya halaman lain & device lain langsung dapat
-      localStorage.setItem(`sem_settings_${uid}`, JSON.stringify(remote));
-      // Apply jika berbeda dari cache
-      if (remote.theme    !== settings.theme)    applyTheme(remote.theme);
+    if (snap.exists()) { // Check if settings exist in Firebase
+      const remote = { ...DEFAULTS, ...snap.val() }; // Merge remote settings with defaults
+      // Sync to localStorage for immediate access by other pages and devices
+      localStorage.setItem(`sem_settings_${uid}`, JSON.stringify(remote)); 
+      // Apply theme and language if they have changed from the cached version
+      if (remote.theme !== settings.theme) applyTheme(remote.theme);
       if (remote.language !== settings.language) applyLanguage(remote.language);
-      settings = remote;
+      settings = remote; // Update current settings to the remote version
     }
   } catch (e) {
     console.warn("[SEM] Gagal load settings dari Firebase:", e);

@@ -17,12 +17,15 @@
 #include <math.h>
 #include <stdlib.h>
 #include <WiFi.h>
+#include <Preferences.h>
 #include <WiFiClientSecure.h>
 
 static constexpr unsigned long HTTP_LOG_INTERVAL_MS = 5000UL;
 static constexpr unsigned long SINGULAR_COMMAND_FALLBACK_POLL_INTERVAL_MS = 5000UL;
 static constexpr uint64_t FINAL_COMMAND_MAX_AGE_MS = 5ULL * 60ULL * 1000ULL;
 
+static constexpr const char* PREF_NAMESPACE_FB = "fb_sync";
+static constexpr const char* PREF_KEY_LAST_CMD_ID = "last_cmd_id";
 static char lastProcessedCommandId[48] = "";
 static uint64_t lastProcessedFinalCommandAt = 0;
 static char ackId[48] = "";
@@ -74,6 +77,21 @@ static String legacyConfigJsonPath() {
 
 static String finalCommandJsonPath() {
   return configJsonPath(FirebasePaths::pathDeviceCommand(String(Config::DEVICE_ID)));
+}
+
+static void saveLastProcessedCommandId(const char* id) {
+  if (id == nullptr || id[0] == '\0' || strcmp(id, lastProcessedCommandId) == 0) {
+    return;
+  }
+  strlcpy(lastProcessedCommandId, id, sizeof(lastProcessedCommandId));
+
+  Preferences prefs;
+  if (prefs.begin(PREF_NAMESPACE_FB, false)) { // read-write
+    prefs.putString(PREF_KEY_LAST_CMD_ID, lastProcessedCommandId);
+    prefs.end();
+  } else {
+    Serial.println("[firebase] ERROR: Failed to save last processed command ID");
+  }
 }
 
 static String configRevisionText(uint64_t revision) {
@@ -593,6 +611,11 @@ static bool isSessionActiveForLive() {
          sessionData.state == SessionState::OVERLOAD;
 }
 
+static void writeServerTimestamp(JsonObject parent, const char* field) {
+  JsonObject timestamp = parent.createNestedObject(field);
+  timestamp[".sv"] = "timestamp";
+}
+
 static void setAck(const char* id, const char* type, const char* status, const char* message, const char* reason = "") {
   strlcpy(ackId, id == nullptr ? "" : id, sizeof(ackId));
   strlcpy(ackType, type == nullptr ? "" : type, sizeof(ackType));
@@ -667,10 +690,7 @@ static bool validateFinalCommand(JsonDocument& doc, uint64_t& updatedAt) {
   return true;
 }
 
-static bool finalCommandIsStale(uint64_t updatedAt) {
-  if (updatedAt <= lastProcessedFinalCommandAt) {
-    return true;
-  }
+static bool commandTimestampExpired(uint64_t updatedAt) {
   if (timeIsSynced()) {
     const uint64_t now = getUnixMs();
     if (updatedAt < now && now - updatedAt > FINAL_COMMAND_MAX_AGE_MS) {
@@ -678,6 +698,25 @@ static bool finalCommandIsStale(uint64_t updatedAt) {
     }
   }
   return false;
+}
+
+static bool finalCommandIsStale(uint64_t updatedAt) {
+  if (updatedAt <= lastProcessedFinalCommandAt) {
+    return true;
+  }
+  return commandTimestampExpired(updatedAt);
+}
+
+static bool primaryCommandIsStale(uint64_t updatedAt) {
+  return updatedAt == 0 || commandTimestampExpired(updatedAt);
+}
+
+static bool commandTypeIsStart(const char* type) {
+  return strcmp(type, "START") == 0 || strcmp(type, "START_SESSION") == 0;
+}
+
+static bool commandTypeIsStop(const char* type) {
+  return strcmp(type, "STOP") == 0 || strcmp(type, "STOP_SESSION") == 0;
 }
 
 static unsigned long commandAgeMs(uint64_t updatedAt) {
@@ -806,6 +845,17 @@ static bool pollFinalCommand() {
 void firebaseBegin() {
   Serial.print("[firebase] REST initialized deviceId=");
   Serial.println(Config::DEVICE_ID);
+
+  // Load the last processed command ID from NVS
+  Preferences prefs;
+  if (prefs.begin(PREF_NAMESPACE_FB, true)) { // read-only
+    prefs.getString(PREF_KEY_LAST_CMD_ID, lastProcessedCommandId, sizeof(lastProcessedCommandId));
+    prefs.end();
+    if (lastProcessedCommandId[0] != '\0') {
+      Serial.print("[firebase] Loaded last processed command ID: ");
+      Serial.println(lastProcessedCommandId);
+    }
+  }
   deviceAuthBegin();
   if (deviceAuthIsEnabled()) {
     Serial.println("[firebase] Device auth scaffold enabled; tokens remain redacted");
@@ -838,7 +888,7 @@ void firebasePublishLive() {
   }
   missingLiveDeviceIdLogged = false;
 
-  StaticJsonDocument<1536> doc;
+  StaticJsonDocument<1792> doc;
   JsonObject system = doc.createNestedObject("system");
   // Compatibility fields remain until web readers migrate relay/timestamp.
   system["timestamp"] = millis();
@@ -849,6 +899,7 @@ void firebasePublishLive() {
   system["deviceId"] = Config::DEVICE_ID;
   // Final live/system fields that do not conflict with compatibility readers.
   system["timestampUnixMs"] = timeIsSynced() ? getUnixMs() : static_cast<uint64_t>(0);
+  writeServerTimestamp(system, "lastSeen");
   system["mode"] = systemModeToString(systemMode);
   system["relayState"] = relayIsOn() ? "ON" : "OFF";
   system["wifiStatus"] = networkIsPortalActive() ? "AP_MODE" : (networkIsConnected() ? "CONNECTED" : "DISCONNECTED");
@@ -860,6 +911,7 @@ void firebasePublishLive() {
     sessionData.state != SessionState::IDLE &&
     sessionData.state != SessionState::FINISHED;
   JsonObject device = doc.createNestedObject("device");
+  writeServerTimestamp(device, "timestamp");
   device["connected"] = liveElectricalActive && sensorData.valid;
   device["voltage"] = sensorData.voltage;
   device["current"] = liveElectricalActive ? sensorData.current : 0.0f;
@@ -881,6 +933,7 @@ void firebasePublishLive() {
   session["sessionId"] = sessionData.sessionId;
   session["uid"] = sessionData.uid;
   session["deviceName"] = sessionData.deviceName;
+  session["sessionState"] = sessionStateToString(sessionData.state);
   session["elapsedSec"] = sessionData.durationMs / 1000UL;
   session["energyWh"] = serialized(String(sessionData.energyWh, 6));
   session["energy"] = serialized(String(sessionData.energyKwh, 8));
@@ -1000,6 +1053,53 @@ bool firebasePushDeviceConfig() {
   return ok;
 }
 
+bool firebaseFetchPairingCode() {
+  if (appConfig.pairingCode[0] != '\0') {
+    return true; // Kode sudah ada
+  }
+  if (Config::DEVICE_ID == nullptr || Config::DEVICE_ID[0] == '\0') {
+    return false;
+  }
+
+  String path = String("/pairingCodes.json?orderBy=\"deviceId\"&equalTo=\"") + Config::DEVICE_ID + "\"&limitToFirst=1";
+  String response;
+  if (!httpRequest("GET", path.c_str(), "", &response, false)) {
+    return false;
+  }
+
+  if (response == "null" || response.length() == 0 || response == "{}") {
+    Serial.println("[pairing] No pairing code found for this device");
+    return false;
+  }
+
+  DynamicJsonDocument doc(512);
+  const DeserializationError error = deserializeJson(doc, response);
+  if (error || !doc.is<JsonObject>()) {
+    Serial.print("[pairing] Failed to parse pairing code response: ");
+    Serial.println(error.c_str());
+    return false;
+  }
+
+  JsonObject obj = doc.as<JsonObject>();
+  if (obj.size() != 1) {
+    return false;
+  }
+
+  // Kunci dari objek pertama adalah kode pairing
+  const char* code = obj.begin()->key().c_str();
+  JsonObject pairingData = obj.begin()->value();
+
+  if (code != nullptr && strlen(code) == 6 && !pairingData["used"].as<bool>()) {
+    strlcpy(appConfig.pairingCode, code, sizeof(appConfig.pairingCode));
+    Serial.print("[pairing] Fetched pairing code: ");
+    Serial.println(appConfig.pairingCode);
+    return true;
+  }
+
+  Serial.println("[pairing] Found invalid or used pairing code");
+  return false;
+}
+
 bool firebaseDeviceConfigPushBlocked() {
   return configPushBlockedByRules;
 }
@@ -1023,10 +1123,11 @@ void firebasePollCommand() {
   String response;
   const bool forceLog = shouldLog(lastPollLogMs);
   bool pathUnauthorized = false;
+  const String commandPath = String("/devices/") + Config::DEVICE_ID + "/commands/current.json";
   const unsigned long commandHttpStartedAtMs = millis();
   const bool commandHttpOk = httpRequest(
         "GET",
-        "/devices/esp32-voltix-001/commands/current.json",
+        commandPath.c_str(),
         "",
         &response,
         forceLog,
@@ -1063,7 +1164,7 @@ void firebasePollCommand() {
   const char* uid = doc["uid"] | "";
   const char* commandSessionId = doc["sessionId"] | "";
   uint64_t commandUpdatedAt = 0;
-  readCommandTimestamp(doc, commandUpdatedAt);
+  const bool hasCommandTimestamp = readCommandTimestamp(doc, commandUpdatedAt);
   const unsigned long receivedAtMs = millis();
   const unsigned long ageAtReceiveMs = commandAgeMs(commandUpdatedAt);
 
@@ -1072,19 +1173,31 @@ void firebasePollCommand() {
     return;
   }
 
+  if (!hasCommandTimestamp || primaryCommandIsStale(commandUpdatedAt)) {
+    saveLastProcessedCommandId(id);
+    Serial.println("[command] Ignored stale commands/current command");
+    setAck(id, type, "REJECTED", "Stale command ignored", "STALE");
+    const String lastAckPath = String("/devices/") + Config::DEVICE_ID + "/commands/lastAck.json";
+    firebaseAckCommand(lastAckPath.c_str());
+    httpRequest("PUT", commandPath.c_str(), "null", nullptr, true);
+    return;
+  }
+
   if (strcmp(id, lastProcessedCommandId) == 0) {
     if (pendingStartAck && strcmp(id, pendingStartCommandId) == 0) {
       return;
     }
     setAck(id, type, "DONE", "Duplicate command ignored");
-    firebaseAckCommand();
-    httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
+    const String lastAckPath = String("/devices/") + Config::DEVICE_ID + "/commands/lastAck.json";
+    firebaseAckCommand(lastAckPath.c_str());
+    httpRequest("PUT", commandPath.c_str(), "null", nullptr, true);
     return;
   }
 
-  strlcpy(lastProcessedCommandId, id, sizeof(lastProcessedCommandId));
+  saveLastProcessedCommandId(id);
 
-  if (strcmp(type, "START") == 0) {
+  if (commandTypeIsStart(type)) {
+    Serial.println("[COMMAND] START_SESSION received");
     Serial.print("[timing] START command received millis=");
     Serial.println(receivedAtMs);
     const char* deviceName = doc["deviceName"] | Config::DEFAULT_DEVICE_NAME;
@@ -1095,8 +1208,9 @@ void firebasePollCommand() {
     saveLocalConfig();
     if (!sessionStart(deviceName)) {
       setAck(id, type, "ERROR", "Device is busy");
-      firebaseAckCommand();
-      httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
+      const String lastAckPath = String("/devices/") + Config::DEVICE_ID + "/commands/lastAck.json";
+      firebaseAckCommand(lastAckPath.c_str());
+      httpRequest("PUT", commandPath.c_str(), "null", nullptr, true);
       return;
     }
     sessionSetRemoteContext(uid, commandSessionId);
@@ -1106,15 +1220,14 @@ void firebasePollCommand() {
     return;
   }
 
-  if (strcmp(type, "STOP") == 0) {
+  if (commandTypeIsStop(type)) {
+    Serial.println("[COMMAND] STOP_SESSION received");
     Serial.print("[timing] STOP command received millis=");
     Serial.println(receivedAtMs);
     sessionSetRemoteContext(uid, commandSessionId);
     pendingStartAck = false;
     pendingStartCommandId[0] = '\0';
-    if (sessionIsActive()) {
-      sessionStop(EndReason::USER_STOP);
-    }
+    sessionStop(EndReason::USER_STOP);
     logCommandLatency("STOP", "commands/current", ageAtReceiveMs, receivedAtMs);
     setAck(id, type, "DONE", "STOP command processed");
     transitionAckRequested = true;
@@ -1122,7 +1235,8 @@ void firebasePollCommand() {
   }
 
   setAck(id, type, "ERROR", "Unknown command type");
-  firebaseAckCommand();
+  const String lastAckPath = String("/devices/") + Config::DEVICE_ID + "/commands/lastAck.json";
+  firebaseAckCommand(lastAckPath.c_str());
 }
 
 bool firebaseCommandTransitionPending() {
@@ -1140,12 +1254,14 @@ void firebaseFlushTransitionAck() {
   if (!transitionAckRequested) {
     return;
   }
-  firebaseAckCommand();
-  httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
+  const String lastAckPath = String("/devices/") + Config::DEVICE_ID + "/commands/lastAck.json";
+  firebaseAckCommand(lastAckPath.c_str());
+  const String currentCommandPath = String("/devices/") + Config::DEVICE_ID + "/commands/current.json";
+  httpRequest("PUT", currentCommandPath.c_str(), "null", nullptr, true);
   transitionAckRequested = false;
 }
 
-void firebaseAckCommand() {
+void firebaseAckCommand(const char* path) {
   StaticJsonDocument<384> doc;
   doc["id"] = ackId;
   doc["type"] = ackType;
@@ -1158,7 +1274,7 @@ void firebaseAckCommand() {
 
   String payload;
   serializeJson(doc, payload);
-  httpRequest("PUT", "/devices/esp32-voltix-001/commands/lastAck.json", payload, nullptr, true);
+  httpRequest("PUT", path, payload, nullptr, true);
 }
 
 HistoryCleanupPollResult firebasePollHistoryCleanup() {

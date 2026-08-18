@@ -9,6 +9,12 @@
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <Wire.h>
+#include <vector>
+#include <string>
+
+// Forward declarations for functions from network.cpp
+bool networkIsMenuActive();
+void networkGetMenuDetails(String& title, std::vector<std::string>& options, int& selected);
 
 namespace {
 constexpr int SCREEN_WIDTH = 128;
@@ -200,15 +206,23 @@ void renderBranding() {
 
 void renderIdle() {
   startScreen();
-  drawLine(0, "Voltix Ready");
-  drawLine(2, Config::DEVICE_ID);
+  if (appConfig.pairingCode[0] != '\0') {
+    drawCenteredText("Pairing Code", 5, 1);
+    oled.drawLine(0, 16, SCREEN_WIDTH, 16, SSD1306_WHITE);
+    drawCenteredText(appConfig.pairingCode, 28, 3);
+    drawCenteredText("Enter in web app", 55, 1);
+  } else {
+    drawLine(0, "Voltix Ready");
+    drawLine(2, Config::DEVICE_ID);
+    drawLine(4, "Fetching code...");
+  }
   finishScreen();
 }
 
 void renderWaitingLoad() {
   if (offlineModeIsActive()) {
     startScreen();
-    drawLine(0, offlineModeIsManualLocked() ? "Offline Manual" : "Offline Auto");
+    drawLine(0, offlineModeIsManualLocked() ? "Offline Manual" : "Offline Mode");
     drawLine(1, "Relay: ON");
     drawLine(2, "Waiting Load");
     finishScreen();
@@ -227,7 +241,7 @@ void renderWaitingLoad() {
 
 void renderOfflineNoLoad() {
   startScreen();
-  drawLine(0, "No Load");
+  drawLine(0, "No Load Detected");
   drawLine(1, "Relay OFF");
   drawLine(2, "BOOT 1s Next");
   finishScreen();
@@ -236,7 +250,7 @@ void renderOfflineNoLoad() {
 void renderOfflineReady() {
   startScreen();
   if (offlineModeIsManualLocked()) {
-    drawLine(0, "Offline Manual");
+    drawLine(0, "Offline Manual Idle");
     drawLine(1, "Relay OFF");
     drawLine(2, "BOOT 1s Next");
   } else {
@@ -260,7 +274,7 @@ void renderMonitoring() {
   char duration[16];
 
   trimText(sessionData.deviceName, deviceName, sizeof(deviceName));
-  formatDuration(sessionData.durationMs / 1000UL, duration, sizeof(duration));
+  formatDuration(sessionData.durationMs / 1000UL, duration, sizeof(duration)); // Durasi dalam detik
 
   startScreen();
   drawLine(0, deviceName);
@@ -332,6 +346,16 @@ void renderScreen() {
     return;
   }
 
+  if (networkIsMenuActive()) {
+    String title;
+    std::vector<std::string> options;
+    int selected;
+    networkGetMenuDetails(title, options, selected);
+    displayShowMenu(title.c_str(), options, selected);
+    resetRotation();
+    return;
+  }
+
   if (sessionRecoveryIsActive()) {
     resetRotation();
     renderRecovery();
@@ -366,7 +390,7 @@ void renderScreen() {
   }
 
   if (sessionData.state == SessionState::MONITORING) {
-    resetRotation();
+    // Tidak perlu resetRotation di sini, karena renderMonitoring akan selalu dipanggil
     renderMonitoring();
     return;
   }
@@ -374,7 +398,7 @@ void renderScreen() {
   if (sessionData.state == SessionState::WAITING_LOAD) {
     resetRotation();
     renderWaitingLoad();
-    return;
+    return; // Pastikan ini diproses sebelum offlineModeShowFinishedSummary
   }
 
   if (offlineModeShowFinishedSummary()) {
@@ -422,26 +446,14 @@ void renderScreen() {
 
   switch (sessionData.state) {
     case SessionState::IDLE:
-      if (idleBrandingAllowed() && shouldShowBranding(RotationContext::IDLE)) {
+      if (idleBrandingAllowed() && shouldShowBranding(RotationContext::IDLE)) { // Branding hanya saat idle dan tidak ada sesi
         renderBranding();
       } else {
         if (!idleBrandingAllowed()) {
-          resetRotation();
+          resetRotation(); // Reset rotasi jika kondisi branding tidak terpenuhi
         }
         renderIdle();
       }
-      break;
-    case SessionState::WAITING_LOAD:
-      resetRotation();
-      renderWaitingLoad();
-      break;
-    case SessionState::MONITORING:
-      resetRotation();
-      renderMonitoring();
-      break;
-    case SessionState::OVERLOAD:
-      resetRotation();
-      renderOverload();
       break;
     case SessionState::FINISHING:
     case SessionState::FINISHED:
@@ -552,4 +564,52 @@ void displayShowButtonFeedback(const char* message) {
   copyDisplayText(message, buttonFeedbackMessage, sizeof(buttonFeedbackMessage));
   lastDisplayMs = millis();
   renderScreen();
+}
+
+void displayShowMenu(const char* title, const std::vector<std::string>& options, int selectedOption) {
+  if (!oledReady) {
+    return;
+  }
+  startScreen();
+  oled.setTextSize(1);
+  oled.setCursor(0, 0);
+  oled.println(title);
+  oled.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
+
+  int y = 15;
+  for (size_t i = 0; i < options.size(); ++i) {
+    oled.setCursor(10, y);
+    if (i == (size_t)selectedOption) {
+      oled.print("> ");
+    } else {
+      oled.print("  ");
+    }
+    oled.println(options[i].c_str());
+    y += 10;
+  }
+  finishScreen();
+}
+
+void displayClear() {
+  if (!oledReady) {
+    return;
+  }
+  oled.clearDisplay();
+  oled.display();
+}
+
+void displayShowMessage(const char* title, const char* message, int size) {
+  if (!oledReady) {
+    return;
+  }
+  startScreen();
+  if (title != nullptr && title[0] != '\0') {
+    // Menggunakan ukuran 2 untuk judul agar lebih terlihat
+    drawCenteredText(title, 10, 2);
+  }
+  if (message != nullptr && message[0] != '\0') {
+    // Parameter 'size' diabaikan untuk menjaga tampilan UI yang konsisten.
+    drawCenteredText(message, 35, 1);
+  }
+  finishScreen();
 }

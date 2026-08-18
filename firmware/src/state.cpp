@@ -22,6 +22,7 @@ void stateBegin() {
   appConfig.configPendingSync = false;
   strlcpy(appConfig.configSource, "DEFAULT", sizeof(appConfig.configSource));
   strlcpy(appConfig.deviceName, Config::DEFAULT_DEVICE_NAME, sizeof(appConfig.deviceName));
+  appConfig.pairingCode[0] = '\0';
 
   sensorData.voltage = 0.0f;
   sensorData.current = 0.0f;
@@ -96,6 +97,7 @@ const char* offlineEntryReasonToString(OfflineEntryReason reason) {
     case OfflineEntryReason::AUTO_NO_WIFI: return "AUTO_NO_WIFI";
     case OfflineEntryReason::MANUAL_BOOT_10S: return "BOOT_10S";
     case OfflineEntryReason::MANUAL_CAPTIVE_PORTAL: return "CAPTIVE_PORTAL";
+    case OfflineEntryReason::MANUAL_MENU: return "MANUAL_MENU";
   }
   return "UNKNOWN";
 }

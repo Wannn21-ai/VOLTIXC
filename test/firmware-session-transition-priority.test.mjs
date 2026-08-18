@@ -93,12 +93,54 @@ test("transition ACKs are deferred until main priority flush", () => {
   assert.match(pendingStartSource, /transitionAckRequested = true/);
   assert.doesNotMatch(pendingStartSource, /firebaseAckCommand\(\)/);
 
-  const stopStart = firebaseSource.indexOf('if (strcmp(type, "STOP") == 0)');
+  const stopStart = firebaseSource.indexOf("if (commandTypeIsStop(type))");
   const stopEnd = firebaseSource.indexOf("\n  setAck(id, type, \"ERROR\"", stopStart);
   const stopSource = firebaseSource.slice(stopStart, stopEnd);
   assert.match(stopSource, /sessionStop\(EndReason::USER_STOP\)/);
   assert.match(stopSource, /transitionAckRequested = true/);
   assert.doesNotMatch(stopSource, /firebaseAckCommand\(\)/);
+});
+
+test("STOP can preempt WAITING_LOAD before the next load validation sample", () => {
+  const loopStart = mainSource.indexOf("void loop()");
+  const serviceIndex = mainSource.indexOf("serviceLocalRealtimeTasks(recoveryActive)", loopStart);
+  const preemptSource = mainSource.slice(loopStart, serviceIndex);
+
+  assert.match(preemptSource, /sessionData\.state == SessionState::WAITING_LOAD/);
+  assert.match(preemptSource, /pollCommandIfDue\(\s*onlineServicesAllowed,\s*recoveryActive,\s*false,\s*true\s*\)/);
+
+  const pollStart = mainSource.indexOf("static bool pollCommandIfDue");
+  const pollEnd = mainSource.indexOf("\nstatic void serviceLocalRealtimeTasks", pollStart);
+  const pollSource = mainSource.slice(pollStart, pollEnd);
+  assert.match(pollSource, /allowWaitingLoadPreemption/);
+  assert.match(pollSource, /!allowWaitingLoadPreemption && localRealtimeTasksDue\(recoveryActive\)/);
+});
+
+test("STOP during WAITING_LOAD aborts validation and clears runtime session", () => {
+  const stopStart = sessionSource.indexOf("void sessionStop(EndReason reason)");
+  const stopEnd = sessionSource.indexOf("\nvoid sessionUpdate()", stopStart);
+  const stopSource = sessionSource.slice(stopStart, stopEnd);
+
+  assert.match(stopSource, /sessionData\.state == SessionState::WAITING_LOAD/);
+  assert.match(stopSource, /cancelLoadValidationNoHistory\(reason\)/);
+
+  const clearStart = sessionSource.indexOf("static void clearSessionRuntime");
+  const clearEnd = sessionSource.indexOf("\nstatic unsigned long currentLoadValidationTimeoutMs", clearStart);
+  const clearSource = sessionSource.slice(clearStart, clearEnd);
+  assert.match(clearSource, /relaySet\(false\)/);
+  assert.match(clearSource, /sessionData\.state = SessionState::IDLE/);
+  assert.match(clearSource, /sessionData\.sessionId\[0\] = '\\0'/);
+  assert.match(clearSource, /storageClearActiveSessionCheckpoint\(\)/);
+});
+
+test("primary commands/current rejects stale commands before START or STOP execution", () => {
+  assert.match(firebaseSource, /static bool primaryCommandIsStale\(uint64_t updatedAt\)/);
+  const pollStart = firebaseSource.indexOf("void firebasePollCommand()");
+  const startBranch = firebaseSource.indexOf("if (commandTypeIsStart(type))", pollStart);
+  const preActionSource = firebaseSource.slice(pollStart, startBranch);
+  assert.match(preActionSource, /!hasCommandTimestamp \|\| primaryCommandIsStale\(commandUpdatedAt\)/);
+  assert.match(preActionSource, /Stale command ignored/);
+  assert.match(preActionSource, /commands\/current\.json", "null"/);
 });
 
 test("transition and history timing diagnostics are present", () => {

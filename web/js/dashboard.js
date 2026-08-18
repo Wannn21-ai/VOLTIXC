@@ -75,6 +75,7 @@ setInterval(async () => {
 
 // ================= CONSTANTS =================
 const STALE_THRESHOLD = 15;
+const DEVICE_OFFLINE_TIMEOUT_MS = STALE_THRESHOLD * 1000;
 const SystemMode = Object.freeze({
   ONLINE: "ONLINE",
   OFFLINE: "OFFLINE",
@@ -91,6 +92,8 @@ const SessionState = Object.freeze({
 // ================= STATE — FIREBASE DATA =================
 let voltage = 0, current = 0, firebasePower = 0, firebaseTimestamp = 0;
 let firebaseSystemReceivedAtMs = 0;
+let firebaseHeartbeatMs = 0;
+let firebaseTelemetryAtMs = 0;
 let firebasePF = 0, firebaseFreq = 0, firebaseApparent = 0;
 let firebaseEnergy = 0, firebaseCost = 0;
 let firebaseOverload = false;
@@ -459,9 +462,10 @@ function deriveSystemMode() {
 function deriveSessionState(webOverload) {
   const hasSessionContext = isRunning || !!activeDevice || firebaseSessionActive || !!pendingDeviceName;
   const fromEsp = enumValue(SessionState, firebaseSessionState);
+  if ([SessionState.WAITING_LOAD, SessionState.MONITORING, SessionState.OVERLOAD].includes(fromEsp)) return fromEsp;
   if (hasSessionContext && fromEsp) return fromEsp;
   if (hasSessionContext && (webOverload || firebaseOverload)) return SessionState.OVERLOAD;
-  if (pendingDeviceName || waitingForName || (firebaseRelay && !loadDetected && !firebaseSessionActive)) return SessionState.WAITING_LOAD;
+  if (pendingDeviceName || waitingForName) return SessionState.WAITING_LOAD;
   if ((isRunning || firebaseSessionActive) && deviceOnline) return SessionState.MONITORING;
   if (activeDevice && !firebaseRelay && !firebaseSessionActive) return SessionState.FINISHED;
   return SessionState.IDLE;
@@ -487,9 +491,20 @@ function clearDisplay() {
   setGauge(gaugeVoltage, 0, 190, 240);
   setGauge(gaugeCurrent, 0, 0, 16);
 }
+function sessionHasLiveMeasurements() {
+  return systemOnline &&
+    liveDataFresh &&
+    (isRunning ||
+      firebaseSessionActive ||
+      [SessionState.WAITING_LOAD, SessionState.MONITORING, SessionState.OVERLOAD].includes(sessionState));
+}
 function updateDisplay() {
+  if (!systemOnline || !liveDataFresh) {
+    clearDisplay();
+    return;
+  }
   const monitoring = isRunning && !!activeDevice;
-  const sessionInactive = !firebaseRelay && !firebaseSessionActive;
+  const sessionInactive = !sessionHasLiveMeasurements();
   const shownCurrent = sessionInactive ? 0 : current;
   const shownPower = sessionInactive ? 0 : firebasePower;
   const shownEnergy = sessionInactive
@@ -581,6 +596,11 @@ function dashboardVisualState() {
 function applyActionState() {
   const starting = pendingUiState === "starting" || !!pendingDeviceName || waitingForName;
   const stopping = pendingUiState === "stopping";
+  const stopAvailable = isRunning ||
+    !!activeDevice ||
+    !!pendingDeviceName ||
+    firebaseSessionActive ||
+    [SessionState.WAITING_LOAD, SessionState.MONITORING, SessionState.OVERLOAD].includes(sessionState);
   if (fab) {
     fab.disabled = starting || stopping || isRunning || !systemOnline;
     fab.title = starting
@@ -613,6 +633,10 @@ function applyActionState() {
   if (btnSaveDev) {
     btnSaveDev.disabled = starting || stopping;
   }
+  if (btnStop) {
+    btnStop.style.display = stopAvailable ? "inline-flex" : "none";
+    btnStop.disabled = stopping || !stopAvailable;
+  }
 }
 function updateHeroStatuses(systemOnline) {
   const mode = systemMode || SystemMode.TRANSITION;
@@ -639,15 +663,22 @@ function updateHeroStatuses(systemOnline) {
   const warningState = visualState === "offline" || visualState === "overload";
   const panelState = healthyState ? "online" : warningState ? "offline" : "transition";
   const deviceLabel = activeDevice?.name || pendingDeviceName || selectedDevice?.name || deviceNameFromEsp || tr("noActiveDevice");
+  const hasHeartbeat = firebaseHeartbeatMs > 0;
+  const connectionLabel = systemOnline ? "Online" : hasHeartbeat ? "Offline" : tr("dashboardWaiting");
+  const relayPanelLabel = systemOnline
+    ? (firebaseRelay ? "Relay ON" : "Relay OFF")
+    : (firebaseRelay ? "Last known: ON" : "Last known: OFF");
+  const relayStatusLabel = systemOnline ? (firebaseRelay ? "ON" : "OFF") : "UNKNOWN";
+  const relayStateClass = systemOnline ? (firebaseRelay ? "online" : "offline") : "transition";
   if (heroDeviceName) heroDeviceName.textContent = deviceLabel;
   if (heroStateText) heroStateText.textContent = visualStateText(visualState);
   setPanelPill(
     heroConnectionState,
-    systemOnline ? "Online" : firebaseTimestamp > 0 ? "Offline" : tr("dashboardWaiting"),
-    systemOnline ? "online" : firebaseTimestamp > 0 ? "offline" : "transition"
+    connectionLabel,
+    systemOnline ? "online" : hasHeartbeat ? "offline" : "transition"
   );
   setPanelPill(heroSessionState, visualStateText(visualState), panelState);
-  setPanelPill(heroRelayState, firebaseRelay ? "Relay ON" : "Relay OFF", firebaseRelay ? "online" : "offline");
+  setPanelPill(heroRelayState, relayPanelLabel, relayStateClass);
   setPanelPill(
     heroModeState,
     mode === SystemMode.ONLINE ? "Online" : mode === SystemMode.OFFLINE ? "Offline" : tr("dashboardTransition"),
@@ -662,7 +693,7 @@ function updateHeroStatuses(systemOnline) {
         ? "offline"
         : "transition"
   );
-  setHeroStatus(valRelayStatus, firebaseRelay ? "ON" : "OFF", firebaseRelay ? "online" : "offline");
+  setHeroStatus(valRelayStatus, relayStatusLabel, relayStateClass);
   setHeroStatus(
     valModeStatus,
     mode,
@@ -670,11 +701,16 @@ function updateHeroStatuses(systemOnline) {
   );
   setHeroStatus(
     valDeviceLinkStatus,
-    systemOnline ? "ONLINE" : firebaseTimestamp > 0 ? "OFFLINE" : "WAITING",
-    systemOnline ? "online" : firebaseTimestamp > 0 ? "offline" : "transition"
+    systemOnline ? "ONLINE" : hasHeartbeat ? "OFFLINE" : "WAITING",
+    systemOnline ? "online" : hasHeartbeat ? "offline" : "transition"
   );
   setHelper(valSessionHelper, sessionHelpers[visualState] || sessionHelpers.idle);
-  setHelper(valRelayHelper, firebaseRelay ? tr("dashboardRelayOnHelp") : tr("dashboardRelayOffHelp"));
+  setHelper(
+    valRelayHelper,
+    systemOnline
+      ? (firebaseRelay ? tr("dashboardRelayOnHelp") : tr("dashboardRelayOffHelp"))
+      : "Physical relay state is unknown while ESP32 is offline."
+  );
   setHelper(
     valModeHelper,
     mode === SystemMode.ONLINE ? tr("dashboardModeOnlineHelp") :
@@ -990,14 +1026,21 @@ inputDevName.addEventListener("keydown", e => {
 // ================= STOP SESSION =================
 if (btnStop) {
   btnStop.addEventListener("click", async () => {
-    if (!isRunning || !activeDevice) {
+    const stopAvailable = isRunning ||
+      !!activeDevice ||
+      !!pendingDeviceName ||
+      firebaseSessionActive ||
+      [SessionState.WAITING_LOAD, SessionState.MONITORING, SessionState.OVERLOAD].includes(sessionState);
+    if (!stopAvailable) {
       showToast(tr("dashboardNoSession"), "error"); return;
     }
+    console.log("[SESSION] Stop requested");
     const sent = await sendRelayCommand("STOP", {
-      sessionId: activeDevice.id,
+      sessionId: activeDevice?.id || pendingSessionId || firebaseSessionId || "",
       reason: "USER_STOP"
     });
     if (!sent) return;
+    console.log("[SESSION] Stop command sent");
     // State migration point: MONITORING -> FINISHED; ESP32 keeps the source of truth.
     sessionState = SessionState.FINISHED;
     pendingUiState = "stopping";
@@ -1014,14 +1057,21 @@ function timestampSeconds(value) {
   return timestamp > 1000000000000 ? Math.floor(timestamp / 1000) : timestamp;
 }
 
+function epochMillis(value) {
+  const timestamp = Number(value || 0);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return 0;
+  if (timestamp > 1000000000000) return timestamp;
+  if (timestamp > 1500000000) return timestamp * 1000;
+  return 0;
+}
+
 function liveTimestampSeconds(finalTimestamp, legacyTimestamp) {
   if (finalTimestamp !== undefined && finalTimestamp !== null) {
     return timestampSeconds(finalTimestamp);
   }
   const legacy = Number(legacyTimestamp || 0);
   if (!Number.isFinite(legacy) || legacy <= 0) return 0;
-  // Transitional firmware used millis() here; the listener receive time keeps stale detection useful.
-  return legacy < 1500000000 ? Math.floor(Date.now() / 1000) : timestampSeconds(legacy);
+  return legacy < 1500000000 ? 0 : timestampSeconds(legacy);
 }
 
 function relayIsOn(value) {
@@ -1055,7 +1105,14 @@ if (selectedDevice) {
     firebaseActiveSsid = String(sys.activeSsid || "");
     firebaseFirmwareVersion = String(sys.firmwareVersion || "");
     systemInternet = isEspOnlineStatus(sys);
-    firebaseTimestamp = liveTimestampSeconds(sys.timestampUnixMs, sys.timestamp);
+    firebaseHeartbeatMs =
+      epochMillis(sys.lastSeen) ||
+      epochMillis(sys.lastSeenAt) ||
+      epochMillis(sys.timestampUnixMs) ||
+      epochMillis(sys.timestamp);
+    firebaseTimestamp = firebaseHeartbeatMs > 0
+      ? Math.floor(firebaseHeartbeatMs / 1000)
+      : liveTimestampSeconds(sys.timestampUnixMs, sys.timestamp);
     firebaseRelay = relayIsOn(sys.relayState ?? sys.relay);
     firebaseOffline = sys.offline === true || String(sys.mode || sys.systemMode || "").toUpperCase() === "OFFLINE";
     firebaseSessionActive = sys.sessionActive ?? firebaseSessionActive;
@@ -1085,6 +1142,11 @@ if (selectedDevice) {
     firebaseFreq     = Number(dev.frequency || 0);
     firebaseEnergy   = Number(dev.energy ?? dev.energyKwh ?? 0);
     firebaseCost     = Number(dev.cost || 0);
+    firebaseTelemetryAtMs =
+      epochMillis(dev.timestamp) ||
+      epochMillis(dev.timestampUnixMs) ||
+      epochMillis(dev.lastSeen) ||
+      firebaseHeartbeatMs;
     firebaseElapsedSec = Number(dev.duration ?? firebaseElapsedSec ?? 0);
     firebaseOverload = dev.overload === true;
     updateTimer();
@@ -1123,13 +1185,15 @@ async function updateMeters() {
   const diff = Math.abs(now - firebaseTimestamp);
 
   // ── Hitung systemOnline ──────────────────────────────────
-  const espTimestampFresh = firebaseTimestamp > 0 && diff <= STALE_THRESHOLD;
-  const listenerFresh = firebaseSystemReceivedAtMs > 0 &&
-    nowMs - firebaseSystemReceivedAtMs <= STALE_THRESHOLD * 1000;
-  liveDataFresh = espTimestampFresh || listenerFresh;
-  systemOnline = systemInternet;
+  const heartbeatAgeMs = firebaseHeartbeatMs > 0 ? nowMs - firebaseHeartbeatMs : Number.POSITIVE_INFINITY;
+  const telemetryAgeMs = firebaseTelemetryAtMs > 0 ? nowMs - firebaseTelemetryAtMs : Number.POSITIVE_INFINITY;
+  const espTimestampFresh = heartbeatAgeMs >= 0 && heartbeatAgeMs <= DEVICE_OFFLINE_TIMEOUT_MS;
+  const telemetryFresh = telemetryAgeMs >= 0 && telemetryAgeMs <= DEVICE_OFFLINE_TIMEOUT_MS;
+  liveDataFresh = espTimestampFresh && telemetryFresh;
+  systemOnline = espTimestampFresh;
   deviceOnline = systemOnline && firebaseDeviceConnected !== false;
   loadDetected = deviceOnline &&
+    liveDataFresh &&
     firebaseSessionState !== SessionState.WAITING_LOAD &&
     current >= settings.loadCurrentThreshold &&
     firebasePower >= settings.loadPowerThreshold;
@@ -1224,7 +1288,7 @@ async function updateMeters() {
   }
 
   // ── Device baru terdeteksi ─────────────────────────────
-  const sessionDeviceOnline = loadDetected && (firebaseRelay || firebaseSessionActive || isRunning);
+  const sessionDeviceOnline = loadDetected && (firebaseSessionActive || isRunning || !!pendingDeviceName);
   if (!prevDeviceConnected && sessionDeviceOnline) {
     // State migration point: WAITING_LOAD -> MONITORING.
     deviceConnectTime   = Date.now();
