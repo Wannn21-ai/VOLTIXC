@@ -412,7 +412,7 @@ static void processSerialCommand(char* rawCommand) {
   Serial.println(command);
 
   if (strcmp(command, "on") == 0) {
-    if (sessionIsActive()) {
+    if (sessionIsActive()) { // Jika sesi sudah aktif, cukup pastikan relay ON
       relaySet(true);
       Serial.println("[serial] OK: relay ON, existing session kept active");
     } else {
@@ -424,7 +424,7 @@ static void processSerialCommand(char* rawCommand) {
 
   if (strcmp(command, "off") == 0) {
     if (sessionIsActive()) {
-      sessionStop(EndReason::USER_STOP);
+      sessionStop(EndReason::USER_STOP); // Hentikan sesi jika aktif
     } else {
       relaySet(false);
     }
@@ -434,7 +434,7 @@ static void processSerialCommand(char* rawCommand) {
 
   if (strcmp(command, "toggle") == 0) {
     const bool turnOn = !relayIsOn();
-    if (!turnOn && sessionIsActive()) {
+    if (!turnOn && sessionIsActive()) { // Jika ingin mematikan relay dan ada sesi aktif, hentikan sesi
       sessionStop(EndReason::USER_STOP);
       Serial.println("[serial] OK: relay toggled OFF, session stopped");
     } else {
@@ -625,7 +625,7 @@ void setup() {
   sessionRecoveryBegin();
   networkBegin();
   firebaseBegin();
-
+  // Tentukan systemMode awal berdasarkan status jaringan
   systemMode = networkIsPortalActive() ? SystemMode::SETUP : (networkIsConnected() ? SystemMode::ONLINE : SystemMode::OFFLINE);
   displayShowStatus();
   Serial.println("[display] Startup status rendered");
@@ -654,7 +654,7 @@ void loop() {
   const bool onlineServicesAllowed = wifiConnected && !offlineModeBlocksAutoOnline();
   const bool onlineRestoredThisLoop = onlineServicesAllowed && !wasOnlineServicesAllowed;
   if (!wifiConnected && wasWifiConnected) {
-    sessionWriteCheckpoint();
+    sessionWriteCheckpoint(); // Simpan checkpoint jika WiFi terputus saat sesi aktif
     systemMode = SystemMode::OFFLINE;
   }
 
@@ -662,7 +662,7 @@ void loop() {
       !recoveryActive &&
       !offlineModeIsActive()) {
     if (sessionData.state == SessionState::WAITING_LOAD) {
-      offlineNoNetworkSinceMs = 0;
+      offlineNoNetworkSinceMs = 0; // Reset timer jika sedang WAITING_LOAD
       offlineModeEnter(OfflineEntryReason::AUTO_NO_WIFI);
     } else if (!sessionIsActive()) {
       if (offlineNoNetworkSinceMs == 0) {
@@ -670,7 +670,7 @@ void loop() {
       }
       const unsigned long timeoutSec = appConfig.offlineTimeoutSec > 0 ? appConfig.offlineTimeoutSec : 300UL;
       if (now - offlineNoNetworkSinceMs >= timeoutSec * 1000UL) {
-        offlineNoNetworkSinceMs = 0;
+        offlineNoNetworkSinceMs = 0; // Reset timer setelah masuk offline mode
         offlineModeEnter(OfflineEntryReason::AUTO_NO_WIFI);
       }
     } else {

@@ -465,7 +465,7 @@ void enterBootChoiceMenu() {
 void enterOfflineChoiceMenu() {
   currentMenu = MenuScreen::OFFLINE_CHOICE;
   selectedOption = 0;
-  optionCount = 2; // "Next Device", "Beralih ke Mode Online"
+  optionCount = 2; // "Next Device", "Mode Online"
   // NOTE: Anda perlu membuat fungsi displayShowMenu di display.cpp
   displayShowMenu("Opsi Offline", {"Next Device", "Mode Online"}, selectedOption);
 }
@@ -542,7 +542,7 @@ void executeSelectedOption() {
       }
       break;
 
-    case MenuScreen::OFFLINE_CHOICE:
+    case MenuScreen::OFFLINE_CHOICE: // Menu ini hanya muncul jika offlineModeIsManualLocked() && !sessionIsActive()
       if (selectedOption == 0) { // Next Device
         displayShowMessage("Offline", "Device Berikutnya...");
         Serial.println("[menu] Aksi: Device Berikutnya (Offline)");
@@ -550,7 +550,7 @@ void executeSelectedOption() {
       } else { // Beralih ke Mode Online
         displayShowMessage("Beralih...", "Mencoba Online");
         Serial.println("[menu] Aksi: Beralih ke Online dari Offline");
-        offlineModeExitManualLockAndTryOnline();
+        offlineModeExitManualLockAndTryOnline(); // Ini akan mencoba menyambungkan WiFi
       }
       break;
 

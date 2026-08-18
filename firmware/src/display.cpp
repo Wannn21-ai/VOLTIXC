@@ -208,7 +208,7 @@ void renderIdle() {
 void renderWaitingLoad() {
   if (offlineModeIsActive()) {
     startScreen();
-    drawLine(0, offlineModeIsManualLocked() ? "Offline Manual" : "Offline Auto");
+    drawLine(0, offlineModeIsManualLocked() ? "Offline Manual" : "Offline Mode");
     drawLine(1, "Relay: ON");
     drawLine(2, "Waiting Load");
     finishScreen();
@@ -227,7 +227,7 @@ void renderWaitingLoad() {
 
 void renderOfflineNoLoad() {
   startScreen();
-  drawLine(0, "No Load");
+  drawLine(0, "No Load Detected");
   drawLine(1, "Relay OFF");
   drawLine(2, "BOOT 1s Next");
   finishScreen();
@@ -236,7 +236,7 @@ void renderOfflineNoLoad() {
 void renderOfflineReady() {
   startScreen();
   if (offlineModeIsManualLocked()) {
-    drawLine(0, "Offline Manual");
+    drawLine(0, "Offline Manual Idle");
     drawLine(1, "Relay OFF");
     drawLine(2, "BOOT 1s Next");
   } else {
@@ -260,7 +260,7 @@ void renderMonitoring() {
   char duration[16];
 
   trimText(sessionData.deviceName, deviceName, sizeof(deviceName));
-  formatDuration(sessionData.durationMs / 1000UL, duration, sizeof(duration));
+  formatDuration(sessionData.durationMs / 1000UL, duration, sizeof(duration)); // Durasi dalam detik
 
   startScreen();
   drawLine(0, deviceName);
@@ -366,7 +366,7 @@ void renderScreen() {
   }
 
   if (sessionData.state == SessionState::MONITORING) {
-    resetRotation();
+    // Tidak perlu resetRotation di sini, karena renderMonitoring akan selalu dipanggil
     renderMonitoring();
     return;
   }
@@ -374,7 +374,7 @@ void renderScreen() {
   if (sessionData.state == SessionState::WAITING_LOAD) {
     resetRotation();
     renderWaitingLoad();
-    return;
+    return; // Pastikan ini diproses sebelum offlineModeShowFinishedSummary
   }
 
   if (offlineModeShowFinishedSummary()) {
@@ -422,11 +422,11 @@ void renderScreen() {
 
   switch (sessionData.state) {
     case SessionState::IDLE:
-      if (idleBrandingAllowed() && shouldShowBranding(RotationContext::IDLE)) {
+      if (idleBrandingAllowed() && shouldShowBranding(RotationContext::IDLE)) { // Branding hanya saat idle dan tidak ada sesi
         renderBranding();
       } else {
         if (!idleBrandingAllowed()) {
-          resetRotation();
+          resetRotation(); // Reset rotasi jika kondisi branding tidak terpenuhi
         }
         renderIdle();
       }
