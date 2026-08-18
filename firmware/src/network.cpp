@@ -230,45 +230,36 @@ bool canStartCaptivePortal(const char* reason) {
 
 void sendSetupForm() {
   String page;
-  page.reserve(3600);
-  page += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>");
-  page += F("<title>Voltix Setup</title><style>");
-  page += F("body{font-family:Arial,sans-serif;margin:0;background:#f6f7f9;color:#111}");
-  page += F("main{max-width:420px;margin:32px auto;padding:20px;background:#fff;border:1px solid #ddd;border-radius:8px}");
-  page += F("label{display:block;margin-top:14px;font-weight:600}input{box-sizing:border-box;width:100%;padding:10px;margin-top:6px;border:1px solid #bbb;border-radius:6px;font-size:16px}");
-  page += F("button{width:100%;margin-top:14px;padding:12px;border:0;border-radius:6px;background:#111;color:#fff;font-size:16px}");
-  page += F(".secondary{background:#444}.ghost{background:#0b6}small{display:block;margin-top:10px;color:#555}a{display:block;margin-top:16px;color:#333;text-align:center}</style></head><body><main>");
-  page += F("<h1>Voltix Setup</h1><form id='setupForm' method='post' action='/save'>");
-  page += F("<label>WiFi SSID<input name='ssid' value='");
+  page.reserve(2048);
+  page += F("<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Voltix Setup</title><style>"
+            "*,:after,:before{box-sizing:border-box}"
+            "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:#0a0a0a;color:#f0f0f0;font-size:16px;line-height:1.5}"
+            "main{max-width:420px;margin:40px auto;padding:24px;background:#1a1a1a;border:1px solid rgba(255,255,255,.07);border-radius:12px}"
+            "h1{margin:0 0 8px;font-size:24px;font-weight:600}"
+            "p{margin:0 0 24px;color:#888}"
+            "label{display:block;margin-top:16px;font-weight:500;font-size:14px;color:#aaa}"
+            "input{display:block;box-sizing:border-box;width:100%;padding:12px;margin-top:6px;border:1px solid rgba(255,255,255,.15);border-radius:8px;font-size:16px;background:#111;color:#f0f0f0}"
+            "input:focus{outline:0;border-color:#0095ff}"
+            "button{width:100%;margin-top:24px;padding:14px;border:0;border-radius:8px;background:#007aff;color:#fff;font-size:16px;font-weight:600;cursor:pointer}"
+            "button:hover{background:#0056b3}"
+            "a{display:block;margin-top:20px;color:#888;text-align:center;font-size:14px;text-decoration:none}"
+            "</style></head><body><main>"
+            "<h1>Voltix WiFi Setup</h1>"
+            "<p>Connect your device to the internet.</p>"
+            "<form method='post' action='/save'>"
+            "<label for='ssid'>WiFi Network (SSID)</label>"
+            "<input id='ssid' name='ssid' value='");
   page += htmlEscape(savedWifiSsid);
-  page += F("'></label><label>WiFi Password<input name='password' type='password' value='");
+  page += F("' placeholder='Your WiFi Name' required>"
+            "<label for='password'>Password</label>"
+            "<input id='password' name='password' type='password' value='");
   page += htmlEscape(savedWifiPassword);
-  page += F("'></label><label>Tariff<input name='tariff' type='number' step='0.01' value='");
-  page += String(appConfig.tariffPerKwh, 2);
-  page += F("'></label><label>Currency<input name='currency' maxlength='7' value='");
-  page += htmlEscape(String(appConfig.currency));
-  page += F("'></label><label>Overload Threshold (W)<input name='overloadThreshold' type='number' step='0.1' value='");
-  page += String(appConfig.overloadThresholdW > 0.0f ? appConfig.overloadThresholdW : Config::OVERLOAD_THRESHOLD_W, 1);
-  page += F("'></label><label>Overload Warning (%)<input name='overloadWarningPercent' type='number' step='0.1' value='");
-  page += String(appConfig.overloadWarningPercent > 0.0f ? appConfig.overloadWarningPercent : 90.0f, 1);
-  page += F("'></label><label>Load Power Threshold (W)<input name='loadPowerThreshold' type='number' step='0.1' value='");
-  page += String(appConfig.loadPowerThresholdW, 1);
-  page += F("'></label><label>Load Current Threshold (A)<input name='loadCurrentThreshold' type='number' step='0.01' value='");
-  page += String(appConfig.loadCurrentThresholdA, 2);
-  page += F("'></label><label>Load Removed Delay (sec)<input name='loadRemovedDelaySec' type='number' step='1' value='");
-  page += String(appConfig.loadRemovedDelaySec);
-  page += F("'></label><label>Offline Timeout (sec)<input name='offlineTimeoutSec' type='number' step='1' value='");
-  page += String(appConfig.offlineTimeoutSec);
-  page += F("'></label><label>Checkpoint Interval (sec)<input name='checkpointIntervalSec' type='number' step='1' value='");
-  page += String(appConfig.checkpointIntervalSec > 0 ? appConfig.checkpointIntervalSec : 30UL);
-  page += F("'></label><small>Revision ");
-  page += configRevisionText();
-  page += F(" source ");
-  page += htmlEscape(String(appConfig.configSource));
-  page += F("</small><button class='ghost' type='submit' formaction='/save-config'>Save Config</button>");
-  page += F("<button type='submit'>Save WiFi + Config</button>");
-  page += F("<button class='secondary' type='submit' formaction='/offline'>Lanjutkan Mode Offline</button></form>");
-  page += F("<a href='/status'>Status</a><a href='/reset-wifi'>Reset WiFi</a></main></body></html>");
+  page += F("' placeholder='Your WiFi Password'>"
+            "<button type='submit'>Save & Connect</button>"
+            "</form>"
+            "<a href='/offline'>Or, enter Offline Mode</a>"
+            "</main></body></html>");
   portalServer.send(200, "text/html", page);
 }
 
