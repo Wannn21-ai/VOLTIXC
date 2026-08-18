@@ -16,7 +16,6 @@
 bool networkIsMenuActive();
 void networkGetMenuDetails(String& title, std::vector<std::string>& options, int& selected);
 
-
 namespace {
 constexpr int SCREEN_WIDTH = 128;
 constexpr int SCREEN_HEIGHT = 64;
@@ -207,8 +206,16 @@ void renderBranding() {
 
 void renderIdle() {
   startScreen();
-  drawLine(0, "Voltix Ready");
-  drawLine(2, Config::DEVICE_ID);
+  if (appConfig.pairingCode[0] != '\0') {
+    drawCenteredText("Pairing Code", 5, 1);
+    oled.drawLine(0, 16, SCREEN_WIDTH, 16, SSD1306_WHITE);
+    drawCenteredText(appConfig.pairingCode, 28, 3);
+    drawCenteredText("Enter in web app", 55, 1);
+  } else {
+    drawLine(0, "Voltix Ready");
+    drawLine(2, Config::DEVICE_ID);
+    drawLine(4, "Fetching code...");
+  }
   finishScreen();
 }
 
@@ -447,18 +454,6 @@ void renderScreen() {
         }
         renderIdle();
       }
-      break;
-    case SessionState::WAITING_LOAD:
-      resetRotation();
-      renderWaitingLoad();
-      break;
-    case SessionState::MONITORING:
-      resetRotation();
-      renderMonitoring();
-      break;
-    case SessionState::OVERLOAD:
-      resetRotation();
-      renderOverload();
       break;
     case SessionState::FINISHING:
     case SessionState::FINISHED:

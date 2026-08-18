@@ -884,6 +884,11 @@ void loop() {
       firebaseReadConfig();
     }
   }
+  
+  if (onlineServicesAllowed && appConfig.pairingCode[0] == '\0' && !sessionIsActive() && !wasRecoveryActive) {
+    // Coba ambil kode pairing jika belum ada
+    firebaseFetchPairingCode();
+  }
 
   storageUpdate();
   indicatorsUpdate();

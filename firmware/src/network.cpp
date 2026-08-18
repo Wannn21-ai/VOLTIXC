@@ -15,6 +15,9 @@
 #include <vector>
 #include <string>
 
+// Forward declaration for function defined later in this file
+void startWiFiConnection(const String& ssid, const String& password, WifiSource source, bool background);
+
 enum class MenuScreen {
   NONE,
   BOOT_CHOICE,
@@ -107,8 +110,6 @@ static DNSServer dnsServer;
 static const IPAddress setupIp(192, 168, 4, 1);
 static const IPAddress setupGateway(192, 168, 4, 1);
 static const IPAddress setupSubnet(255, 255, 255, 0);
-
-void startWiFiConnection(const String& ssid, const String& password, WifiSource source, bool background);
 
 String htmlEscape(const String& value) {
   String escaped = value;
@@ -422,26 +423,6 @@ void stopSetupPortalForActiveSession() {
   }
 }
 
-void startWiFiConnection(const String& ssid, const String& password, WifiSource source, bool background) {
-  activeWifiSsid = ssid;
-  activeWifiPassword = password;
-  activeWifiSource = source;
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(activeWifiSsid.c_str(), activeWifiPassword.c_str());
-  systemMode = background || isSessionBusyForNetwork() ? SystemMode::OFFLINE : SystemMode::TRANSITION;
-  lastReconnectAttemptMs = millis();
-  connectStartedAtMs = millis();
-  wasConnecting = true;
-
-  if (background) {
-    Serial.println("[network] Background reconnect attempt...");
-  } else if (source == WifiSource::SAVED) {
-    Serial.println("[network] Trying saved WiFi...");
-  } else if (source == WifiSource::FALLBACK) {
-    Serial.println("[network] Trying credentials.h fallback WiFi...");
-  }
-}
-
 bool credentialsFallbackAvailable() {
   return WIFI_SSID != nullptr && WIFI_SSID[0] != '\0';
 }
@@ -513,7 +494,7 @@ void executeSelectedOption() {
   switch (currentMenu) {
     case MenuScreen::BOOT_CHOICE:
       if (selectedOption == 0) { // Online
-        displayShowMessage("Mode Online", "Mencari WiFi...");
+        displayShowButtonFeedback("Mencari WiFi...");
         Serial.println("[menu] Aksi: Mulai Mode Online");
         if (loadSavedWiFiCredentials(savedWifiSsid, savedWifiPassword)) {
           startWiFiConnection(savedWifiSsid, savedWifiPassword, WifiSource::SAVED, false);
@@ -522,7 +503,7 @@ void executeSelectedOption() {
           startSetupPortal("boot no WiFi credentials");
         }
       } else { // Offline
-        displayShowMessage("Mode Offline", "Menyiapkan...");
+        displayShowButtonFeedback("Mode Offline...");
         Serial.println("[menu] Aksi: Mulai Mode Offline");
         offlineModeEnter(OfflineEntryReason::MANUAL_MENU);
       }
@@ -530,11 +511,11 @@ void executeSelectedOption() {
 
     case MenuScreen::OFFLINE_CHOICE:
       if (selectedOption == 0) { // Next Device
-        displayShowMessage("Offline", "Device Berikutnya...");
+        displayShowButtonFeedback("Device Berikutnya...");
         Serial.println("[menu] Aksi: Device Berikutnya (Offline)");
         offlineModeStartNextAttempt(false);
       } else { // Beralih ke Mode Online
-        displayShowMessage("Beralih...", "Mencoba Online");
+        displayShowButtonFeedback("Mencoba Online...");
         Serial.println("[menu] Aksi: Beralih ke Online dari Offline");
         offlineModeExitManualLockAndTryOnline(); // Ini akan mencoba menyambungkan WiFi
       }
@@ -547,6 +528,26 @@ void executeSelectedOption() {
   menuOptions.clear();
   menuTitle = "";
 }
+}
+
+void startWiFiConnection(const String& ssid, const String& password, WifiSource source, bool background) {
+  activeWifiSsid = ssid;
+  activeWifiPassword = password;
+  activeWifiSource = source;
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(activeWifiSsid.c_str(), activeWifiPassword.c_str());
+  systemMode = background || isSessionBusyForNetwork() ? SystemMode::OFFLINE : SystemMode::TRANSITION;
+  lastReconnectAttemptMs = millis();
+  connectStartedAtMs = millis();
+  wasConnecting = true;
+
+  if (background) {
+    Serial.println("[network] Background reconnect attempt...");
+  } else if (source == WifiSource::SAVED) {
+    Serial.println("[network] Trying saved WiFi...");
+  } else if (source == WifiSource::FALLBACK) {
+    Serial.println("[network] Trying credentials.h fallback WiFi...");
+  }
 }
 
 bool networkIsMenuActive() {

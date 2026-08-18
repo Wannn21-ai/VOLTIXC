@@ -1006,16 +1006,18 @@ bool offlineModeEnter(OfflineEntryReason reason) {
 }
 
 bool offlineModeExitManualLockAndTryOnline() {
-  if (!offlineModeActive || !offlineManualLock) {
+  // This function is called when the user manually requests to switch to online mode from the offline menu.
+  // We should allow this regardless of whether the offline mode is "manually locked".
+  if (!offlineModeActive) {
     return false;
   }
 
   logModeStateTransition("OFFLINE_MODE", "ONLINE", "manual_unlock_menu");
-  offlineManualLock = false;
+  offlineManualLock = false; // Always unlock when manually switching
   manualOfflineIdleStartedAtMs = 0;
   manualOfflineTryingOnline = true;
   manualOfflineTryingOnlineAtMs = millis();
-  logOfflineModeState("BOOT 3s exit manual offline", "trying online");
+  logOfflineModeState("Menu exit offline", "trying online");
   networkReconnectSavedWiFiFromManualOffline();
   return true;
 }

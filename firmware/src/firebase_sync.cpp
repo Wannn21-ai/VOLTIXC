@@ -17,12 +17,15 @@
 #include <math.h>
 #include <stdlib.h>
 #include <WiFi.h>
+#include <Preferences.h>
 #include <WiFiClientSecure.h>
 
 static constexpr unsigned long HTTP_LOG_INTERVAL_MS = 5000UL;
 static constexpr unsigned long SINGULAR_COMMAND_FALLBACK_POLL_INTERVAL_MS = 5000UL;
 static constexpr uint64_t FINAL_COMMAND_MAX_AGE_MS = 5ULL * 60ULL * 1000ULL;
 
+static constexpr const char* PREF_NAMESPACE_FB = "fb_sync";
+static constexpr const char* PREF_KEY_LAST_CMD_ID = "last_cmd_id";
 static char lastProcessedCommandId[48] = "";
 static uint64_t lastProcessedFinalCommandAt = 0;
 static char ackId[48] = "";
@@ -74,6 +77,21 @@ static String legacyConfigJsonPath() {
 
 static String finalCommandJsonPath() {
   return configJsonPath(FirebasePaths::pathDeviceCommand(String(Config::DEVICE_ID)));
+}
+
+static void saveLastProcessedCommandId(const char* id) {
+  if (id == nullptr || id[0] == '\0' || strcmp(id, lastProcessedCommandId) == 0) {
+    return;
+  }
+  strlcpy(lastProcessedCommandId, id, sizeof(lastProcessedCommandId));
+
+  Preferences prefs;
+  if (prefs.begin(PREF_NAMESPACE_FB, false)) { // read-write
+    prefs.putString(PREF_KEY_LAST_CMD_ID, lastProcessedCommandId);
+    prefs.end();
+  } else {
+    Serial.println("[firebase] ERROR: Failed to save last processed command ID");
+  }
 }
 
 static String configRevisionText(uint64_t revision) {
@@ -827,6 +845,17 @@ static bool pollFinalCommand() {
 void firebaseBegin() {
   Serial.print("[firebase] REST initialized deviceId=");
   Serial.println(Config::DEVICE_ID);
+
+  // Load the last processed command ID from NVS
+  Preferences prefs;
+  if (prefs.begin(PREF_NAMESPACE_FB, true)) { // read-only
+    prefs.getString(PREF_KEY_LAST_CMD_ID, lastProcessedCommandId, sizeof(lastProcessedCommandId));
+    prefs.end();
+    if (lastProcessedCommandId[0] != '\0') {
+      Serial.print("[firebase] Loaded last processed command ID: ");
+      Serial.println(lastProcessedCommandId);
+    }
+  }
   deviceAuthBegin();
   if (deviceAuthIsEnabled()) {
     Serial.println("[firebase] Device auth scaffold enabled; tokens remain redacted");
@@ -1024,6 +1053,53 @@ bool firebasePushDeviceConfig() {
   return ok;
 }
 
+bool firebaseFetchPairingCode() {
+  if (appConfig.pairingCode[0] != '\0') {
+    return true; // Kode sudah ada
+  }
+  if (Config::DEVICE_ID == nullptr || Config::DEVICE_ID[0] == '\0') {
+    return false;
+  }
+
+  String path = String("/pairingCodes.json?orderBy=\"deviceId\"&equalTo=\"") + Config::DEVICE_ID + "\"&limitToFirst=1";
+  String response;
+  if (!httpRequest("GET", path.c_str(), "", &response, false)) {
+    return false;
+  }
+
+  if (response == "null" || response.length() == 0 || response == "{}") {
+    Serial.println("[pairing] No pairing code found for this device");
+    return false;
+  }
+
+  DynamicJsonDocument doc(512);
+  const DeserializationError error = deserializeJson(doc, response);
+  if (error || !doc.is<JsonObject>()) {
+    Serial.print("[pairing] Failed to parse pairing code response: ");
+    Serial.println(error.c_str());
+    return false;
+  }
+
+  JsonObject obj = doc.as<JsonObject>();
+  if (obj.size() != 1) {
+    return false;
+  }
+
+  // Kunci dari objek pertama adalah kode pairing
+  const char* code = obj.begin()->key().c_str();
+  JsonObject pairingData = obj.begin()->value();
+
+  if (code != nullptr && strlen(code) == 6 && !pairingData["used"].as<bool>()) {
+    strlcpy(appConfig.pairingCode, code, sizeof(appConfig.pairingCode));
+    Serial.print("[pairing] Fetched pairing code: ");
+    Serial.println(appConfig.pairingCode);
+    return true;
+  }
+
+  Serial.println("[pairing] Found invalid or used pairing code");
+  return false;
+}
+
 bool firebaseDeviceConfigPushBlocked() {
   return configPushBlockedByRules;
 }
@@ -1047,10 +1123,11 @@ void firebasePollCommand() {
   String response;
   const bool forceLog = shouldLog(lastPollLogMs);
   bool pathUnauthorized = false;
+  const String commandPath = String("/devices/") + Config::DEVICE_ID + "/commands/current.json";
   const unsigned long commandHttpStartedAtMs = millis();
   const bool commandHttpOk = httpRequest(
         "GET",
-        "/devices/esp32-voltix-001/commands/current.json",
+        commandPath.c_str(),
         "",
         &response,
         forceLog,
@@ -1097,11 +1174,12 @@ void firebasePollCommand() {
   }
 
   if (!hasCommandTimestamp || primaryCommandIsStale(commandUpdatedAt)) {
-    strlcpy(lastProcessedCommandId, id, sizeof(lastProcessedCommandId));
+    saveLastProcessedCommandId(id);
     Serial.println("[command] Ignored stale commands/current command");
     setAck(id, type, "REJECTED", "Stale command ignored", "STALE");
-    firebaseAckCommand();
-    httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
+    const String lastAckPath = String("/devices/") + Config::DEVICE_ID + "/commands/lastAck.json";
+    firebaseAckCommand(lastAckPath.c_str());
+    httpRequest("PUT", commandPath.c_str(), "null", nullptr, true);
     return;
   }
 
@@ -1110,12 +1188,13 @@ void firebasePollCommand() {
       return;
     }
     setAck(id, type, "DONE", "Duplicate command ignored");
-    firebaseAckCommand();
-    httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
+    const String lastAckPath = String("/devices/") + Config::DEVICE_ID + "/commands/lastAck.json";
+    firebaseAckCommand(lastAckPath.c_str());
+    httpRequest("PUT", commandPath.c_str(), "null", nullptr, true);
     return;
   }
 
-  strlcpy(lastProcessedCommandId, id, sizeof(lastProcessedCommandId));
+  saveLastProcessedCommandId(id);
 
   if (commandTypeIsStart(type)) {
     Serial.println("[COMMAND] START_SESSION received");
@@ -1129,8 +1208,9 @@ void firebasePollCommand() {
     saveLocalConfig();
     if (!sessionStart(deviceName)) {
       setAck(id, type, "ERROR", "Device is busy");
-      firebaseAckCommand();
-      httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
+      const String lastAckPath = String("/devices/") + Config::DEVICE_ID + "/commands/lastAck.json";
+      firebaseAckCommand(lastAckPath.c_str());
+      httpRequest("PUT", commandPath.c_str(), "null", nullptr, true);
       return;
     }
     sessionSetRemoteContext(uid, commandSessionId);
@@ -1155,7 +1235,8 @@ void firebasePollCommand() {
   }
 
   setAck(id, type, "ERROR", "Unknown command type");
-  firebaseAckCommand();
+  const String lastAckPath = String("/devices/") + Config::DEVICE_ID + "/commands/lastAck.json";
+  firebaseAckCommand(lastAckPath.c_str());
 }
 
 bool firebaseCommandTransitionPending() {
@@ -1173,12 +1254,14 @@ void firebaseFlushTransitionAck() {
   if (!transitionAckRequested) {
     return;
   }
-  firebaseAckCommand();
-  httpRequest("PUT", "/devices/esp32-voltix-001/commands/current.json", "null", nullptr, true);
+  const String lastAckPath = String("/devices/") + Config::DEVICE_ID + "/commands/lastAck.json";
+  firebaseAckCommand(lastAckPath.c_str());
+  const String currentCommandPath = String("/devices/") + Config::DEVICE_ID + "/commands/current.json";
+  httpRequest("PUT", currentCommandPath.c_str(), "null", nullptr, true);
   transitionAckRequested = false;
 }
 
-void firebaseAckCommand() {
+void firebaseAckCommand(const char* path) {
   StaticJsonDocument<384> doc;
   doc["id"] = ackId;
   doc["type"] = ackType;
@@ -1191,7 +1274,7 @@ void firebaseAckCommand() {
 
   String payload;
   serializeJson(doc, payload);
-  httpRequest("PUT", "/devices/esp32-voltix-001/commands/lastAck.json", payload, nullptr, true);
+  httpRequest("PUT", path, payload, nullptr, true);
 }
 
 HistoryCleanupPollResult firebasePollHistoryCleanup() {
