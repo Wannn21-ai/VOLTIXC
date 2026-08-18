@@ -87,19 +87,6 @@ static void logModeStateTransition(const char* from, const char* to, const char*
   Serial.println(sessionStateToString(sessionData.state));
 }
 
-static void logModeStateTransition(const char* from, const char* to, const char* reason) {
-  Serial.print("[STATE] ");
-  Serial.print(from);
-  Serial.print(" -> ");
-  Serial.print(to);
-  if (reason != nullptr && reason[0] != '\0') {
-    Serial.print(" reason=");
-    Serial.print(reason);
-  }
-  Serial.print(" session=");
-  Serial.println(sessionStateToString(sessionData.state));
-}
-
 static void logOfflineModeState(const char* action, const char* reason) {
   Serial.print("[offline] ");
   Serial.print(action);
@@ -397,34 +384,7 @@ static void resetLoadValidationState() {
   loadValidationStableSamples = 0;
   loadValidationValidSamples = 0;
   loadValidationSampleIndex = 0;
-  loadValidationSampleIndex = 0;
   loadValidationWaitingLogged = false;
-}
-
-static void clearSessionRuntime(EndReason reason) {
-  relaySet(false);
-  sessionData.state = SessionState::IDLE;
-  sessionData.endReason = reason;
-  sessionData.sessionId[0] = '\0';
-  sessionData.uid[0] = '\0';
-  sessionData.deviceName[0] = '\0';
-  sessionData.startedAtMs = 0;
-  sessionData.endedAtMs = 0;
-  sessionData.lastUpdateMs = 0;
-  sessionData.durationMs = 0;
-  sessionData.startEnergyKwh = sensorData.energy;
-  sessionData.energyWh = 0.0f;
-  sessionData.energyKwh = 0.0f;
-  sessionData.cost = 0.0f;
-  sessionData.averagePowerW = 0.0f;
-  sessionData.peakPowerW = 0.0f;
-  sessionData.pendingSync = false;
-  elapsedBeforeRecoveryMs = 0;
-  // resumeMillis = 0; // Ini sudah di clearSessionRuntime
-  resumeMillis = 0;
-  acMissingDuringMonitoringLogged = false;
-  resetLoadValidationState();
-  storageClearActiveSessionCheckpoint();
 }
 
 static unsigned long currentLoadValidationTimeoutMs() {
