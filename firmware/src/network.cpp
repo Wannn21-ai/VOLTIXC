@@ -15,6 +15,12 @@
 #include <vector>
 #include <string>
 
+enum class WifiSource {
+  NONE,
+  SAVED,
+  FALLBACK
+};
+
 // Forward declaration for function defined later in this file
 void startWiFiConnection(const String& ssid, const String& password, WifiSource source, bool background);
 
@@ -97,12 +103,6 @@ static bool initialNetworkSetup = true;
 static String savedWifiSsid;
 static String savedWifiPassword;
 static String activeWifiSsid;
-
-enum class WifiSource {
-  NONE,
-  SAVED,
-  FALLBACK
-};
 static String activeWifiPassword;
 static WifiSource activeWifiSource = WifiSource::NONE;
 static WebServer portalServer(80);
