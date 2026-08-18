@@ -9,6 +9,13 @@
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <Wire.h>
+#include <vector>
+#include <string>
+
+// Forward declarations for functions from network.cpp
+bool networkIsMenuActive();
+void networkGetMenuDetails(String& title, std::vector<std::string>& options, int& selected);
+
 
 namespace {
 constexpr int SCREEN_WIDTH = 128;
@@ -329,6 +336,16 @@ void renderRecovery() {
 
 void renderScreen() {
   if (!oledReady) {
+    return;
+  }
+
+  if (networkIsMenuActive()) {
+    String title;
+    std::vector<std::string> options;
+    int selected;
+    networkGetMenuDetails(title, options, selected);
+    displayShowMenu(title.c_str(), options, selected);
+    resetRotation();
     return;
   }
 

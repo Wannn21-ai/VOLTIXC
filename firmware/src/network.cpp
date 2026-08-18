@@ -12,7 +12,18 @@
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <vector>
+#include <string>
 
+enum class MenuScreen {
+  NONE,
+  BOOT_CHOICE,
+  OFFLINE_CHOICE
+};
+static MenuScreen currentMenu = MenuScreen::NONE;
+static int selectedOption = 0;
+static std::vector<std::string> menuOptions;
+static String menuTitle;
 namespace {
 constexpr size_t NVS_KEY_MAX_LENGTH = 15;
 constexpr char PREF_NAMESPACE[] = "voltix";
@@ -60,26 +71,10 @@ constexpr unsigned long BOOT_ENTER_OFFLINE_MS = 10000UL;
 constexpr unsigned long DEBOUNCE_DELAY_MS = 200UL;
 constexpr byte DNS_PORT = 53;
 
-enum class WifiSource {
-  NONE,
-  SAVED,
-  FALLBACK
-};
-
-enum class MenuScreen {
-  NONE,
-  BOOT_CHOICE,
-  OFFLINE_CHOICE
-};
-
 void updateTwoButtonMenu();
 void enterBootChoiceMenu();
 void enterOfflineChoiceMenu();
 void executeSelectedOption();
-
-static MenuScreen currentMenu = MenuScreen::NONE;
-static int selectedOption = 0;
-static int optionCount = 0;
 
 // Debouncing
 static unsigned long lastOkPressMs = 0;
@@ -99,6 +94,12 @@ static bool initialNetworkSetup = true;
 static String savedWifiSsid;
 static String savedWifiPassword;
 static String activeWifiSsid;
+
+enum class WifiSource {
+  NONE,
+  SAVED,
+  FALLBACK
+};
 static String activeWifiPassword;
 static WifiSource activeWifiSource = WifiSource::NONE;
 static WebServer portalServer(80);
@@ -457,23 +458,22 @@ bool credentialsFallbackAvailable() {
 void enterBootChoiceMenu() {
   currentMenu = MenuScreen::BOOT_CHOICE;
   selectedOption = 0;
-  optionCount = 2; // "Online", "Offline"
-  // NOTE: Anda perlu membuat fungsi displayShowMenu di display.cpp
-  displayShowMenu("Pilih Mode", {"Online", "Offline"}, selectedOption);
+  menuTitle = "Pilih Mode";
+  menuOptions = {"Online", "Offline"};
 }
 
 void enterOfflineChoiceMenu() {
   currentMenu = MenuScreen::OFFLINE_CHOICE;
   selectedOption = 0;
-  optionCount = 2; // "Next Device", "Mode Online"
-  // NOTE: Anda perlu membuat fungsi displayShowMenu di display.cpp
-  displayShowMenu("Opsi Offline", {"Next Device", "Mode Online"}, selectedOption);
+  menuTitle = "Opsi Offline";
+  menuOptions = {"Next Device", "Mode Online"};
 }
 
 void updateTwoButtonMenu() {
   if (currentMenu == MenuScreen::NONE) {
-    // Jika dalam mode offline manual dan tidak ada sesi aktif, tampilkan menu offline
-    if (offlineModeIsManualLocked() && !sessionIsActive()) {
+    // Jika dalam mode offline dan siap untuk aksi berikutnya (mis. setelah sesi selesai
+    // atau gagal deteksi beban), tampilkan menu pilihan.
+    if (offlineModeCanStartNextAttempt()) {
       enterOfflineChoiceMenu();
     }
     return;
@@ -504,14 +504,9 @@ void updateTwoButtonMenu() {
   }
 
   if (navPressed) {
-    selectedOption = (selectedOption + 1) % optionCount;
+    selectedOption = (selectedOption + 1) % menuOptions.size();
     Serial.print("[menu] Navigasi ke opsi: ");
     Serial.println(selectedOption);
-    if (currentMenu == MenuScreen::BOOT_CHOICE) {
-      displayShowMenu("Pilih Mode", {"Online", "Offline"}, selectedOption);
-    } else if (currentMenu == MenuScreen::OFFLINE_CHOICE) {
-      displayShowMenu("Opsi Offline", {"Next Device", "Mode Online"}, selectedOption);
-    }
   }
 
   if (okPressed) {
@@ -542,7 +537,7 @@ void executeSelectedOption() {
       }
       break;
 
-    case MenuScreen::OFFLINE_CHOICE: // Menu ini hanya muncul jika offlineModeIsManualLocked() && !sessionIsActive()
+    case MenuScreen::OFFLINE_CHOICE:
       if (selectedOption == 0) { // Next Device
         displayShowMessage("Offline", "Device Berikutnya...");
         Serial.println("[menu] Aksi: Device Berikutnya (Offline)");
@@ -557,13 +552,30 @@ void executeSelectedOption() {
     default:
       break;
   }
-  currentMenu = MenuScreen::NONE; // Keluar dari menu setelah aksi
+  currentMenu = MenuScreen::NONE;
+  menuOptions.clear();
+  menuTitle = "";
 }
+}
+
+bool networkIsMenuActive() {
+  return currentMenu != MenuScreen::NONE;
+}
+
+void networkGetMenuDetails(String& title, std::vector<std::string>& options, int& selected) {
+  if (currentMenu == MenuScreen::NONE) {
+    return;
+  }
+  title = menuTitle;
+  options = menuOptions;
+  selected = selectedOption;
 }
 
 void networkBegin() {
   pinMode(Config::BUTTON_OK_PIN, INPUT_PULLUP);
   pinMode(Config::BUTTON_NAV_PIN, INPUT_PULLUP);
+  
+  // Tampilkan menu pilihan mode saat boot
   Serial.println("[network] Menampilkan menu pilihan mode boot...");
   enterBootChoiceMenu();
 }
