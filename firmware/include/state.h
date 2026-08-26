@@ -72,6 +72,13 @@ struct ActiveSessionCheckpoint {
   uint64_t startUnixMs;
   unsigned long lastCheckpointMs;
   bool relayState;
+  float lastValidVoltage;
+  float lastValidCurrent;
+  float lastValidPower;
+  float lastValidFrequency;
+  float lastValidPowerFactor;
+  bool offlineModeActive;
+  bool offlineManualLock;
   char createdFrom[32];
 };
 

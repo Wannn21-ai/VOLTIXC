@@ -6,6 +6,7 @@
 #include "relay.h"
 #include "session.h"
 #include "state.h"
+#include "storage.h"
 
 #include <Arduino.h>
 #include <DNSServer.h>
@@ -33,6 +34,18 @@ static MenuScreen currentMenu = MenuScreen::NONE;
 static int selectedOption = 0;
 static std::vector<std::string> menuOptions;
 static String menuTitle;
+
+// Variables and function for restart logic, moved to file scope to be accessible
+// by both networkUpdate() and functions within the anonymous namespace.
+static unsigned long restartAtMs = 0;
+constexpr unsigned long RESTART_DELAY_MS = 1200UL; // Moved from anonymous namespace
+
+static bool restartPending = false;
+void scheduleRestart() {
+  restartPending = true;
+  restartAtMs = millis() + RESTART_DELAY_MS;
+}
+
 namespace {
 constexpr size_t NVS_KEY_MAX_LENGTH = 15;
 constexpr char PREF_NAMESPACE[] = "voltix";
@@ -80,8 +93,46 @@ constexpr unsigned long BOOT_ENTER_OFFLINE_MS = 10000UL;
 constexpr unsigned long DEBOUNCE_DELAY_MS = 200UL;
 constexpr byte DNS_PORT = 53;
 
+void systemReset() {
+  Serial.println("[system] Performing system reset.");
+  displayShowMessage("Resetting", "Please wait...", 1);
+
+  // 1. Clear all history from LittleFS
+  if (storageClearHistory()) {
+    Serial.println("[system] History cleared.");
+  } else {
+    Serial.println("[system] Failed to clear history.");
+  }
+
+  // 2. Clear active session checkpoint
+  if (sessionClearCheckpoint()) {
+    Serial.println("[system] Checkpoint cleared.");
+  } else {
+    Serial.println("[system] Failed to clear checkpoint.");
+  }
+
+  // 3. Clear all preferences in the 'voltix' namespace
+  Preferences prefs;
+  if (prefs.begin(PREF_NAMESPACE, false)) {
+    if (prefs.clear()) {
+      Serial.println("[system] All preferences cleared.");
+    } else {
+      Serial.println("[system] Failed to clear preferences.");
+    }
+    prefs.end();
+  } else {
+    Serial.println("[system] Failed to open preferences for clearing.");
+  }
+  
+  // 4. Schedule a restart
+  Serial.println("[system] System reset complete. Restarting...");
+  displayShowMessage("Restarting", "", 1);
+  scheduleRestart();
+}
+
 void updateTwoButtonMenu();
 void enterBootChoiceMenu();
+void enterRuntimeModeChoiceMenu();
 void enterOfflineChoiceMenu();
 void executeSelectedOption();
 
@@ -91,13 +142,11 @@ static unsigned long lastNavPressMs = 0;
 
 static unsigned long lastReconnectAttemptMs = 0;
 static unsigned long connectStartedAtMs = 0;
-static unsigned long restartAtMs = 0;
 static unsigned long bootButtonPressedAtMs = 0;
 static unsigned long portalOfflineAtMs = 0;
 static bool portalActive = false;
 static bool wasConnecting = false;
 static bool wasConnected = false;
-static bool restartPending = false;
 static bool portalOfflinePending = false;
 static bool initialNetworkSetup = true;
 static String savedWifiSsid;
@@ -431,6 +480,13 @@ void enterBootChoiceMenu() {
   currentMenu = MenuScreen::BOOT_CHOICE;
   selectedOption = 0;
   menuTitle = "Pilih Mode";
+  menuOptions = {"Online", "Offline", "Reset System"};
+}
+
+void enterRuntimeModeChoiceMenu() {
+  currentMenu = MenuScreen::BOOT_CHOICE;
+  selectedOption = 0;
+  menuTitle = "Pilih Mode";
   menuOptions = {"Online", "Offline"};
 }
 
@@ -443,11 +499,37 @@ void enterOfflineChoiceMenu() {
 
 void updateTwoButtonMenu() {
   if (currentMenu == MenuScreen::NONE) {
+    if (sessionRecoveryIsActive()) {
+      return;
+    }
     // Jika dalam mode offline dan siap untuk aksi berikutnya (mis. setelah sesi selesai
     // atau gagal deteksi beban), tampilkan menu pilihan.
     if (offlineModeCanStartNextAttempt()) {
       enterOfflineChoiceMenu();
+      return;
     }
+
+    if (!isSessionBusyForNetwork() &&
+        systemMode == SystemMode::ONLINE) {
+      const unsigned long now = millis();
+      if (digitalRead(Config::BUTTON_NAV_PIN) == LOW) {
+        if (now - lastNavPressMs > DEBOUNCE_DELAY_MS) {
+          lastNavPressMs = now;
+          enterRuntimeModeChoiceMenu();
+          Serial.println("[menu] Runtime mode selection opened");
+        }
+      } else {
+        lastNavPressMs = 0;
+      }
+    }
+    return;
+  }
+
+  if (isSessionBusyForNetwork()) {
+    Serial.println("[menu] Mode selection closed: active validation, monitoring, or recovery");
+    currentMenu = MenuScreen::NONE;
+    menuOptions.clear();
+    menuTitle = "";
     return;
   }
 
@@ -494,6 +576,11 @@ void executeSelectedOption() {
   switch (currentMenu) {
     case MenuScreen::BOOT_CHOICE:
       if (selectedOption == 0) { // Online
+        if (networkIsConnected() && !offlineModeIsActive()) {
+          displayShowButtonFeedback("Mode Online Aktif");
+          Serial.println("[menu] Mode Online already active");
+          break;
+        }
         displayShowButtonFeedback("Mencari WiFi...");
         Serial.println("[menu] Aksi: Mulai Mode Online");
         if (loadSavedWiFiCredentials(savedWifiSsid, savedWifiPassword)) {
@@ -502,10 +589,12 @@ void executeSelectedOption() {
           Serial.println("[network] Tidak ada WiFi tersimpan, mulai portal setup");
           startSetupPortal("boot no WiFi credentials");
         }
-      } else { // Offline
+      } else if (selectedOption == 1) { // Offline
         displayShowButtonFeedback("Mode Offline...");
         Serial.println("[menu] Aksi: Mulai Mode Offline");
         offlineModeEnter(OfflineEntryReason::MANUAL_MENU);
+      } else { // Reset System
+        systemReset();
       }
       break;
 
@@ -567,9 +656,13 @@ void networkBegin() {
   pinMode(Config::BUTTON_OK_PIN, INPUT_PULLUP);
   pinMode(Config::BUTTON_NAV_PIN, INPUT_PULLUP);
   
-  // Tampilkan menu pilihan mode saat boot
-  Serial.println("[network] Menampilkan menu pilihan mode boot...");
-  enterBootChoiceMenu();
+  if (sessionRecoveryIsActive()) {
+    Serial.println("[network] Boot mode menu deferred: active session recovery");
+  } else {
+    // Tampilkan menu pilihan mode saat boot
+    Serial.println("[network] Menampilkan menu pilihan mode boot...");
+    enterBootChoiceMenu();
+  }
 }
 
 void networkUpdate() {

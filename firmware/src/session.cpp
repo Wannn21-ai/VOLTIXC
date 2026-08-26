@@ -14,6 +14,8 @@
 
 namespace {
 constexpr unsigned long RECOVERY_SETTLE_MS = 1200UL;
+constexpr unsigned long RECOVERY_SAMPLE_INTERVAL_MS = Config::SENSOR_INTERVAL_MS;
+constexpr unsigned long RECOVERY_VALIDATION_TIMEOUT_MS = Config::OFFLINE_LOAD_DETECT_TIMEOUT_MS;
 constexpr unsigned long OFFLINE_FINISHED_SUMMARY_MS = 2500UL;
 constexpr unsigned long MANUAL_OFFLINE_IDLE_TIMEOUT_MS = 90000UL;
 constexpr unsigned long TRYING_ONLINE_DISPLAY_MS = 5000UL;
@@ -32,6 +34,10 @@ enum class RecoveryState {
 ActiveSessionCheckpoint recoveryCheckpoint;
 RecoveryState recoveryState = RecoveryState::IDLE;
 unsigned long recoveryStartedAtMs = 0;
+unsigned long recoveryLastSampleAtMs = 0;
+unsigned int recoveryValidSamples = 0;
+unsigned int recoveryLoadSamples = 0;
+unsigned int recoveryNoLoadSamples = 0;
 unsigned long lastCheckpointWriteMs = 0;
 unsigned long elapsedBeforeRecoveryMs = 0;
 unsigned long resumeMillis = 0;
@@ -54,6 +60,18 @@ bool offlineManualLock = false;
 bool manualOfflineTryingOnline = false;
 bool offlineReadyLogged = false;
 bool acMissingDuringMonitoringLogged = false;
+bool powerLossObservedDuringMonitoring = false;
+bool runtimePowerLossPaused = false;
+unsigned long powerLossPausedDurationMs = 0;
+unsigned int runtimeRecoveryLoadSamples = 0;
+unsigned long acMissingSinceMs = 0;
+unsigned long loadRemovedSinceMs = 0;
+bool lastValidMonitoringSampleAvailable = false;
+float lastValidMonitoringVoltage = 0.0f;
+float lastValidMonitoringCurrent = 0.0f;
+float lastValidMonitoringPower = 0.0f;
+float lastValidMonitoringFrequency = 0.0f;
+float lastValidMonitoringPowerFactor = 0.0f;
 OfflineEntryReason offlineReason = OfflineEntryReason::AUTO_NO_WIFI;
 unsigned long offlineFinishedAtMs = 0;
 unsigned long manualOfflineIdleStartedAtMs = 0;
@@ -106,6 +124,28 @@ static void clearTransitionRefreshIfComplete() {
   }
 }
 
+static void clearLastValidMonitoringSample() {
+  lastValidMonitoringSampleAvailable = false;
+  lastValidMonitoringVoltage = 0.0f;
+  lastValidMonitoringCurrent = 0.0f;
+  lastValidMonitoringPower = 0.0f;
+  lastValidMonitoringFrequency = 0.0f;
+  lastValidMonitoringPowerFactor = 0.0f;
+}
+
+static void captureLastValidMonitoringSample() {
+  if (!sensorData.valid || !sensorData.loadDetected) {
+    return;
+  }
+
+  lastValidMonitoringSampleAvailable = true;
+  lastValidMonitoringVoltage = sensorData.voltage;
+  lastValidMonitoringCurrent = sensorData.current;
+  lastValidMonitoringPower = sensorData.power;
+  lastValidMonitoringFrequency = sensorData.frequency;
+  lastValidMonitoringPowerFactor = sensorData.powerFactor;
+}
+
 static void updateSessionTotals() {
   const unsigned long now = millis();
 
@@ -114,14 +154,17 @@ static void updateSessionTotals() {
     return;
   }
 
-  if (sessionData.lastUpdateMs > 0 && now > sessionData.lastUpdateMs) {
+  if (!runtimePowerLossPaused &&
+      sessionData.lastUpdateMs > 0 && now > sessionData.lastUpdateMs) {
     const unsigned long elapsedMs = now - sessionData.lastUpdateMs;
     if (sensorData.valid && sensorData.power > 0.0f) {
       sessionData.energyWh += sensorData.power * (static_cast<float>(elapsedMs) / 3600000.0f);
     }
   }
 
-  if (resumeMillis > 0) {
+  if (runtimePowerLossPaused) {
+    sessionData.durationMs = powerLossPausedDurationMs;
+  } else if (resumeMillis > 0) {
     sessionData.durationMs = elapsedBeforeRecoveryMs + (now - resumeMillis);
   } else {
     sessionData.durationMs = now - sessionData.startedAtMs;
@@ -203,10 +246,18 @@ static CompletedSessionSnapshot makeFinalSnapshot(EndReason reason) {
   snapshot.cost = sessionData.cost;
   snapshot.averagePower = sessionData.averagePowerW;
   snapshot.peakPower = sessionData.peakPowerW;
-  snapshot.voltage = sensorData.voltage;
-  snapshot.current = sensorData.current;
-  snapshot.frequency = sensorData.frequency;
-  snapshot.powerFactor = sensorData.powerFactor;
+  snapshot.voltage = lastValidMonitoringSampleAvailable
+    ? lastValidMonitoringVoltage
+    : sensorData.voltage;
+  snapshot.current = lastValidMonitoringSampleAvailable
+    ? lastValidMonitoringCurrent
+    : sensorData.current;
+  snapshot.frequency = lastValidMonitoringSampleAvailable
+    ? lastValidMonitoringFrequency
+    : sensorData.frequency;
+  snapshot.powerFactor = lastValidMonitoringSampleAvailable
+    ? lastValidMonitoringPowerFactor
+    : sensorData.powerFactor;
   snapshot.tariff = appConfig.tariffPerKwh;
   snapshot.currency = appConfig.currency;
   snapshot.overloadThreshold = appConfig.overloadThresholdW;
@@ -274,6 +325,13 @@ static void fillCheckpointFromSession(ActiveSessionCheckpoint& checkpoint) {
   checkpoint.startUnixMs = getUnixMs() > sessionData.durationMs ? getUnixMs() - sessionData.durationMs : 0;
   checkpoint.lastCheckpointMs = millis();
   checkpoint.relayState = relayIsOn();
+  checkpoint.lastValidVoltage = lastValidMonitoringVoltage;
+  checkpoint.lastValidCurrent = lastValidMonitoringCurrent;
+  checkpoint.lastValidPower = lastValidMonitoringPower;
+  checkpoint.lastValidFrequency = lastValidMonitoringFrequency;
+  checkpoint.lastValidPowerFactor = lastValidMonitoringPowerFactor;
+  checkpoint.offlineModeActive = offlineModeActive;
+  checkpoint.offlineManualLock = offlineManualLock;
   strlcpy(checkpoint.createdFrom, "ESP32", sizeof(checkpoint.createdFrom));
 }
 
@@ -297,6 +355,21 @@ static void restoreSessionFromCheckpoint(const ActiveSessionCheckpoint& checkpoi
   sessionData.peakPowerW = checkpoint.peakPower;
   sessionData.pendingSync = false;
   sessionData.startMode = checkpoint.startMode;
+  lastValidMonitoringVoltage = checkpoint.lastValidVoltage;
+  lastValidMonitoringCurrent = checkpoint.lastValidCurrent;
+  lastValidMonitoringPower = checkpoint.lastValidPower;
+  lastValidMonitoringFrequency = checkpoint.lastValidFrequency;
+  lastValidMonitoringPowerFactor = checkpoint.lastValidPowerFactor;
+  lastValidMonitoringSampleAvailable =
+    checkpoint.lastValidVoltage > 0.0f ||
+    checkpoint.lastValidCurrent > 0.0f ||
+    checkpoint.lastValidPower > 0.0f;
+  powerLossObservedDuringMonitoring = true;
+  runtimePowerLossPaused = false;
+  powerLossPausedDurationMs = 0;
+  runtimeRecoveryLoadSamples = 0;
+  acMissingSinceMs = 0;
+  loadRemovedSinceMs = 0;
 
   if (checkpoint.tariff > 0.0f) {
     appConfig.tariffPerKwh = checkpoint.tariff;
@@ -340,15 +413,29 @@ static void finalizeRecoveredNoLoad() {
   if (saved) {
     Serial.println("[recovery] Recovered session queued for background cloud sync");
     storageRequestPendingHistorySync();
+    storageRequestFastHistoryUpload(snapshot.sessionId);
     Serial.println("[history] pending auto-sync requested after recovered session save");
+    if (storageClearActiveSessionCheckpoint()) {
+      Serial.println("[recovery] Active checkpoint cleared");
+    }
+  } else {
+    Serial.println("[recovery] Local save failed; active checkpoint retained");
   }
   logHistoryOutcome(snapshot.sessionId, saved, queued, sessionData.pendingSync);
 
-  if (storageClearActiveSessionCheckpoint()) {
-    Serial.println("[recovery] Active checkpoint cleared");
-  }
-
   sessionData.state = SessionState::FINISHED;
+  requestTransitionRefresh(SessionTransitionRefresh::STOP_FINISHED);
+  if (offlineModeActive) {
+    systemMode = SystemMode::OFFLINE;
+    offlineNoLoadPrompt = false;
+    offlineReadyForNext = true;
+    offlineFinishedAtMs = millis();
+    manualOfflineTryingOnline = false;
+    offlineReadyLogged = false;
+    if (offlineManualLock) {
+      manualOfflineIdleStartedAtMs = millis();
+    }
+  }
   recoveryState = saved ? RecoveryState::FINALIZED : RecoveryState::FAILED;
   strlcpy(recoveryStatusText, saved ? "finalized_no_load" : "finalize_failed", sizeof(recoveryStatusText));
   Serial.println("[recovery] No load found, recovery finalized once");
@@ -410,6 +497,14 @@ static void verifyLoadAndStartMonitoring() {
   sessionData.averagePowerW = 0.0f;
   sessionData.peakPowerW = sensorData.power > 0.0f ? sensorData.power : 0.0f;
   sessionData.pendingSync = false;
+  powerLossObservedDuringMonitoring = false;
+  runtimePowerLossPaused = false;
+  powerLossPausedDurationMs = 0;
+  runtimeRecoveryLoadSamples = 0;
+  acMissingSinceMs = 0;
+  loadRemovedSinceMs = 0;
+  clearLastValidMonitoringSample();
+  captureLastValidMonitoringSample();
   resetLoadValidationState();
   startValidationResult = StartValidationResult::VERIFIED;
   requestTransitionRefresh(SessionTransitionRefresh::START_VERIFIED);
@@ -451,6 +546,13 @@ static void clearSessionRuntime(EndReason reason) {
   elapsedBeforeRecoveryMs = 0;
   resumeMillis = 0;
   acMissingDuringMonitoringLogged = false;
+  powerLossObservedDuringMonitoring = false;
+  runtimePowerLossPaused = false;
+  powerLossPausedDurationMs = 0;
+  runtimeRecoveryLoadSamples = 0;
+  acMissingSinceMs = 0;
+  loadRemovedSinceMs = 0;
+  clearLastValidMonitoringSample();
   resetLoadValidationState();
   storageClearActiveSessionCheckpoint(); // Pastikan checkpoint dibersihkan
 
@@ -459,8 +561,30 @@ static void clearSessionRuntime(EndReason reason) {
   Serial.println("[RELAY] OFF");
   Serial.println("[SESSION] State -> IDLE");
 
-  // Khusus untuk load validation yang dibatalkan
+}
+
+static void cancelLoadValidationNoHistory(EndReason reason = EndReason::NO_LOAD_DETECTED) {
+  const SessionState previousState = sessionData.state;
+  clearSessionRuntime(reason);
   startValidationResult = StartValidationResult::REJECTED_NO_LOAD;
+  logSessionStateTransition(
+    previousState,
+    sessionData.state,
+    reason == EndReason::USER_STOP
+      ? "stop during load validation"
+      : (offlineModeActive ? "offline no load" : "no load")
+  );
+
+  if (offlineModeActive) {
+    offlineNoLoadPrompt = true;
+    offlineReadyForNext = true;
+    offlineFinishedAtMs = 0;
+    manualOfflineTryingOnline = false;
+    offlineReadyLogged = true;
+    logOfflineModeState("No load detected", "relay OFF, counter not incremented, ready for next device");
+  } else {
+    Serial.println("[LoadCheck] No load detected, START rejected, relay OFF");
+  }
 }
 
 static void handleLoadValidation() {
@@ -535,18 +659,7 @@ static void handleLoadValidation() {
   if (elapsedMs >= timeoutMs) {
     Serial.println("[LOAD DETECT] No load detected");
     Serial.println("[LOAD DETECT] Timeout -> Relay OFF"); // Relay dimatikan di clearSessionRuntime
-    clearSessionRuntime(EndReason::NO_LOAD_DETECTED);
-
-    if (offlineModeActive) {
-      offlineNoLoadPrompt = true;
-      offlineReadyForNext = true;
-      offlineFinishedAtMs = 0;
-      manualOfflineTryingOnline = false;
-      offlineReadyLogged = true;
-      logOfflineModeState("No load detected", "relay OFF, counter not incremented, ready for next device");
-    } else {
-      Serial.println("[LoadCheck] No load detected, START rejected, relay OFF");
-    }
+    cancelLoadValidationNoHistory();
   }
 }
 
@@ -554,6 +667,13 @@ void sessionBegin() {
   sessionData.state = SessionState::IDLE;
   sessionData.endReason = EndReason::NONE;
   acMissingDuringMonitoringLogged = false;
+  powerLossObservedDuringMonitoring = false;
+  runtimePowerLossPaused = false;
+  powerLossPausedDurationMs = 0;
+  runtimeRecoveryLoadSamples = 0;
+  acMissingSinceMs = 0;
+  loadRemovedSinceMs = 0;
+  clearLastValidMonitoringSample();
   offlineDeviceCounter = loadOfflineDeviceCounter();
   const unsigned long historyCounter = storageNextOfflineDeviceCounterFromHistory();
   if (historyCounter > offlineDeviceCounter) {
@@ -594,6 +714,13 @@ bool sessionStart(const char* deviceName) {
   sessionData.pendingSync = false;
   elapsedBeforeRecoveryMs = 0;
   resumeMillis = 0;
+  powerLossObservedDuringMonitoring = false;
+  runtimePowerLossPaused = false;
+  powerLossPausedDurationMs = 0;
+  runtimeRecoveryLoadSamples = 0;
+  acMissingSinceMs = 0;
+  loadRemovedSinceMs = 0;
+  clearLastValidMonitoringSample();
   loadValidationStartedAtMs = now;
   loadValidationStableSamples = 0;
   loadValidationWaitingLogged = false;
@@ -603,6 +730,7 @@ bool sessionStart(const char* deviceName) {
 
   relaySet(true);
   logSessionStateTransition(previousState, sessionData.state, offlineModeActive ? "offline_start_validation" : "start_validation");
+  Serial.println("[LOAD DETECT] Relay ON");
   Serial.println("[LoadCheck] Relay ON for validation");
   Serial.print("[session] Validating load for device ");
   Serial.println(sessionData.deviceName);
@@ -623,28 +751,23 @@ void sessionSetRemoteContext(const char* uid, const char* sessionId) {
 
 void sessionStop(EndReason reason) {
   if (!sessionIsActive()) {
+    if (recoveryState == RecoveryState::FAILED) {
+      relaySet(false);
+      Serial.println("[session] Stop ignored: failed session checkpoint must be retained");
+      return;
+    }
     clearSessionRuntime(reason); // Gunakan fungsi reset yang lebih umum
     return;
   }
 
   Serial.println("[SESSION] Stop requested");
   if (sessionData.state == SessionState::WAITING_LOAD) {
-    clearSessionRuntime(reason); // Jika dihentikan saat validasi beban, cukup reset
-    // Tambahkan logic khusus untuk offline mode jika diperlukan setelah reset
-    if (offlineModeActive) {
-      offlineNoLoadPrompt = true;
-      offlineReadyForNext = true;
-      offlineFinishedAtMs = 0;
-      manualOfflineTryingOnline = false;
-      offlineReadyLogged = true;
-      logOfflineModeState("Session stopped during load validation", "relay OFF, ready for next device");
-    } else {
-      Serial.println("[SESSION] Aborting load detection");
-    }
+    cancelLoadValidationNoHistory(reason);
     return;
   }
 
   updateSessionTotals();
+  captureLastValidMonitoringSample();
   const SessionState previousState = sessionData.state;
   sessionData.endedAtMs = millis();
   sessionData.endReason = reason;
@@ -675,6 +798,9 @@ void sessionStop(EndReason reason) {
     Serial.println("[history] pending auto-sync requested after sessionStop");
   } else {
     Serial.println("[session] Local save failed, session remains unsynced");
+    recoveryState = RecoveryState::FAILED;
+    strlcpy(recoveryStatusText, "finalize_failed", sizeof(recoveryStatusText));
+    Serial.println("[session] Active checkpoint retained; new sessions blocked until recovery");
   }
   logHistoryOutcome(snapshot.sessionId, saved, queued, sessionData.pendingSync);
 
@@ -758,6 +884,7 @@ void sessionUpdate() {
   }
 
   updateSessionTotals();
+  captureLastValidMonitoringSample();
 
   const unsigned long now = millis();
   const unsigned long checkpointIntervalMs = max(1UL, appConfig.checkpointIntervalSec) * 1000UL;
@@ -778,20 +905,88 @@ void sessionUpdate() {
     return;
   }
 
-  if (sessionData.state == SessionState::MONITORING &&
-      !sensorData.loadDetected) {
-    if (sensorAcInputPresent()) {
-      acMissingDuringMonitoringLogged = false;
-      Serial.println("[load] Load removed while AC present, stopping session");
-      sessionStop(EndReason::LOAD_REMOVED);
-    } else if (!acMissingDuringMonitoringLogged) {
+  if (sessionData.state != SessionState::MONITORING) {
+    return;
+  }
+
+  const bool acPresent = sensorAcInputPresent();
+  const bool stableNoLoadSample = sensorData.valid && isLoadBelowNoLoadThreshold();
+  const unsigned long stabilizationMs = max(1UL, appConfig.loadRemovedDelaySec) * 1000UL;
+
+  if (!acPresent) {
+    loadRemovedSinceMs = 0;
+    if (acMissingSinceMs == 0) {
+      acMissingSinceMs = now;
+      Serial.println("[powerloss] AC missing candidate; waiting stabilization");
+    }
+    if (now - acMissingSinceMs >= stabilizationMs &&
+        !powerLossObservedDuringMonitoring) {
+      powerLossObservedDuringMonitoring = true;
+      const unsigned long missingElapsedMs = now - acMissingSinceMs;
+      powerLossPausedDurationMs = sessionData.durationMs > missingElapsedMs
+        ? sessionData.durationMs - missingElapsedMs
+        : 0;
+      runtimePowerLossPaused = true;
+      runtimeRecoveryLoadSamples = 0;
       acMissingDuringMonitoringLogged = true;
-      Serial.println("[powerloss] AC missing during monitoring; keeping checkpoint for recovery (relay will be OFF)");
+      sessionWriteCheckpoint();
+      Serial.println("[powerloss] AC loss stabilized; checkpoint retained for same-session recovery");
     }
     return;
   }
 
+  if (acMissingSinceMs > 0) {
+    Serial.println("[powerloss] AC restored; evaluating the existing session");
+  }
+  acMissingSinceMs = 0;
   acMissingDuringMonitoringLogged = false;
+
+  if (runtimePowerLossPaused) {
+    if (sensorData.valid && sensorData.loadDetected) {
+      runtimeRecoveryLoadSamples++;
+      if (runtimeRecoveryLoadSamples < Config::LOAD_DETECT_STABLE_SAMPLES) {
+        return;
+      }
+      elapsedBeforeRecoveryMs = powerLossPausedDurationMs;
+      resumeMillis = now;
+      runtimePowerLossPaused = false;
+      runtimeRecoveryLoadSamples = 0;
+      sessionData.lastUpdateMs = now;
+      sessionWriteCheckpoint();
+      Serial.println("[powerloss] Existing session resumed after stable load returned");
+    } else {
+      runtimeRecoveryLoadSamples = 0;
+      if (!stableNoLoadSample) {
+        loadRemovedSinceMs = 0;
+        return;
+      }
+    }
+  }
+
+  if (!stableNoLoadSample) {
+    if (loadRemovedSinceMs > 0) {
+      Serial.println("[load] Load removal candidate cleared");
+    }
+    loadRemovedSinceMs = 0;
+    return;
+  }
+
+  if (loadRemovedSinceMs == 0) {
+    loadRemovedSinceMs = now;
+    Serial.println("[load] Load removal candidate; waiting stabilization");
+    return;
+  }
+
+  if (now - loadRemovedSinceMs < stabilizationMs) {
+    return;
+  }
+
+  const EndReason reason = powerLossObservedDuringMonitoring
+    ? EndReason::LOAD_REMOVED_AFTER_POWER_LOSS
+    : EndReason::LOAD_REMOVED;
+  Serial.print("[load] Load removal stabilized, stopping session reason=");
+  Serial.println(endReasonToString(reason));
+  sessionStop(reason);
 }
 
 bool sessionIsActive() {
@@ -849,10 +1044,24 @@ void sessionRecoveryBegin() {
 
   Serial.println("[recovery] active session checkpoint found");
   Serial.println("[recovery] Starting one-time validation");
+  offlineModeActive = recoveryCheckpoint.offlineModeActive ||
+    recoveryCheckpoint.startMode == SystemMode::OFFLINE;
+  offlineManualLock = offlineModeActive && recoveryCheckpoint.offlineManualLock;
+  if (offlineModeActive) {
+    systemMode = SystemMode::OFFLINE;
+    offlineReason = offlineManualLock
+      ? OfflineEntryReason::MANUAL_MENU
+      : OfflineEntryReason::AUTO_NO_WIFI;
+    Serial.println("[recovery] Offline session context restored");
+  }
   recoveryAttemptedThisBoot = true;
   recoveryState = RecoveryState::SETTLING;
   strlcpy(recoveryStatusText, "checking_session", sizeof(recoveryStatusText));
   recoveryStartedAtMs = millis();
+  recoveryLastSampleAtMs = 0;
+  recoveryValidSamples = 0;
+  recoveryLoadSamples = 0;
+  recoveryNoLoadSamples = 0;
 
   if (recoveryCheckpoint.relayState) {
     relaySet(true);
@@ -864,15 +1073,47 @@ void sessionRecoveryUpdate() {
     return;
   }
 
-  if (millis() - recoveryStartedAtMs < RECOVERY_SETTLE_MS) {
+  const unsigned long now = millis();
+  if (now - recoveryStartedAtMs < RECOVERY_SETTLE_MS) {
     return;
   }
 
-  sensorUpdate();
-  if (!sensorData.valid) {
+  if (recoveryLastSampleAtMs > 0 &&
+      now - recoveryLastSampleAtMs < RECOVERY_SAMPLE_INTERVAL_MS) {
     return;
   }
-  if (sensorData.loadDetected) {
+  recoveryLastSampleAtMs = now;
+  sensorUpdate();
+  const bool loadDetected = isLoadAboveStartThreshold();
+  const bool noLoadDetected = sensorData.valid && isLoadBelowNoLoadThreshold();
+  if (sensorData.valid) {
+    recoveryValidSamples++;
+    if (loadDetected) {
+      recoveryLoadSamples++;
+      recoveryNoLoadSamples = 0;
+    } else if (noLoadDetected) {
+      recoveryNoLoadSamples++;
+      recoveryLoadSamples = 0;
+    } else {
+      recoveryLoadSamples = 0;
+      recoveryNoLoadSamples = 0;
+    }
+  } else {
+    recoveryLoadSamples = 0;
+    recoveryNoLoadSamples = 0;
+  }
+
+  Serial.print("[recovery] Sample valid=");
+  Serial.print(sensorData.valid ? "yes" : "no");
+  Serial.print(" loadSamples=");
+  Serial.print(recoveryLoadSamples);
+  Serial.print(" noLoadSamples=");
+  Serial.print(recoveryNoLoadSamples);
+  Serial.print(" validSamples=");
+  Serial.println(recoveryValidSamples);
+
+  if (recoveryValidSamples >= Config::LOAD_DETECT_MIN_VALID_SAMPLES &&
+      recoveryLoadSamples >= Config::LOAD_DETECT_STABLE_SAMPLES) {
     restoreSessionFromCheckpoint(recoveryCheckpoint, SessionState::MONITORING);
     relaySet(true); // Pastikan relay ON jika sesi dilanjutkan
     sessionWriteCheckpoint();
@@ -882,12 +1123,23 @@ void sessionRecoveryUpdate() {
     return;
   }
 
-  finalizeRecoveredNoLoad();
-  // Setelah finalizeRecoveredNoLoad, recoveryState akan menjadi FINALIZED atau FAILED
+  if (recoveryValidSamples >= Config::LOAD_DETECT_MIN_VALID_SAMPLES &&
+      recoveryNoLoadSamples >= Config::LOAD_DETECT_STABLE_SAMPLES) {
+    finalizeRecoveredNoLoad();
+    return;
+  }
+
+  if (now - recoveryStartedAtMs >= RECOVERY_VALIDATION_TIMEOUT_MS) {
+    relaySet(false);
+    recoveryState = RecoveryState::FAILED;
+    strlcpy(recoveryStatusText, "sensor_validation_failed", sizeof(recoveryStatusText));
+    Serial.println("[recovery] Validation timeout; relay OFF and checkpoint retained");
+  }
 }
 
 bool sessionRecoveryIsActive() {
-  return recoveryState == RecoveryState::SETTLING;
+  return recoveryState == RecoveryState::SETTLING ||
+         recoveryState == RecoveryState::FAILED;
 }
 
 const char* sessionRecoveryStatus() {
@@ -966,11 +1218,24 @@ bool offlineModeStartNextAttempt(bool firstAttempt) {
 }
 
 bool offlineModeEnter(OfflineEntryReason reason) {
-  const bool adoptWaitingLoad = sessionData.state == SessionState::WAITING_LOAD;
+  const bool adoptWaitingLoad =
+    sessionData.state == SessionState::WAITING_LOAD &&
+    reason == OfflineEntryReason::AUTO_NO_WIFI;
+  if ((sessionIsActive() || relayIsOn() || sessionRecoveryIsActive()) &&
+      !adoptWaitingLoad) {
+    Serial.print("[mode] ONLINE -> OFFLINE rejected session=");
+    Serial.print(sessionStateToString(sessionData.state));
+    Serial.print(" relay=");
+    Serial.print(relayIsOn() ? "ON" : "OFF");
+    Serial.print(" recovery=");
+    Serial.println(sessionRecoveryIsActive() ? "active" : "idle");
+    return false;
+  }
   offlineModeActive = true; // Aktifkan mode offline
   offlineReason = reason;
   offlineManualLock = reason == OfflineEntryReason::MANUAL_BOOT_10S ||
-                      reason == OfflineEntryReason::MANUAL_CAPTIVE_PORTAL;
+                      reason == OfflineEntryReason::MANUAL_CAPTIVE_PORTAL ||
+                      reason == OfflineEntryReason::MANUAL_MENU;
   offlineNoLoadPrompt = false;
   offlineReadyForNext = false;
   manualOfflineIdleStartedAtMs = 0;
@@ -1006,14 +1271,22 @@ bool offlineModeEnter(OfflineEntryReason reason) {
 }
 
 bool offlineModeExitManualLockAndTryOnline() {
-  // This function is called when the user manually requests to switch to online mode from the offline menu.
-  // We should allow this regardless of whether the offline mode is "manually locked".
   if (!offlineModeActive) {
     return false;
   }
 
+  if (sessionIsActive() || relayIsOn() || sessionRecoveryIsActive()) {
+    Serial.print("[mode] OFFLINE -> ONLINE rejected session=");
+    Serial.print(sessionStateToString(sessionData.state));
+    Serial.print(" relay=");
+    Serial.print(relayIsOn() ? "ON" : "OFF");
+    Serial.print(" recovery=");
+    Serial.println(sessionRecoveryIsActive() ? "active" : "idle");
+    return false;
+  }
+
   logModeStateTransition("OFFLINE_MODE", "ONLINE", "manual_unlock_menu");
-  offlineManualLock = false; // Always unlock when manually switching
+  offlineManualLock = false;
   manualOfflineIdleStartedAtMs = 0;
   manualOfflineTryingOnline = true;
   manualOfflineTryingOnlineAtMs = millis();

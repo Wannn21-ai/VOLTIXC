@@ -18,7 +18,7 @@ static constexpr const char* HISTORY_MIGRATION_MARKER_PATH = "/history_migrated.
 static constexpr const char* ACTIVE_SESSION_PATH = "/active_session.json";
 static constexpr size_t LEGACY_HISTORY_DOC_CAPACITY = 16384;
 static constexpr size_t SESSION_DOC_CAPACITY = 2048;
-static constexpr size_t CHECKPOINT_DOC_CAPACITY = 1024;
+static constexpr size_t CHECKPOINT_DOC_CAPACITY = 1536;
 
 static bool mounted = false;
 static bool pendingHistorySyncRequested = false;
@@ -405,18 +405,23 @@ bool storageWriteActiveSessionCheckpoint(const ActiveSessionCheckpoint& checkpoi
   doc["startUnixMs"] = checkpoint.startUnixMs;
   doc["lastCheckpointMs"] = checkpoint.lastCheckpointMs;
   doc["relayState"] = checkpoint.relayState;
+  doc["lastValidVoltage"] = checkpoint.lastValidVoltage;
+  doc["lastValidCurrent"] = checkpoint.lastValidCurrent;
+  doc["lastValidPower"] = checkpoint.lastValidPower;
+  doc["lastValidFrequency"] = checkpoint.lastValidFrequency;
+  doc["lastValidPowerFactor"] = checkpoint.lastValidPowerFactor;
+  doc["offlineModeActive"] = checkpoint.offlineModeActive;
+  doc["offlineManualLock"] = checkpoint.offlineManualLock;
   doc["createdFrom"] = checkpoint.createdFrom;
 
-  File file = LittleFS.open(ACTIVE_SESSION_PATH, "w");
-  if (!file) {
-    Serial.println("[storage] Failed to open /active_session.json for write");
+  if (doc.overflowed()) {
+    Serial.println("[storage] Active session checkpoint document is full");
     return false;
   }
 
-  const size_t written = serializeJson(doc, file);
-  file.close();
-  Serial.println(written > 0 ? "[storage] Active session checkpoint saved" : "[storage] Active session checkpoint save failed");
-  return written > 0;
+  const bool saved = writeSessionDocument(ACTIVE_SESSION_PATH, doc.as<JsonObjectConst>());
+  Serial.println(saved ? "[storage] Active session checkpoint saved" : "[storage] Active session checkpoint save failed");
+  return saved;
 }
 
 bool storageReadActiveSessionCheckpoint(ActiveSessionCheckpoint& checkpoint) {
@@ -463,6 +468,15 @@ bool storageReadActiveSessionCheckpoint(ActiveSessionCheckpoint& checkpoint) {
   checkpoint.startUnixMs = doc["startUnixMs"] | 0ULL;
   checkpoint.lastCheckpointMs = doc["lastCheckpointMs"] | 0UL;
   checkpoint.relayState = doc["relayState"] | false;
+  checkpoint.lastValidVoltage = doc["lastValidVoltage"] | 0.0f;
+  checkpoint.lastValidCurrent = doc["lastValidCurrent"] | 0.0f;
+  checkpoint.lastValidPower = doc["lastValidPower"] | 0.0f;
+  checkpoint.lastValidFrequency = doc["lastValidFrequency"] | 0.0f;
+  checkpoint.lastValidPowerFactor = doc["lastValidPowerFactor"] | 0.0f;
+  checkpoint.offlineModeActive = doc["offlineModeActive"] | (checkpoint.startMode == SystemMode::OFFLINE);
+  checkpoint.offlineManualLock = doc.containsKey("offlineManualLock")
+    ? (doc["offlineManualLock"] | false)
+    : (checkpoint.startMode == SystemMode::OFFLINE);
   strlcpy(checkpoint.createdFrom, doc["createdFrom"] | "ESP32", sizeof(checkpoint.createdFrom));
   return checkpoint.sessionId[0] != '\0';
 }

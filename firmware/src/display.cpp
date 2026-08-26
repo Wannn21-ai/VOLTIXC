@@ -9,6 +9,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <Wire.h>
+#include <string.h>
 #include <vector>
 #include <string>
 
@@ -224,7 +225,7 @@ void renderWaitingLoad() {
     startScreen();
     drawLine(0, offlineModeIsManualLocked() ? "Offline Manual" : "Offline Mode");
     drawLine(1, "Relay: ON");
-    drawLine(2, "Waiting Load");
+    drawLine(2, "Load Validation");
     finishScreen();
     return;
   }
@@ -277,7 +278,7 @@ void renderMonitoring() {
   formatDuration(sessionData.durationMs / 1000UL, duration, sizeof(duration)); // Durasi dalam detik
 
   startScreen();
-  drawLine(0, deviceName);
+  drawLine(0, sessionData.startMode == SystemMode::OFFLINE ? "OFFLINE MONITORING" : deviceName);
   snprintf(line, sizeof(line), "V:%.1f I:%.3fA", sensorData.voltage, sensorData.current);
   drawLine(1, line);
   snprintf(line, sizeof(line), "P:%.1fW", sensorData.power);
@@ -336,8 +337,18 @@ void renderSetupPortal() {
 void renderRecovery() {
   startScreen();
   drawLine(0, "Voltix Recovery");
-  drawLine(1, "Checking session");
-  drawLine(2, "Please wait");
+  if (strcmp(sessionRecoveryStatus(), "sensor_validation_failed") == 0) {
+    drawLine(1, "Sensor unavailable");
+    drawLine(2, "Relay OFF");
+    drawLine(3, "Checkpoint safe");
+  } else if (strcmp(sessionRecoveryStatus(), "finalize_failed") == 0) {
+    drawLine(1, "History save failed");
+    drawLine(2, "Relay OFF");
+    drawLine(3, "Checkpoint safe");
+  } else {
+    drawLine(1, "Checking session");
+    drawLine(2, "Please wait");
+  }
   finishScreen();
 }
 
