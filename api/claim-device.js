@@ -82,9 +82,15 @@ function createHandler(dependencies = {}) {
     let outcome = { error: "pairing_service_unavailable" };
 
     try {
-      const result = await services.database.ref("/").transaction((rootValue) => {
+      const rootRef = services.database.ref("/");
+      const initialSnapshot = await rootRef.get();
+      const initialRoot = initialSnapshot.val();
+      const result = await rootRef.transaction((rootValue) => {
         outcome = { error: "pairing_service_unavailable" };
-        const root = rootValue && typeof rootValue === "object" ? rootValue : {};
+        const transactionRoot = rootValue === null ? initialRoot : rootValue;
+        const root = transactionRoot && typeof transactionRoot === "object"
+          ? structuredClone(transactionRoot)
+          : {};
         const pairing = root.pairingCodes?.[body.code];
         if (!pairing) {
           outcome = { error: "invalid_code" };

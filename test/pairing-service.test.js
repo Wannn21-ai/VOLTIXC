@@ -26,7 +26,7 @@ function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
-function createDatabase(initialRoot) {
+function createDatabase(initialRoot, { initialTransactionNull = false } = {}) {
   let root = clone(initialRoot);
   let transactionQueue = Promise.resolve();
 
@@ -34,8 +34,14 @@ function createDatabase(initialRoot) {
     ref(path) {
       assert.equal(path, "/");
       return {
+        async get() {
+          return { exists: () => root !== null, val: () => clone(root) };
+        },
         transaction(updateFunction) {
           const operation = transactionQueue.then(() => {
+            if (initialTransactionNull && updateFunction(null) === undefined) {
+              return { committed: false, snapshot: { val: () => clone(root) } };
+            }
             const next = updateFunction(clone(root));
             if (next === undefined) {
               return { committed: false, snapshot: { val: () => clone(root) } };
@@ -131,6 +137,17 @@ test("valid device gets a six digit short-lived pairing code", async () => {
     expiresAt: NOW + 10 * 60 * 1000,
     used: false,
   });
+});
+
+test("initial null transaction callback still loads the valid device", async () => {
+  const database = createDatabase(
+    { devices: { [DEVICE_BODY.deviceId]: provisionedDevice() } },
+    { initialTransactionNull: true }
+  );
+  const response = await invoke(pairingHandler(database), DEVICE_BODY);
+
+  assert.equal(response.statusCode, 200);
+  assert.match(response.body.code, /^\d{6}$/);
 });
 
 test("invalid device credential is rejected without creating a code", async () => {
@@ -269,6 +286,23 @@ test("successful claim atomically creates the complete owner binding", async () 
   assert.equal(root.pairingCodes["123456"].usedBy, "owner-one");
 });
 
+test("initial null transaction callback still completes a valid claim", async () => {
+  const database = createDatabase({
+    devices: { [DEVICE_BODY.deviceId]: provisionedDevice() },
+    pairingCodes: {
+      "123456": { deviceId: DEVICE_BODY.deviceId, createdAt: NOW, expiresAt: NOW + 1000, used: false },
+    },
+  }, { initialTransactionNull: true });
+  const services = adminServices(database, {
+    "token-owner": { uid: "owner-one", displayName: "Alya" },
+  });
+  const handler = claimDeviceApi.createHandler({ env: SERVER_ENV, getAdminServices: async () => services, now: () => NOW });
+  const response = await invoke(handler, { code: "123456" }, { authorization: "Bearer token-owner" });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(database.value().devices[DEVICE_BODY.deviceId].ownerUid, "owner-one");
+});
+
 test("concurrent claims allow exactly one owner", async () => {
   const database = createDatabase({
     devices: { [DEVICE_BODY.deviceId]: provisionedDevice() },
@@ -329,6 +363,28 @@ test("release removes backend ownership and user indexes atomically", async () =
   assert.equal(root.users["owner-one"].devices[DEVICE_BODY.deviceId], undefined);
   assert.equal(root.users["viewer-one"].devices[DEVICE_BODY.deviceId], undefined);
   assert.equal(root.pairingCodes["123456"], undefined);
+});
+
+test("initial null transaction callback still releases ownership", async () => {
+  const database = createDatabase({
+    devices: {
+      [DEVICE_BODY.deviceId]: provisionedDevice({
+        ownerUid: "owner-one",
+        paired: true,
+        ownerProfile: { uid: "owner-one", displayName: "Alya", pairingCode: "123456" },
+        members: { "owner-one": { role: "owner", addedAt: NOW } },
+      }),
+    },
+    users: { "owner-one": { devices: { [DEVICE_BODY.deviceId]: { role: "owner" } } } },
+  }, { initialTransactionNull: true });
+  const handler = releaseDeviceApi.createHandler({
+    env: SERVER_ENV,
+    getAdminServices: async () => adminServices(database),
+  });
+  const response = await invoke(handler, DEVICE_BODY);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(database.value().devices[DEVICE_BODY.deviceId].paired, false);
 });
 
 test("production rules deny every client direct access to pairing codes", async () => {
