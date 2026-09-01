@@ -28,6 +28,29 @@ bool configured(const char* value) {
   return value != nullptr && value[0] != '\0';
 }
 
+String derivedBrokerEndpoint(const char* configuredUrl, const char* endpointName) {
+  if (configured(configuredUrl)) {
+    return String(configuredUrl);
+  }
+  String url = VOLTIX_TOKEN_BROKER_URL;
+  const int apiPathIndex = url.lastIndexOf("/api/");
+  if (apiPathIndex < 0) {
+    return "";
+  }
+  url.remove(apiPathIndex);
+  url += "/api/";
+  url += endpointName;
+  return url;
+}
+
+bool pairingEndpointConfigurationComplete(const String& url) {
+  return authState.enabled &&
+    url.startsWith("https://") &&
+    configured(VOLTIX_DEVICE_SECRET) &&
+    configured(VOLTIX_TOKEN_BROKER_ROOT_CA) &&
+    VOLTIX_DEVICE_CREDENTIAL_VERSION >= 1;
+}
+
 void clearTokens(const char* error, int statusCode) {
   authState.idToken = "";
   authState.refreshToken = "";
@@ -447,6 +470,24 @@ bool signInThroughBroker() {
   responseDoc.clear();
   return exchanged;
 }
+
+int postDeviceCredentialRequest(const String& url, String& response) {
+  StaticJsonDocument<512> requestDoc;
+  requestDoc["deviceId"] = Config::DEVICE_ID;
+  requestDoc["deviceSecret"] = VOLTIX_DEVICE_SECRET;
+  requestDoc["credentialVersion"] = VOLTIX_DEVICE_CREDENTIAL_VERSION;
+  String requestPayload;
+  serializeJson(requestDoc, requestPayload);
+  const int statusCode = postJson(
+    url,
+    VOLTIX_TOKEN_BROKER_ROOT_CA,
+    requestPayload,
+    response
+  );
+  requestPayload = "";
+  requestDoc.clear();
+  return statusCode;
+}
 }  // namespace
 
 void deviceAuthBegin() {
@@ -498,6 +539,90 @@ bool deviceAuthEnsureAuthenticated(bool forceRefresh) {
   Serial.print(hadRefreshToken ? "[auth] refresh " : "[auth] sign-in ");
   Serial.println(authenticated ? "OK" : "FAIL (local operation continues)");
   return authenticated;
+}
+
+bool deviceAuthRequestPairingCode(char* code, size_t codeSize, uint64_t& expiresAt) {
+  if (code == nullptr || codeSize < 7 || !networkIsConnected()) {
+    return false;
+  }
+  const String url = derivedBrokerEndpoint(
+    VOLTIX_DEVICE_PAIRING_CODE_URL,
+    "device-pairing-code"
+  );
+  if (!pairingEndpointConfigurationComplete(url)) {
+    Serial.println("[pairing] Pairing service configuration unavailable");
+    return false;
+  }
+
+  String response;
+  const int statusCode = postDeviceCredentialRequest(url, response);
+  if (statusCode < 200 || statusCode >= 300) {
+    Serial.print("[pairing] Pairing service HTTP ");
+    Serial.println(statusCode);
+    response = "";
+    return false;
+  }
+
+  StaticJsonDocument<256> responseDoc;
+  if (deserializeJson(responseDoc, response) ||
+      !responseDoc["code"].is<const char*>() ||
+      !responseDoc["expiresAt"].is<uint64_t>()) {
+    Serial.println("[pairing] Pairing service payload invalid");
+    response = "";
+    return false;
+  }
+  const char* receivedCode = responseDoc["code"].as<const char*>();
+  if (strlen(receivedCode) != 6) {
+    Serial.println("[pairing] Pairing service code invalid");
+    response = "";
+    return false;
+  }
+  for (size_t i = 0; i < 6; i++) {
+    if (receivedCode[i] < '0' || receivedCode[i] > '9') {
+      Serial.println("[pairing] Pairing service code invalid");
+      response = "";
+      return false;
+    }
+  }
+
+  strlcpy(code, receivedCode, codeSize);
+  expiresAt = responseDoc["expiresAt"].as<uint64_t>();
+  response = "";
+  responseDoc.clear();
+  return expiresAt > 0;
+}
+
+bool deviceAuthReleaseOwnership() {
+  if (!networkIsConnected()) {
+    return false;
+  }
+  const String url = derivedBrokerEndpoint(
+    VOLTIX_DEVICE_RELEASE_URL,
+    "release-device"
+  );
+  if (!pairingEndpointConfigurationComplete(url)) {
+    Serial.println("[system] Release service configuration unavailable");
+    return false;
+  }
+
+  String response;
+  const int statusCode = postDeviceCredentialRequest(url, response);
+  if (statusCode < 200 || statusCode >= 300) {
+    Serial.print("[system] Remote ownership release HTTP ");
+    Serial.println(statusCode);
+    response = "";
+    return false;
+  }
+  StaticJsonDocument<128> responseDoc;
+  const bool released = !deserializeJson(responseDoc, response) &&
+    responseDoc["released"].is<bool>() &&
+    responseDoc["released"].as<bool>();
+  response = "";
+  responseDoc.clear();
+  Serial.println(released
+    ? "[system] Remote ownership released"
+    : "[system] Remote ownership release payload invalid");
+  return released;
 }
 
 String deviceAuthAppendAuthQuery(const String& url) {

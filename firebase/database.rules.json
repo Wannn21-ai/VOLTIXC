@@ -14,7 +14,7 @@
         },
         "devices": {
           "$deviceId": {
-            ".write": "auth != null && (auth.token.pairingService === true || auth.token.inviteService === true || (auth.uid === $uid && root.child('devices').child($deviceId).child('ownerUid').val() === auth.uid && (!newData.exists() || newData.child('role').val() === 'owner')))",
+            ".write": "auth != null && (auth.token.inviteService === true || (auth.uid === $uid && root.child('devices').child($deviceId).child('ownerUid').val() === auth.uid && (!newData.exists() || newData.child('role').val() === 'owner')))",
             ".validate": "!newData.exists() || (newData.hasChildren(['role', 'nickname', 'addedAt']) && (newData.child('role').val() === 'owner' || newData.child('role').val() === 'operator' || newData.child('role').val() === 'viewer') && newData.child('nickname').isString() && newData.child('addedAt').isNumber())"
           }
         },
@@ -34,7 +34,7 @@
           ".write": false
         },
         "paired": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
+          ".read": "auth != null && (auth.token.deviceId === $deviceId || data.parent().child('members').child(auth.uid).exists())",
           ".write": false
         },
         "ownerProfile": {
@@ -64,7 +64,7 @@
         "members": {
           "$memberUid": {
             ".read": "auth != null && (data.parent().parent().child('ownerUid').val() === auth.uid || $memberUid === auth.uid)",
-            ".write": "auth != null && (auth.token.pairingService === true || auth.token.inviteService === true || (data.parent().parent().child('ownerUid').val() === auth.uid && $memberUid !== auth.uid && (!newData.exists() || newData.child('role').val() !== 'owner')))",
+            ".write": "auth != null && (auth.token.inviteService === true || (data.parent().parent().child('ownerUid').val() === auth.uid && $memberUid !== auth.uid && (!newData.exists() || newData.child('role').val() !== 'owner')))",
             ".validate": "!newData.exists() || (newData.hasChildren(['role', 'addedAt']) && (newData.child('role').val() === 'owner' || newData.child('role').val() === 'operator' || newData.child('role').val() === 'viewer') && newData.child('addedAt').isNumber())"
           }
         },
@@ -109,8 +109,8 @@
     },
    "pairingCodes": {
   "$code": {
-    ".read": "auth != null && auth.token.pairingService === true",
-    ".write": "auth != null && auth.token.pairingService === true",
+    ".read": false,
+    ".write": false,
     ".validate": "newData.exists() && newData.hasChildren(['deviceId', 'createdAt', 'expiresAt', 'used']) && newData.child('deviceId').isString() && newData.child('createdAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() > newData.child('createdAt').val() && newData.child('used').isBoolean() && (newData.child('used').val() === false || newData.child('usedBy').isString()) && (!data.exists() || data.child('used').val() === false || (newData.child('used').val() === true && newData.child('usedBy').val() === data.child('usedBy').val()))"
   }
 },

@@ -18,6 +18,8 @@ void firebaseReadConfig();
 bool firebasePushDeviceConfig();
 bool firebaseDeviceConfigPushBlocked();
 bool firebaseFetchPairingCode();
+bool firebasePairingCodeExpired();
+void firebaseClearPairingCode();
 bool firebaseSyncOwnerBinding();
 void firebasePollCommand();
 bool firebaseCommandTransitionPending();

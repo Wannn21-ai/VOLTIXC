@@ -66,9 +66,10 @@ Each device should authenticate before writing. Supported directions include:
 - a secure backend or Cloud Function proxy that validates device requests;
 - another device-auth mechanism that issues short-lived credentials.
 
-The draft rules use `auth.token.deviceId === $deviceId` to express the target
-authorization boundary. Pairing and invite redemption use trusted service
-claims because both operations require validated, atomic multi-location writes.
+The rules use `auth.token.deviceId === $deviceId` for device-scoped runtime
+access. Pairing uses Firebase Admin server authority because it requires a
+validated atomic multi-location write; the hardware token is not granted a
+pairing-service claim.
 
 ## Pairing Transaction Target
 
@@ -85,9 +86,10 @@ Ordinary clients cannot perform this transaction under the draft production
 rules. A trusted Admin SDK service can perform the transaction while enforcing
 expiry, one-time use, and device eligibility in backend code.
 
-The current web pairing foundation and isolated Stage A manual testing procedure
-are documented in [`pairing-foundation.md`](pairing-foundation.md). Production
-rules remain strict and intentionally block direct client claims.
+The production endpoints are documented in
+[`trusted-pairing-service.md`](trusted-pairing-service.md). The isolated Stage A
+manual procedure remains in [`pairing-foundation.md`](pairing-foundation.md).
+Production rules block every direct client pairing-code read or write.
 
 ## Invite Transaction Target
 

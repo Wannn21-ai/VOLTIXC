@@ -23,6 +23,9 @@
 static constexpr unsigned long HTTP_LOG_INTERVAL_MS = 5000UL;
 static constexpr unsigned long SINGULAR_COMMAND_FALLBACK_POLL_INTERVAL_MS = 5000UL;
 static constexpr uint64_t FINAL_COMMAND_MAX_AGE_MS = 5ULL * 60ULL * 1000ULL;
+static constexpr unsigned long PAIRING_REQUEST_INITIAL_BACKOFF_MS = 5000UL;
+static constexpr unsigned long PAIRING_REQUEST_MAX_BACKOFF_MS = 60000UL;
+static constexpr unsigned long PAIRING_CODE_FALLBACK_TTL_MS = 10UL * 60UL * 1000UL;
 
 static constexpr const char* PREF_NAMESPACE_FB = "fb_sync";
 static constexpr const char* PREF_KEY_LAST_CMD_ID = "last_cmd_id";
@@ -46,6 +49,10 @@ static bool missingCommandDeviceIdLogged = false;
 static bool configPushBlockedByRules = false;
 static bool singularCommandFallbackDisabled = false;
 static bool legacyHistoryMirrorDisabled = false;
+static uint64_t pairingCodeExpiresAt = 0;
+static unsigned long pairingCodeReceivedAtMs = 0;
+static unsigned long lastPairingCodeRequestMs = 0;
+static unsigned long pairingCodeRequestBackoffMs = PAIRING_REQUEST_INITIAL_BACKOFF_MS;
 
 class CommandPollTimingScope {
  public:
@@ -1054,61 +1061,75 @@ bool firebasePushDeviceConfig() {
 }
 
 bool firebaseFetchPairingCode() {
-  if (appConfig.pairingCode[0] != '\0') {
-    return true; // Kode sudah ada
-  }
-  if (Config::DEVICE_ID == nullptr || Config::DEVICE_ID[0] == '\0') {
+  if (appConfig.paired) {
     return false;
   }
-
-  String path = String("/pairingCodes.json?orderBy=\"deviceId\"&equalTo=\"") + Config::DEVICE_ID + "\"&limitToFirst=1";
-  String response;
-  if (!httpRequest("GET", path.c_str(), "", &response, false)) {
-    return false;
-  }
-
-  if (response == "null" || response.length() == 0 || response == "{}") {
-    Serial.println("[pairing] No pairing code found for this device");
-    return false;
-  }
-
-  DynamicJsonDocument doc(512);
-  const DeserializationError error = deserializeJson(doc, response);
-  if (error || !doc.is<JsonObject>()) {
-    Serial.print("[pairing] Failed to parse pairing code response: ");
-    Serial.println(error.c_str());
-    return false;
-  }
-
-  JsonObject obj = doc.as<JsonObject>();
-  if (obj.size() != 1) {
-    return false;
-  }
-
-  // Kunci dari objek pertama adalah kode pairing
-  const char* code = obj.begin()->key().c_str();
-  JsonObject pairingData = obj.begin()->value();
-
-  if (code != nullptr && strlen(code) == 6 && !pairingData["used"].as<bool>()) {
-    strlcpy(appConfig.pairingCode, code, sizeof(appConfig.pairingCode));
-    Serial.print("[pairing] Fetched pairing code: ");
-    Serial.println(appConfig.pairingCode);
+  if (appConfig.pairingCode[0] != '\0' && !firebasePairingCodeExpired()) {
     return true;
   }
+  if (appConfig.pairingCode[0] != '\0') {
+    firebaseClearPairingCode();
+    Serial.println("[pairing] Pairing code expired; requesting replacement");
+  }
 
-  Serial.println("[pairing] Found invalid or used pairing code");
-  return false;
+  const unsigned long now = millis();
+  if (lastPairingCodeRequestMs > 0 &&
+      now - lastPairingCodeRequestMs < pairingCodeRequestBackoffMs) {
+    return false;
+  }
+  lastPairingCodeRequestMs = now;
+
+  char code[8] = "";
+  uint64_t expiresAt = 0;
+  if (!deviceAuthRequestPairingCode(code, sizeof(code), expiresAt)) {
+    pairingCodeRequestBackoffMs = min(
+      pairingCodeRequestBackoffMs * 2UL,
+      PAIRING_REQUEST_MAX_BACKOFF_MS
+    );
+    return false;
+  }
+
+  strlcpy(appConfig.pairingCode, code, sizeof(appConfig.pairingCode));
+  pairingCodeExpiresAt = expiresAt;
+  pairingCodeReceivedAtMs = now;
+  pairingCodeRequestBackoffMs = PAIRING_REQUEST_INITIAL_BACKOFF_MS;
+  Serial.print("[pairing] Pairing code received expiresAt=");
+  Serial.println(static_cast<unsigned long long>(pairingCodeExpiresAt));
+  return true;
+}
+
+bool firebasePairingCodeExpired() {
+  if (appConfig.pairingCode[0] == '\0') {
+    return false;
+  }
+  if (timeIsSynced() && pairingCodeExpiresAt > 0) {
+    return getUnixMs() >= pairingCodeExpiresAt;
+  }
+  return pairingCodeReceivedAtMs > 0 &&
+    millis() - pairingCodeReceivedAtMs >= PAIRING_CODE_FALLBACK_TTL_MS;
+}
+
+void firebaseClearPairingCode() {
+  appConfig.pairingCode[0] = '\0';
+  pairingCodeExpiresAt = 0;
+  pairingCodeReceivedAtMs = 0;
 }
 
 bool firebaseSyncOwnerBinding() {
-  if (appConfig.paired ||
-      appConfig.pairingCode[0] == '\0' ||
-      Config::DEVICE_ID == nullptr ||
+  if (appConfig.paired || Config::DEVICE_ID == nullptr ||
       Config::DEVICE_ID[0] == '\0') {
     return appConfig.paired;
   }
 
-  const String path = String("/devices/") + Config::DEVICE_ID + "/ownerProfile.json";
+  const String deviceRoot = String("/devices/") + Config::DEVICE_ID;
+  const String pairedPath = deviceRoot + "/paired.json";
+  String pairedResponse;
+  if (!httpRequest("GET", pairedPath.c_str(), "", &pairedResponse, false) ||
+      pairedResponse != "true") {
+    return false;
+  }
+
+  const String path = deviceRoot + "/ownerProfile.json";
   String response;
   if (!httpRequest("GET", path.c_str(), "", &response, false)) {
     return false;
@@ -1136,11 +1157,15 @@ bool firebaseSyncOwnerBinding() {
     Serial.println("[pairing] Owner profile ignored: empty owner UID");
     return false;
   }
-  if (pairingCode != appConfig.pairingCode) {
+  if (appConfig.pairingCode[0] != '\0' && pairingCode != appConfig.pairingCode) {
     return false;
   }
 
-  return cacheOwnerBinding(ownerUid.c_str(), displayName.c_str());
+  const bool cached = cacheOwnerBinding(ownerUid.c_str(), displayName.c_str());
+  if (cached) {
+    firebaseClearPairingCode();
+  }
+  return cached;
 }
 
 bool firebaseDeviceConfigPushBlocked() {

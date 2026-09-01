@@ -2,6 +2,7 @@
 #include "config.h"
 #include "credentials.h"
 #include "display.h"
+#include "device_auth.h"
 #include "firebase_sync.h"
 #include "relay.h"
 #include "session.h"
@@ -102,6 +103,22 @@ constexpr byte DNS_PORT = 53;
 void systemReset() {
   Serial.println("[system] Performing system reset.");
   displayShowMessage("Resetting", "Please wait...", 1);
+
+  const bool remotePairingStatePresent =
+    appConfig.paired || appConfig.pairingCode[0] != '\0';
+  if (remotePairingStatePresent) {
+    if (!networkIsConnected()) {
+      Serial.println("[system] Reset aborted: ownership release requires online backend");
+      displayShowMessage("Reset cancelled", "Connect online", 1);
+      return;
+    }
+    Serial.println("[system] Releasing remote ownership before local reset");
+    if (!deviceAuthReleaseOwnership()) {
+      Serial.println("[system] Reset aborted: remote ownership unchanged");
+      displayShowMessage("Reset failed", "Try again online", 1);
+      return;
+    }
+  }
 
   // 1. Clear all history from LittleFS
   if (storageClearHistory()) {

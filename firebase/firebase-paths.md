@@ -69,7 +69,7 @@ LittleFS-first session flow.
 
 | Path | Purpose | Reader | Writer |
 | --- | --- | --- | --- |
-| `/pairingCodes/{code}` | Short-lived first-owner claim | Trusted pairing service | Trusted pairing service |
+| `/pairingCodes/{code}` | Short-lived first-owner claim | Firebase Admin pairing endpoint only | Firebase Admin pairing endpoint only |
 | `/inviteCodes/{code}` | Short-lived member invite | Trusted invite service | Owner can create; trusted service redeems |
 
 Codes must:
@@ -80,21 +80,19 @@ Codes must:
 - be redeemed by a trusted backend that atomically updates device membership
   and the user's device index.
 
-The draft rules do not expose code lookup directly to ordinary clients. A Cloud
-Function or another trusted service should validate and redeem codes.
-An Admin SDK service bypasses RTDB rules and must enforce these checks in its
-own trusted code.
+Production rules deny code lookup to every client. The implemented Firebase
+Admin endpoints validate, create, claim, and release pairing records while
+enforcing these checks in trusted code.
 
 ## Custom Auth Claims Used by Draft Rules
 
 | Claim | Meaning |
 | --- | --- |
 | `auth.token.deviceId` | Authenticated device identity; must equal the path device ID |
-| `auth.token.pairingService` | Trusted service allowed to manage pairing codes |
 | `auth.token.inviteService` | Trusted service allowed to redeem invite codes |
 
-These claims are design targets. This sprint does not create tokens, services,
-or a real Firebase project.
+The hardware token is never granted pairing-service authority. Pairing uses
+Firebase Admin server authority instead of a custom client claim.
 
 The final firmware payload fields and current-to-final live migration boundary
 are documented in [../docs/device-live-schema.md](../docs/device-live-schema.md).

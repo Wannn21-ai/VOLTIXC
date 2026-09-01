@@ -133,10 +133,29 @@ async function verifyDeviceCredential(
   const snapshot = await options.database.ref(`/devices/${deviceId}`).get();
   if (!snapshot.exists()) return { verified: false };
 
-  const device = snapshot.val();
+  return verifyDeviceCredentialRecord(
+    deviceId,
+    deviceSecret,
+    credentialVersion,
+    snapshot.val(),
+    options
+  );
+}
+
+function verifyDeviceCredentialRecord(
+  deviceId,
+  deviceSecret,
+  credentialVersion,
+  device,
+  options
+) {
+  const requireOwner = options.requireOwner !== false;
+
   const deviceAuth = device?.deviceAuth;
-  if (typeof device?.ownerUid !== "string" || !device.ownerUid.trim() ||
-      !deviceAuth || deviceAuth.enabled !== true ||
+  const ownerUid = typeof device?.ownerUid === "string"
+    ? device.ownerUid.trim()
+    : "";
+  if ((requireOwner && !ownerUid) || !deviceAuth || deviceAuth.enabled !== true ||
       deviceAuth.revoked === true ||
       deviceAuth.credentialVersion !== credentialVersion ||
       deviceAuth.hashAlg !== "sha256-pepper-v1") {
@@ -157,7 +176,7 @@ async function verifyDeviceCredential(
     verified: true,
     deviceRecord: {
       deviceId,
-      ownerUid: device.ownerUid,
+      ownerUid,
       credentialVersion,
     },
   };
@@ -249,3 +268,4 @@ module.exports.missingServerEnvVars = missingServerEnvVars;
 module.exports.normalizePrivateKey = normalizePrivateKey;
 module.exports.validateRequestBody = validateRequestBody;
 module.exports.verifyDeviceCredential = verifyDeviceCredential;
+module.exports.verifyDeviceCredentialRecord = verifyDeviceCredentialRecord;

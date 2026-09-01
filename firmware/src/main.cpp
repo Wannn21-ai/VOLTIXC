@@ -898,9 +898,21 @@ void loop() {
       (lastOwnerBindingPollMs == 0 || now - lastOwnerBindingPollMs >= OWNER_BINDING_POLL_INTERVAL_MS)) {
     lastOwnerBindingPollMs = now;
     if (firebaseSyncOwnerBinding()) {
+      if (appConfig.ownerDisplayName[0] != '\0') {
+        displayShowOwnerWelcome(appConfig.ownerDisplayName);
+        delay(Config::OWNER_WELCOME_DURATION_MS);
+      }
       displayShowStatus();
-    } else if (appConfig.pairingCode[0] == '\0') {
-      firebaseFetchPairingCode();
+    } else {
+      const bool hadPairingCode = appConfig.pairingCode[0] != '\0';
+      const bool expired = firebasePairingCodeExpired();
+      if (expired) {
+        firebaseClearPairingCode();
+        displayShowStatus();
+      }
+      if (firebaseFetchPairingCode() && (!hadPairingCode || expired)) {
+        displayShowStatus();
+      }
     }
   }
 

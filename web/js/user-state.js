@@ -85,77 +85,57 @@ export async function claimPairingCode(user, code) {
   if (!user?.uid) throw new Error("Sign in before pairing a device.");
   if (!/^\d{6}$/.test(code)) throw new Error("Enter a valid 6-digit pairing code.");
 
-  const pairingServiceRequiredError = error => Object.assign(
-    new Error("Secure rules require the trusted pairing service. Use the documented Stage A development rules only for isolated testing."),
-    { code: "pairing/trusted-service-required", cause: error }
-  );
-  const isPermissionDenied = error =>
-    error?.code === "PERMISSION_DENIED" || error?.code === "database/permission-denied";
-
-  let pairingSnapshot;
+  let idToken;
   try {
-    pairingSnapshot = await get(ref(db, `pairingCodes/${code}`));
-  } catch (error) {
-    if (isPermissionDenied(error)) throw pairingServiceRequiredError(error);
-    throw error;
+    idToken = await user.getIdToken();
+  } catch {
+    throw Object.assign(new Error("Your sign-in session has expired. Sign in again."), {
+      code: "pairing/authentication_expired"
+    });
   }
-  if (!pairingSnapshot.exists()) throw new Error("Pairing code is invalid.");
 
-  const pairing = pairingSnapshot.val() || {};
-  if (pairing.used === true) throw new Error("Pairing code has already been used.");
-  if (!Number.isFinite(Number(pairing.expiresAt)) || Number(pairing.expiresAt) <= Date.now()) {
-    throw new Error("Pairing code has expired.");
-  }
-  if (!pairing.deviceId) throw new Error("Pairing code does not reference a device.");
-
-  let deviceSnapshot;
+  let response;
   try {
-    deviceSnapshot = await get(ref(db, `devices/${pairing.deviceId}`));
-  } catch (error) {
-    if (isPermissionDenied(error)) throw pairingServiceRequiredError(error);
-    throw error;
-  }
-  if (!deviceSnapshot.exists()) throw new Error("Pairing device was not found.");
-
-  const device = deviceSnapshot.val() || {};
-  if (device.paired === true || device.ownerUid) throw new Error("Device is already paired.");
-
-  const now = Date.now();
-  const nickname = device.name || "VOLTIX Device";
-  const ownerDisplayName = typeof user.displayName === "string"
-    ? user.displayName.trim().slice(0, 80)
-    : "";
-  const updates = {
-    [`users/${user.uid}/devices/${pairing.deviceId}`]: {
-      role: "owner",
-      nickname,
-      addedAt: now
-    },
-    [`devices/${pairing.deviceId}/ownerUid`]: user.uid,
-    [`devices/${pairing.deviceId}/paired`]: true,
-    [`devices/${pairing.deviceId}/name`]: nickname,
-    [`devices/${pairing.deviceId}/ownerProfile`]: {
-      uid: user.uid,
-      displayName: ownerDisplayName,
-      pairingCode: code
-    },
-    [`devices/${pairing.deviceId}/members/${user.uid}`]: {
-      role: "owner",
-      addedAt: now
-    },
-    [`pairingCodes/${code}/used`]: true,
-    [`pairingCodes/${code}/usedBy`]: user.uid
-  };
-
-  try {
-    await update(ref(db, "/"), updates);
-  } catch (error) {
-    if (isPermissionDenied(error)) throw pairingServiceRequiredError(error);
-    throw error;
+    response = await fetch("/api/claim-device", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${idToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ code })
+    });
+  } catch {
+    throw Object.assign(new Error("Pairing service is unavailable. Try again shortly."), {
+      code: "pairing/backend_unavailable"
+    });
   }
 
-  localStorage.setItem(`${CURRENT_DEVICE_KEY_PREFIX}${user.uid}`, pairing.deviceId);
-  return { id: pairing.deviceId, nickname, role: "owner" };
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const messages = {
+      invalid_code: "Pairing code is invalid.",
+      expired_code: "Pairing code has expired. Wait for a new code on the device.",
+      code_already_used: "Pairing code has already been used.",
+      device_already_owned: "Device is already owned by another account.",
+      authentication_expired: "Your sign-in session has expired. Sign in again.",
+      pairing_service_unavailable: "Pairing service is unavailable. Try again shortly."
+    };
+    const reason = typeof payload.error === "string"
+      ? payload.error
+      : "pairing_service_unavailable";
+    throw Object.assign(new Error(messages[reason] || "Device pairing failed."), {
+      code: `pairing/${reason}`,
+      status: response.status
+    });
+  }
+
+  if (!payload.id || !payload.nickname) {
+    throw Object.assign(new Error("Pairing service returned an invalid response."), {
+      code: "pairing/backend_unavailable"
+    });
+  }
+  localStorage.setItem(`${CURRENT_DEVICE_KEY_PREFIX}${user.uid}`, payload.id);
+  return { id: payload.id, nickname: payload.nickname, role: "owner" };
 }
 
 export function readableFirebaseError(error, fallback = "Firebase request failed.") {
@@ -164,5 +144,6 @@ export function readableFirebaseError(error, fallback = "Firebase request failed
     return "Access denied. Check your account permissions.";
   }
   if (code === "auth/network-request-failed") return "Network error. Check your connection.";
+  if (code.startsWith("pairing/")) return error?.message || fallback;
   return fallback;
 }

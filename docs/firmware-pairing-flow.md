@@ -1,16 +1,16 @@
-# VOLTIX Firmware Pairing Flow Plan
+# VOLTIX Firmware Pairing Flow
 
-This document defines the target firmware pairing states and OLED behavior. It
-is a planning artifact only. Issue #21 does not add pairing runtime code, change
-the existing display priority, or authorize an untrusted ESP32/web client to
-claim a device.
+This document defines the firmware pairing states and OLED behavior. The
+trusted runtime integration is implemented through the server endpoints
+documented in [trusted-pairing-service.md](trusted-pairing-service.md); neither
+an untrusted ESP32 RTDB client nor the browser claims a device directly.
 
-## Target State Machine
+## Pairing State Model
 
-The target integration state is separate from the current `SystemMode` and
-`SessionState` enums. A later firmware sprint may map these target states onto
-the existing runtime without changing session safety behavior. Its non-active
-code definition lives in `firmware/include/firebase_integration_scaffold.h`.
+Pairing state remains separate from the current `SystemMode` and `SessionState`
+enums. The runtime integration uses the existing `appConfig.paired`, cached
+owner fields, and short-lived in-memory pairing code without changing session
+safety behavior.
 
 | State | Responsibility | Main transition out |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ Pairing is not allowed to interrupt recovery, overload protection, an active
 session, session finalization, or the current offline workflow. Those existing
 safety/runtime states remain authoritative.
 
-## Target OLED Flow
+## OLED Flow
 
 Pairing screens are shown only when the device is unpaired, online enough to
 obtain/validate a code, and no higher-priority safety or session screen is
@@ -95,8 +95,8 @@ a temporary trusted helper. It may simplify authentication only in that
 isolated environment. Firmware must not ship admin credentials, and temporary
 rules must not be merged into production rules.
 
-The current firmware runtime, hardcoded development device path, and existing
-OLED screens remain unchanged during this planning sprint.
+The Stage A rules remain an isolated development aid only and are not used by
+the production endpoint flow.
 
 ### Stage B / Product-Grade
 
@@ -115,12 +115,12 @@ OLED screens remain unchanged during this planning sprint.
 No relay/session command may execute while unpaired. The pairing service, not
 the OLED code alone, grants access.
 
-## Later Integration Checklist
+## Runtime Verification Checklist
 
-- Add pairing state data without replacing existing `SystemMode` or
+- Keep pairing state data separate from existing `SystemMode` and
   `SessionState` behavior.
-- Authenticate the device before allowing final live/config/command paths.
-- Add OLED pairing screens below all existing safety/session priorities.
+- Authenticate the device before allowing live/config/command paths.
+- Keep OLED pairing screens below all existing safety/session priorities.
 - Verify expiry/regeneration across restart and temporary network loss.
 - Verify successful claim cannot be replayed.
 - Verify pairing never changes the LittleFS-first session flow.

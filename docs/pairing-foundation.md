@@ -1,8 +1,9 @@
 # VOLTIX Pairing Claim Foundation
 
-This sprint adds the Device-page web claim flow. It does not implement OLED code
-generation, device authentication, Cloud Functions, or a production pairing
-backend.
+The Device-page claim UI is retained, but production claims now go through the
+Firebase Admin-backed endpoints documented in
+[trusted-pairing-service.md](trusted-pairing-service.md). The direct RTDB flow
+below is historical Stage A guidance for disposable development projects only.
 
 ## Web Claim Behavior
 
@@ -29,10 +30,9 @@ The atomic claim attempts to create or update:
 /pairingCodes/{code}/usedBy
 ```
 
-Under the production-oriented `firebase/database.rules.json`, ordinary web
-users cannot directly read pairing codes or claim provisioning-owned fields.
-The Device page reports that a trusted pairing service is required and never
-shows fake success.
+Under `firebase/database.rules.json`, no client can read or write pairing codes.
+The Device page sends the signed-in user's ID token and six-digit code to
+`/api/claim-device`; only Firebase Admin performs the atomic claim.
 
 ## Stage A: Development / TA-Friendly Testing
 

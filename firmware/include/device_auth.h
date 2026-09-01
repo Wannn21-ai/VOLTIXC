@@ -17,6 +17,8 @@ struct DeviceAuthState {
 void deviceAuthBegin();
 bool deviceAuthIsEnabled();
 bool deviceAuthEnsureAuthenticated(bool forceRefresh = false);
+bool deviceAuthRequestPairingCode(char* code, size_t codeSize, uint64_t& expiresAt);
+bool deviceAuthReleaseOwnership();
 String deviceAuthAppendAuthQuery(const String& url);
 void deviceAuthHandleRtdbUnauthorized(int statusCode);
 void deviceAuthHandleRtdbPathUnauthorized(int statusCode);
