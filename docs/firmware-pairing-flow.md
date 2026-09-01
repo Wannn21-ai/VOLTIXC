@@ -9,13 +9,13 @@ an untrusted ESP32 RTDB client nor the browser claims a device directly.
 
 Pairing state remains separate from the current `SystemMode` and `SessionState`
 enums. The runtime integration uses the existing `appConfig.paired`, cached
-owner fields, and short-lived in-memory pairing code without changing session
-safety behavior.
+owner fields, and a short-lived persistent pairing-code cache without changing
+session safety behavior.
 
 | State | Responsibility | Main transition out |
 | --- | --- | --- |
 | `BOOT` | Load persistent identity/config, mount LittleFS, and recover any checkpoint before normal operation. | WiFi credentials missing -> `WIFI_SETUP`; otherwise start network connection. |
-| `WIFI_SETUP` | Run the existing captive portal and collect network settings. | Network ready -> evaluate paired state; offline selection -> existing offline flow. |
+| `WIFI_SETUP` | Run the existing captive portal and collect network settings. Unpaired onboarding and pending System Reset enter this state directly without the mode menu. | Saved WiFi -> restart and connect directly online; offline selection remains available only when no reset is pending. |
 | `UNPAIRED` | Keep relay/session commands disabled and request a short-lived pairing code when online. | Valid code available -> `PAIRING_DISPLAY`; claim observed -> `PAIRED_IDLE`. |
 | `PAIRING_DISPLAY` | Show the active code and expiry status without exposing a permanent secret. | Code expires -> request/regenerate code; claim observed -> `PAIRED_IDLE`. |
 | `PAIRED_IDLE` | Publish idle live state, consume config, and wait for a permitted command or local action. | Session start -> online/offline monitoring; connectivity change -> transition handling. |
@@ -31,9 +31,10 @@ safety/runtime states remain authoritative.
 
 ## OLED Flow
 
-Pairing screens are shown only when the device is unpaired, online enough to
-obtain/validate a code, and no higher-priority safety or session screen is
-active.
+Pairing screens are shown when the device is unpaired and has a valid cached
+code, even while the captive portal is active. The code is always created by
+the trusted backend while online; firmware never invents an offline code.
+Recovery, overload, and active-session screens remain higher priority.
 
 Active code:
 
@@ -69,8 +70,9 @@ OLED rules:
 - The OLED may show the short-lived pairing code and device display name, but
   never a service-account key, admin credential, device private key, custom
   token, user UID, or other permanent secret.
-- Existing recovery, overload, button feedback, monitoring, waiting-load,
-  finished-summary, and captive-portal screens keep priority over pairing.
+- Existing recovery, overload, button feedback, monitoring, waiting-load, and
+  finished-summary screens keep priority over pairing. A valid pairing code is
+  shown above the captive-portal screen with `AP: Voltix-Setup` as its footer.
 
 ## Device Identity And Persistence
 
@@ -80,11 +82,24 @@ OLED rules:
 | `firmwareVersion` | Build-time firmware metadata | Firmware image | Published as metadata/live status; not user-editable. |
 | `paired` | Trusted backend/device relationship | Cached in `Preferences` | Cache improves boot UX, but backend state is authoritative when online. |
 | `ownerUid` | Trusted pairing relationship | Optional cache in `Preferences` | Used only as metadata if the authenticated device is permitted to read it; never hardcoded. |
-| `lastPairingCode` | Trusted pairing service response | RAM preferred; optional short-lived `Preferences` cache | Clear after claim/expiry; never treat as a permanent credential. |
+| `lastPairingCode` | Trusted pairing service response | Short-lived `pair_cache` Preferences namespace plus RAM | Clear after claim/expiry; restore only after a software restart when no trusted clock is available. Never treat as a permanent credential. |
 | `pairingCodeExpiresAt` | Trusted pairing service response | Same lifecycle as pairing code | Unix epoch milliseconds so expiry survives restart when time is valid. |
 
 Use `Preferences` for small identity/config metadata. Continue using LittleFS
 for completed sessions, pending sync records, and recovery checkpoints.
+
+## Boot And Reset Routing
+
+- Unpaired boot with saved Wi-Fi connects directly for pairing.
+- Unpaired boot without saved Wi-Fi starts the captive portal directly.
+- Saving Wi-Fi in the captive portal sets a one-shot auto-online marker, so the
+  next boot does not return to mode validation.
+- System Reset first obtains network access, releases backend ownership, then
+  obtains and persists a fresh pairing code before clearing normal Preferences.
+- A code can be displayed offline after reset only because it was registered by
+  the backend immediately before reset. If it expires offline, firmware clears
+  it and waits for network access before requesting a replacement.
+- Paired normal boot retains the existing explicit ONLINE/OFFLINE mode menu.
 
 ## Stage A And Stage B
 

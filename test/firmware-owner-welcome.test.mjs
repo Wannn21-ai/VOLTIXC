@@ -64,7 +64,7 @@ test("boot welcome is local-only, bounded, and below recovery priority", () => {
   assert.match(displaySource, /if \(!appConfig\.paired\) \{\s*drawLine\(4, "Fetching code\.\.\."\)/);
 });
 
-test("WiFi reset preserves owner cache and System Reset is remote-first", () => {
+test("WiFi reset preserves owner cache and System Reset prepares fresh onboarding", () => {
   const clearWifiStart = networkSource.indexOf("void clearWiFiCredentials()");
   const hasWifiStart = networkSource.indexOf("bool hasSavedWiFiCredentials()", clearWifiStart);
   const clearWifiSource = networkSource.slice(clearWifiStart, hasWifiStart);
@@ -76,10 +76,50 @@ test("WiFi reset preserves owner cache and System Reset is remote-first", () => 
   assert.match(clearWifiSource, /prefs\.remove\(PREF_KEY_WIFI_PASS\)/);
   assert.doesNotMatch(clearWifiSource, /PREF_KEY_OWNER_/);
   const releaseIndex = systemResetSource.indexOf("deviceAuthReleaseOwnership()");
+  const requestIndex = systemResetSource.indexOf("deviceAuthRequestPairingCode(");
+  const cacheIndex = systemResetSource.indexOf("firebaseStorePairingCode(");
   const localClearIndex = systemResetSource.indexOf("prefs.clear()");
   assert.equal(releaseIndex >= 0 && releaseIndex < localClearIndex, true);
-  assert.match(systemResetSource, /appConfig\.paired \|\| appConfig\.pairingCode\[0\] != '\\0'/);
+  assert.equal(releaseIndex < requestIndex && requestIndex < cacheIndex && cacheIndex < localClearIndex, true);
   assert.match(systemResetSource, /Reset aborted: remote ownership unchanged[\s\S]*return;/);
-  assert.match(systemResetSource, /ownership release requires online backend[\s\S]*return;/);
+  assert.match(systemResetSource, /persistPendingSystemReset\(true\)[\s\S]*Reset waiting for saved WiFi connection/);
+  assert.match(systemResetSource, /startSetupPortal\("system reset requires WiFi"\)/);
+  assert.match(systemResetSource, /Fresh pairing code cached for post-reset onboarding/);
   assert.match(systemResetSource, /prefs\.clear\(\)/);
+  assert.match(systemResetSource, /if \(!preferencesCleared\)[\s\S]*return;/);
+});
+
+test("temporary pairing code survives software restart but remains expiry bounded", () => {
+  assert.match(firebaseSource, /PREF_NAMESPACE_PAIRING = "pair_cache"/);
+  assert.match(firebaseSource, /PREF_KEY_PAIRING_EXPIRES = "expires"/);
+  assert.match(firebaseSource, /loadCachedPairingCode\(\)/);
+  assert.match(firebaseSource, /esp_reset_reason\(\) == ESP_RST_SW/);
+  assert.match(firebaseSource, /currentTrustedUnixMs\(nowUnixMs\)/);
+  assert.match(firebaseSource, /firebaseStorePairingCode\(const char\* code, uint64_t expiresAt\)/);
+  assert.match(firebaseSource, /prefs\.putULong64\(PREF_KEY_PAIRING_EXPIRES, expiresAt\)/);
+  assert.match(firebaseSource, /void firebaseClearPairingCode\(\)[\s\S]*prefs\.clear\(\)/);
+  assert.match(mainSource, /Cached pairing code expired[\s\S]*firebaseClearPairingCode\(\)/);
+
+  const cachedCodePriority = displaySource.indexOf("!appConfig.paired && appConfig.pairingCode[0] != '\\0'");
+  const portalPriority = displaySource.indexOf("if (networkIsPortalActive())", cachedCodePriority);
+  assert.equal(cachedCodePriority >= 0 && cachedCodePriority < portalPriority, true);
+  assert.match(displaySource, /networkIsPortalActive\(\) \? "AP: Voltix-Setup" : "Enter in web app"/);
+});
+
+test("unpaired boot and captive portal completion bypass the mode menu", () => {
+  const networkBeginStart = networkSource.indexOf("void networkBegin()");
+  const networkUpdateStart = networkSource.indexOf("void networkUpdate()", networkBeginStart);
+  const networkBeginSource = networkSource.slice(networkBeginStart, networkUpdateStart);
+  const recoveryIndex = networkBeginSource.indexOf("sessionRecoveryIsActive()");
+  const onboardingIndex = networkBeginSource.indexOf("!appConfig.paired || autoOnlineAfterPortal");
+  const menuIndex = networkBeginSource.indexOf("enterBootChoiceMenu()");
+
+  assert.equal(recoveryIndex >= 0 && recoveryIndex < onboardingIndex, true);
+  assert.equal(onboardingIndex < menuIndex, true);
+  assert.match(networkBeginSource, /loadSavedWiFiCredentials[\s\S]*startWiFiConnection/);
+  assert.match(networkBeginSource, /startSetupPortal\(systemResetPending[\s\S]*"unpaired onboarding"\)/);
+  assert.match(networkSource, /saveWiFiCredentials\(ssid, password\);\s*markAutoOnlineAfterPortal\(\)/);
+  assert.match(networkSource, /Captive portal complete; connecting directly ONLINE/);
+  assert.match(networkSource, /connected && systemResetPending && !systemResetInProgress[\s\S]*systemReset\(\)/);
+  assert.match(networkSource, /if \(systemResetPending\)[\s\S]*System Reset Pending/);
 });

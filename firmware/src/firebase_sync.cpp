@@ -16,9 +16,11 @@
 #include <HTTPClient.h>
 #include <math.h>
 #include <stdlib.h>
+#include <sys/time.h>
 #include <WiFi.h>
 #include <Preferences.h>
 #include <WiFiClientSecure.h>
+#include <esp_system.h>
 
 static constexpr unsigned long HTTP_LOG_INTERVAL_MS = 5000UL;
 static constexpr unsigned long SINGULAR_COMMAND_FALLBACK_POLL_INTERVAL_MS = 5000UL;
@@ -26,9 +28,13 @@ static constexpr uint64_t FINAL_COMMAND_MAX_AGE_MS = 5ULL * 60ULL * 1000ULL;
 static constexpr unsigned long PAIRING_REQUEST_INITIAL_BACKOFF_MS = 5000UL;
 static constexpr unsigned long PAIRING_REQUEST_MAX_BACKOFF_MS = 60000UL;
 static constexpr unsigned long PAIRING_CODE_FALLBACK_TTL_MS = 10UL * 60UL * 1000UL;
+static constexpr uint64_t MIN_TRUSTED_UNIX_MS = 1672531200000ULL;
 
 static constexpr const char* PREF_NAMESPACE_FB = "fb_sync";
 static constexpr const char* PREF_KEY_LAST_CMD_ID = "last_cmd_id";
+static constexpr const char* PREF_NAMESPACE_PAIRING = "pair_cache";
+static constexpr const char* PREF_KEY_PAIRING_CODE = "code";
+static constexpr const char* PREF_KEY_PAIRING_EXPIRES = "expires";
 static char lastProcessedCommandId[48] = "";
 static uint64_t lastProcessedFinalCommandAt = 0;
 static char ackId[48] = "";
@@ -53,6 +59,59 @@ static uint64_t pairingCodeExpiresAt = 0;
 static unsigned long pairingCodeReceivedAtMs = 0;
 static unsigned long lastPairingCodeRequestMs = 0;
 static unsigned long pairingCodeRequestBackoffMs = PAIRING_REQUEST_INITIAL_BACKOFF_MS;
+
+static bool validPairingCode(const char* code) {
+  if (code == nullptr || strlen(code) != 6) {
+    return false;
+  }
+  for (size_t i = 0; i < 6; i++) {
+    if (code[i] < '0' || code[i] > '9') {
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool currentTrustedUnixMs(uint64_t& unixMs) {
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  if (tv.tv_sec < static_cast<time_t>(MIN_TRUSTED_UNIX_MS / 1000ULL)) {
+    unixMs = 0;
+    return false;
+  }
+  unixMs = (static_cast<uint64_t>(tv.tv_sec) * 1000ULL) +
+    (static_cast<uint64_t>(tv.tv_usec) / 1000ULL);
+  return true;
+}
+
+static void loadCachedPairingCode() {
+  if (appConfig.paired) {
+    return;
+  }
+
+  Preferences prefs;
+  if (!prefs.begin(PREF_NAMESPACE_PAIRING, true)) {
+    return;
+  }
+  const String code = prefs.getString(PREF_KEY_PAIRING_CODE, "");
+  const uint64_t expiresAt = prefs.getULong64(PREF_KEY_PAIRING_EXPIRES, 0);
+  prefs.end();
+
+  uint64_t nowUnixMs = 0;
+  const bool trustedClockAvailable = currentTrustedUnixMs(nowUnixMs);
+  const bool softwareRestart = esp_reset_reason() == ESP_RST_SW;
+  if (!validPairingCode(code.c_str()) || expiresAt == 0 ||
+      (trustedClockAvailable && nowUnixMs >= expiresAt) ||
+      (!trustedClockAvailable && !softwareRestart)) {
+    firebaseClearPairingCode();
+    return;
+  }
+
+  strlcpy(appConfig.pairingCode, code.c_str(), sizeof(appConfig.pairingCode));
+  pairingCodeExpiresAt = expiresAt;
+  pairingCodeReceivedAtMs = millis();
+  Serial.println("[pairing] Restored temporary pairing code after restart");
+}
 
 class CommandPollTimingScope {
  public:
@@ -863,6 +922,7 @@ void firebaseBegin() {
       Serial.println(lastProcessedCommandId);
     }
   }
+  loadCachedPairingCode();
   deviceAuthBegin();
   if (deviceAuthIsEnabled()) {
     Serial.println("[firebase] Device auth scaffold enabled; tokens remain redacted");
@@ -1089,12 +1149,40 @@ bool firebaseFetchPairingCode() {
     return false;
   }
 
-  strlcpy(appConfig.pairingCode, code, sizeof(appConfig.pairingCode));
-  pairingCodeExpiresAt = expiresAt;
-  pairingCodeReceivedAtMs = now;
+  if (!firebaseStorePairingCode(code, expiresAt)) {
+    Serial.println("[pairing] Pairing code cache failed; requesting again later");
+    return false;
+  }
   pairingCodeRequestBackoffMs = PAIRING_REQUEST_INITIAL_BACKOFF_MS;
   Serial.print("[pairing] Pairing code received expiresAt=");
   Serial.println(static_cast<unsigned long long>(pairingCodeExpiresAt));
+  return true;
+}
+
+bool firebaseStorePairingCode(const char* code, uint64_t expiresAt) {
+  if (!validPairingCode(code) || expiresAt == 0) {
+    return false;
+  }
+
+  Preferences prefs;
+  if (!prefs.begin(PREF_NAMESPACE_PAIRING, false)) {
+    Serial.println("[pairing] Failed to open temporary pairing cache");
+    return false;
+  }
+  const bool codeSaved = prefs.putString(PREF_KEY_PAIRING_CODE, code) > 0;
+  const bool expirySaved = prefs.putULong64(PREF_KEY_PAIRING_EXPIRES, expiresAt) > 0;
+  if (!codeSaved || !expirySaved) {
+    prefs.clear();
+  }
+  prefs.end();
+  if (!codeSaved || !expirySaved) {
+    Serial.println("[pairing] Failed to persist temporary pairing code");
+    return false;
+  }
+
+  strlcpy(appConfig.pairingCode, code, sizeof(appConfig.pairingCode));
+  pairingCodeExpiresAt = expiresAt;
+  pairingCodeReceivedAtMs = millis();
   return true;
 }
 
@@ -1102,8 +1190,9 @@ bool firebasePairingCodeExpired() {
   if (appConfig.pairingCode[0] == '\0') {
     return false;
   }
-  if (timeIsSynced() && pairingCodeExpiresAt > 0) {
-    return getUnixMs() >= pairingCodeExpiresAt;
+  uint64_t nowUnixMs = 0;
+  if (pairingCodeExpiresAt > 0 && currentTrustedUnixMs(nowUnixMs)) {
+    return nowUnixMs >= pairingCodeExpiresAt;
   }
   return pairingCodeReceivedAtMs > 0 &&
     millis() - pairingCodeReceivedAtMs >= PAIRING_CODE_FALLBACK_TTL_MS;
@@ -1113,6 +1202,12 @@ void firebaseClearPairingCode() {
   appConfig.pairingCode[0] = '\0';
   pairingCodeExpiresAt = 0;
   pairingCodeReceivedAtMs = 0;
+
+  Preferences prefs;
+  if (prefs.begin(PREF_NAMESPACE_PAIRING, false)) {
+    prefs.clear();
+    prefs.end();
+  }
 }
 
 bool firebaseSyncOwnerBinding() {

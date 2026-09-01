@@ -212,7 +212,11 @@ void renderIdle() {
     drawCenteredText("Pairing Code", 5, 1);
     oled.drawLine(0, 16, SCREEN_WIDTH, 16, SSD1306_WHITE);
     drawCenteredText(appConfig.pairingCode, 28, 3);
-    drawCenteredText("Enter in web app", 55, 1);
+    drawCenteredText(
+      networkIsPortalActive() ? "AP: Voltix-Setup" : "Enter in web app",
+      55,
+      1
+    );
   } else {
     drawLine(0, "Voltix Ready");
     drawLine(2, Config::DEVICE_ID);
@@ -418,6 +422,12 @@ void renderScreen() {
   if (offlineModeShowFinishedSummary()) {
     resetRotation();
     renderFinished();
+    return;
+  }
+
+  if (!appConfig.paired && appConfig.pairingCode[0] != '\0') {
+    resetRotation();
+    renderIdle();
     return;
   }
 

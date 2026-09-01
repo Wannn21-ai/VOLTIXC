@@ -50,9 +50,13 @@ device members and their user-device indexes, and old pairing codes, then sets
 `paired` to `false`.
 
 Reset is fail-safe: if Wi-Fi or the trusted backend is unavailable, firmware
-does not clear local ownership or any other factory-reset data. The user can
-retry after reconnecting. This prevents the ESP32 from appearing unowned while
-Firebase still belongs to the previous account.
+persists a pending-reset marker and reconnects saved Wi-Fi or opens the captive
+portal. It does not clear local ownership or any other factory-reset data until
+the release succeeds. After release, firmware requests a fresh pairing code,
+caches that code and its expiry, and only then clears the normal factory-reset
+data. The new short-lived code therefore survives the reset reboot even though
+Wi-Fi credentials have been removed. This prevents the ESP32 from appearing
+unowned while Firebase still belongs to the previous account.
 
 ## Firebase Data
 

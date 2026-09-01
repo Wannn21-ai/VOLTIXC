@@ -48,6 +48,8 @@ void scheduleRestart() {
 }
 
 namespace {
+void startSetupPortal(const char* reason);
+
 constexpr size_t NVS_KEY_MAX_LENGTH = 15;
 constexpr char PREF_NAMESPACE[] = "voltix";
 constexpr char PREF_KEY_WIFI_SSID[] = "wifi_ssid";
@@ -67,6 +69,8 @@ constexpr char PREF_KEY_CONFIG_SOURCE[] = "cfgSrc";
 constexpr char PREF_KEY_PAIRED[] = "paired";
 constexpr char PREF_KEY_OWNER_UID[] = "owner_uid";
 constexpr char PREF_KEY_OWNER_DISPLAY_NAME[] = "owner_name";
+constexpr char PREF_KEY_AUTO_ONLINE[] = "autoOnline";
+constexpr char PREF_KEY_PENDING_RESET[] = "pendingReset";
 constexpr char PREF_KEY_LEGACY_CONFIG_REVISION[] = "configRevision";
 constexpr char PREF_KEY_LEGACY_CONFIG_SOURCE[] = "configSource";
 
@@ -88,6 +92,8 @@ static_assert(sizeof(PREF_KEY_CONFIG_SOURCE) - 1 <= NVS_KEY_MAX_LENGTH, "Prefere
 static_assert(sizeof(PREF_KEY_PAIRED) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
 static_assert(sizeof(PREF_KEY_OWNER_UID) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
 static_assert(sizeof(PREF_KEY_OWNER_DISPLAY_NAME) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_AUTO_ONLINE) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_PENDING_RESET) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
 constexpr const char* SETUP_AP_SSID = "Voltix-Setup";
 constexpr const char* SETUP_AP_PASSWORD = "12345678";
 constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000UL;
@@ -98,27 +104,91 @@ constexpr unsigned long BOOT_EXIT_MANUAL_MS = 3000UL;
 constexpr unsigned long BOOT_CLEAR_WIFI_MS = 5000UL;
 constexpr unsigned long BOOT_ENTER_OFFLINE_MS = 10000UL;
 constexpr unsigned long DEBOUNCE_DELAY_MS = 200UL;
+constexpr unsigned long SYSTEM_RESET_RETRY_MS = 15000UL;
 constexpr byte DNS_PORT = 53;
 
+static bool systemResetPending = false;
+static bool systemResetInProgress = false;
+static unsigned long lastSystemResetAttemptMs = 0;
+
+bool persistPendingSystemReset(bool pending) {
+  Preferences prefs;
+  if (!prefs.begin(PREF_NAMESPACE, false)) {
+    Serial.println("[system] Failed to persist pending reset state");
+    return false;
+  }
+  const bool saved = pending
+    ? prefs.putBool(PREF_KEY_PENDING_RESET, true) > 0
+    : prefs.remove(PREF_KEY_PENDING_RESET);
+  prefs.end();
+  if (saved || !pending) {
+    systemResetPending = pending;
+  }
+  return saved || !pending;
+}
+
+bool loadPendingSystemReset() {
+  Preferences prefs;
+  if (!prefs.begin(PREF_NAMESPACE, true)) {
+    return false;
+  }
+  const bool pending = prefs.getBool(PREF_KEY_PENDING_RESET, false);
+  prefs.end();
+  return pending;
+}
+
 void systemReset() {
+  if (systemResetInProgress) {
+    return;
+  }
   Serial.println("[system] Performing system reset.");
   displayShowMessage("Resetting", "Please wait...", 1);
 
-  const bool remotePairingStatePresent =
-    appConfig.paired || appConfig.pairingCode[0] != '\0';
-  if (remotePairingStatePresent) {
-    if (!networkIsConnected()) {
-      Serial.println("[system] Reset aborted: ownership release requires online backend");
-      displayShowMessage("Reset cancelled", "Connect online", 1);
+  if (!networkIsConnected()) {
+    if (!persistPendingSystemReset(true)) {
+      displayShowMessage("Reset paused", "Storage unavailable", 1);
       return;
     }
-    Serial.println("[system] Releasing remote ownership before local reset");
-    if (!deviceAuthReleaseOwnership()) {
-      Serial.println("[system] Reset aborted: remote ownership unchanged");
-      displayShowMessage("Reset failed", "Try again online", 1);
-      return;
+    String resetWifiSsid;
+    String resetWifiPassword;
+    if (loadSavedWiFiCredentials(resetWifiSsid, resetWifiPassword)) {
+      Serial.println("[system] Reset waiting for saved WiFi connection");
+      displayShowMessage("Reset pending", "Connecting WiFi", 1);
+      startWiFiConnection(resetWifiSsid, resetWifiPassword, WifiSource::SAVED, false);
+    } else {
+      Serial.println("[system] Reset waiting for WiFi through captive portal");
+      displayShowMessage("Reset pending", "Setup WiFi", 1);
+      startSetupPortal("system reset requires WiFi");
     }
+    return;
   }
+  if (!systemResetPending && !persistPendingSystemReset(true)) {
+    displayShowMessage("Reset paused", "Storage unavailable", 1);
+    return;
+  }
+  systemResetInProgress = true;
+  lastSystemResetAttemptMs = millis();
+  Serial.println("[system] Releasing remote ownership before local reset");
+  if (!deviceAuthReleaseOwnership()) {
+    Serial.println("[system] Reset aborted: remote ownership unchanged");
+    displayShowMessage("Reset failed", "Try again online", 1);
+    systemResetInProgress = false;
+    return;
+  }
+
+  char newPairingCode[8] = "";
+  uint64_t newPairingExpiresAt = 0;
+  if (!deviceAuthRequestPairingCode(
+        newPairingCode,
+        sizeof(newPairingCode),
+        newPairingExpiresAt
+      ) || !firebaseStorePairingCode(newPairingCode, newPairingExpiresAt)) {
+    Serial.println("[system] Reset paused: fresh pairing code unavailable");
+    displayShowMessage("Reset paused", "Pairing unavailable", 1);
+    systemResetInProgress = false;
+    return;
+  }
+  Serial.println("[system] Fresh pairing code cached for post-reset onboarding");
 
   // 1. Clear all history from LittleFS
   if (storageClearHistory()) {
@@ -135,9 +205,11 @@ void systemReset() {
   }
 
   // 3. Clear all preferences in the 'voltix' namespace
+  bool preferencesCleared = false;
   Preferences prefs;
   if (prefs.begin(PREF_NAMESPACE, false)) {
     if (prefs.clear()) {
+      preferencesCleared = true;
       Serial.println("[system] All preferences cleared.");
     } else {
       Serial.println("[system] Failed to clear preferences.");
@@ -145,6 +217,12 @@ void systemReset() {
     prefs.end();
   } else {
     Serial.println("[system] Failed to open preferences for clearing.");
+  }
+  if (!preferencesCleared) {
+    Serial.println("[system] Reset paused: local preferences were not cleared");
+    displayShowMessage("Reset paused", "Storage unavailable", 1);
+    systemResetInProgress = false;
+    return;
   }
   
   // 4. Schedule a restart
@@ -182,6 +260,29 @@ static DNSServer dnsServer;
 static const IPAddress setupIp(192, 168, 4, 1);
 static const IPAddress setupGateway(192, 168, 4, 1);
 static const IPAddress setupSubnet(255, 255, 255, 0);
+
+void markAutoOnlineAfterPortal() {
+  Preferences prefs;
+  if (!prefs.begin(PREF_NAMESPACE, false)) {
+    Serial.println("[portal] Failed to save auto-online marker");
+    return;
+  }
+  prefs.putBool(PREF_KEY_AUTO_ONLINE, true);
+  prefs.end();
+}
+
+bool consumeAutoOnlineAfterPortal() {
+  Preferences prefs;
+  if (!prefs.begin(PREF_NAMESPACE, false)) {
+    return false;
+  }
+  const bool autoOnline = prefs.getBool(PREF_KEY_AUTO_ONLINE, false);
+  if (autoOnline) {
+    prefs.remove(PREF_KEY_AUTO_ONLINE);
+  }
+  prefs.end();
+  return autoOnline;
+}
 
 String htmlEscape(const String& value) {
   String escaped = value;
@@ -384,6 +485,7 @@ void handleSave() {
   }
 
   saveWiFiCredentials(ssid, password);
+  markAutoOnlineAfterPortal();
   applyPortalConfigFromRequest(true);
 
   Serial.print("[portal] Saved WiFi SSID=");
@@ -415,6 +517,14 @@ void handleResetWiFi() {
 }
 
 void handleOffline() {
+  if (systemResetPending) {
+    portalServer.send(
+      409,
+      "text/html",
+      "<!doctype html><html><body><h1>System Reset Pending</h1><p>WiFi diperlukan untuk melepaskan ownership dengan aman.</p></body></html>"
+    );
+    return;
+  }
   applyPortalConfigFromRequest(true);
   Serial.print("[config] Captive config saved revision=");
   Serial.print(configRevisionText());
@@ -681,11 +791,36 @@ void networkBegin() {
   
   if (sessionRecoveryIsActive()) {
     Serial.println("[network] Boot mode menu deferred: active session recovery");
-  } else {
-    // Tampilkan menu pilihan mode saat boot
-    Serial.println("[network] Menampilkan menu pilihan mode boot...");
-    enterBootChoiceMenu();
+    return;
   }
+
+  systemResetPending = loadPendingSystemReset();
+  const bool autoOnlineAfterPortal = consumeAutoOnlineAfterPortal();
+  if (systemResetPending || !appConfig.paired || autoOnlineAfterPortal) {
+    if (loadSavedWiFiCredentials(savedWifiSsid, savedWifiPassword)) {
+      initialNetworkSetup = true;
+      if (systemResetPending) {
+        Serial.println("[system] Pending reset; connecting saved WiFi");
+      } else {
+        Serial.println(autoOnlineAfterPortal
+          ? "[network] Captive portal complete; connecting directly ONLINE"
+          : "[network] Unpaired device; connecting saved WiFi for pairing");
+      }
+      startWiFiConnection(savedWifiSsid, savedWifiPassword, WifiSource::SAVED, false);
+    } else {
+      Serial.println(systemResetPending
+        ? "[system] Pending reset; starting captive portal"
+        : "[network] Unpaired device; starting captive portal directly");
+      startSetupPortal(systemResetPending
+        ? "system reset requires WiFi"
+        : "unpaired onboarding");
+    }
+    return;
+  }
+
+  // Paired normal boot keeps the existing explicit mode selection.
+  Serial.println("[network] Menampilkan menu pilihan mode boot...");
+  enterBootChoiceMenu();
 }
 
 void networkUpdate() {
@@ -805,6 +940,13 @@ void networkUpdate() {
 
   if (connected) {
     wasConnecting = false;
+  }
+
+  if (connected && systemResetPending && !systemResetInProgress &&
+      (lastSystemResetAttemptMs == 0 ||
+       millis() - lastSystemResetAttemptMs >= SYSTEM_RESET_RETRY_MS)) {
+    Serial.println("[system] Network ready; resuming pending System Reset");
+    systemReset();
   }
 }
 

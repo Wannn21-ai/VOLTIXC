@@ -18,6 +18,7 @@ void firebaseReadConfig();
 bool firebasePushDeviceConfig();
 bool firebaseDeviceConfigPushBlocked();
 bool firebaseFetchPairingCode();
+bool firebaseStorePairingCode(const char* code, uint64_t expiresAt);
 bool firebasePairingCodeExpired();
 void firebaseClearPairingCode();
 bool firebaseSyncOwnerBinding();

@@ -894,6 +894,13 @@ void loop() {
     }
   }
   
+  if (!appConfig.paired && appConfig.pairingCode[0] != '\0' &&
+      !sessionIsActive() && !wasRecoveryActive && firebasePairingCodeExpired()) {
+    Serial.println("[pairing] Cached pairing code expired");
+    firebaseClearPairingCode();
+    displayShowStatus();
+  }
+
   if (onlineServicesAllowed && !appConfig.paired && !sessionIsActive() && !wasRecoveryActive &&
       (lastOwnerBindingPollMs == 0 || now - lastOwnerBindingPollMs >= OWNER_BINDING_POLL_INTERVAL_MS)) {
     lastOwnerBindingPollMs = now;
