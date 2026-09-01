@@ -23,6 +23,9 @@ void stateBegin() {
   strlcpy(appConfig.configSource, "DEFAULT", sizeof(appConfig.configSource));
   strlcpy(appConfig.deviceName, Config::DEFAULT_DEVICE_NAME, sizeof(appConfig.deviceName));
   appConfig.pairingCode[0] = '\0';
+  appConfig.paired = false;
+  appConfig.ownerUid[0] = '\0';
+  appConfig.ownerDisplayName[0] = '\0';
 
   sensorData.voltage = 0.0f;
   sensorData.current = 0.0f;

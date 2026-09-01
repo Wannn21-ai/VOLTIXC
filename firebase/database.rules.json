@@ -37,6 +37,11 @@
           ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
           ".write": false
         },
+        "ownerProfile": {
+          ".read": "auth != null && (auth.token.deviceId === $deviceId || data.parent().child('members').child(auth.uid).exists())",
+          ".write": false,
+          ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'displayName', 'pairingCode']) && newData.child('uid').isString() && newData.child('uid').val() === newData.parent().child('ownerUid').val() && newData.child('displayName').isString() && newData.child('displayName').val().length <= 80 && newData.child('pairingCode').isString() && newData.child('pairingCode').val().length === 6)"
+        },
         "name": {
           ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
           ".write": "auth != null && data.parent().child('ownerUid').val() === auth.uid",

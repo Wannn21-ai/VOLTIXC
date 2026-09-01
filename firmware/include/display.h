@@ -7,6 +7,7 @@
 void displayBegin();
 void displayUpdate();
 void displayShowBoot();
+void displayShowOwnerWelcome(const char* displayName);
 void displayShowStatus();
 void displayShowButtonHold(unsigned long heldMs, const char* releaseAction, uint8_t progressPercent);
 void displayClearButtonHold();

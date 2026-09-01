@@ -51,4 +51,5 @@ static constexpr unsigned long SESSION_INTERVAL_MS = 1000UL;
 static constexpr unsigned long LIVE_PRINT_INTERVAL_MS = 3000UL;
 static constexpr unsigned long FIREBASE_TODO_LOG_INTERVAL_MS = 5000UL;
 static constexpr unsigned long BOOT_DELAY_MS = 300UL;
+static constexpr unsigned long OWNER_WELCOME_DURATION_MS = 2500UL;
 }

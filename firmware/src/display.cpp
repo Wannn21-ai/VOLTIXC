@@ -27,6 +27,7 @@ constexpr unsigned long BUTTON_FEEDBACK_MS = 1200UL;
 constexpr unsigned long ROTATION_STATUS_MS = 5000UL;
 constexpr unsigned long ROTATION_BRANDING_MS = 3000UL;
 constexpr size_t MAX_LINE_CHARS = 21;
+constexpr size_t MAX_WELCOME_NAME_CHARS = 20;
 constexpr size_t BUTTON_LABEL_CHARS = 22;
 
 enum class RotationContext {
@@ -215,7 +216,9 @@ void renderIdle() {
   } else {
     drawLine(0, "Voltix Ready");
     drawLine(2, Config::DEVICE_ID);
-    drawLine(4, "Fetching code...");
+    if (!appConfig.paired) {
+      drawLine(4, "Fetching code...");
+    }
   }
   finishScreen();
 }
@@ -526,6 +529,32 @@ void displayShowBoot() {
   drawLine(0, "Voltix");
   drawLine(2, "Booting...");
   finishScreen();
+}
+
+void displayShowOwnerWelcome(const char* displayName) {
+  if (!oledReady || displayName == nullptr || displayName[0] == '\0') {
+    return;
+  }
+
+  char visibleName[MAX_WELCOME_NAME_CHARS + 1];
+  size_t length = 0;
+  while (length < MAX_WELCOME_NAME_CHARS && displayName[length] != '\0') {
+    visibleName[length] = displayName[length];
+    length++;
+  }
+  if (displayName[length] != '\0') {
+    visibleName[MAX_WELCOME_NAME_CHARS - 1] = '~';
+    length = MAX_WELCOME_NAME_CHARS;
+  }
+  visibleName[length] = '\0';
+
+  startScreen();
+  drawCenteredText("Welcome Owner", 8, 1);
+  oled.drawLine(0, 22, SCREEN_WIDTH, 22, SSD1306_WHITE);
+  drawCenteredText(visibleName, 34, length <= 10 ? 2 : 1);
+  finishScreen();
+  lastDisplayMs = millis();
+  Serial.println("[display] Owner welcome rendered");
 }
 
 void displayShowStatus() {

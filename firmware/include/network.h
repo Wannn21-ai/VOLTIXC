@@ -16,3 +16,4 @@ bool hasSavedWiFiCredentials();
 void printSavedWiFiStatus();
 void loadLocalConfig();
 bool saveLocalConfig();
+bool cacheOwnerBinding(const char* ownerUid, const char* displayName);

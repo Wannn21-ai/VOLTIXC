@@ -29,6 +29,7 @@ static constexpr unsigned long MONITORING_COMMAND_POLL_COOLDOWN_MS = 500UL;
 static constexpr unsigned long WAITING_LOAD_COMMAND_POLL_COOLDOWN_MS = 1000UL;
 static constexpr unsigned long WAITING_LOAD_TASK_INTERVAL_MS = 250UL;
 static constexpr unsigned long COMMAND_POLL_SKIP_LOG_INTERVAL_MS = 1000UL;
+static constexpr unsigned long OWNER_BINDING_POLL_INTERVAL_MS = 5000UL;
 
 static unsigned long lastSensorUpdateMs = 0;
 static unsigned long lastSessionUpdateMs = 0;
@@ -40,6 +41,7 @@ static unsigned long lastPendingHistorySyncMs = 0;
 static unsigned long lastHistoryCleanupPollMs = 0;
 static unsigned long offlineNoNetworkSinceMs = 0;
 static unsigned long lastCommandPollSkipLogMs = 0;
+static unsigned long lastOwnerBindingPollMs = 0;
 static char serialCommandBuffer[32];
 static size_t serialCommandLength = 0;
 static bool serialCommandOverflow = false;
@@ -623,6 +625,13 @@ void setup() {
   storageBegin();
   sessionBegin();
   sessionRecoveryBegin();
+  if (!sessionRecoveryIsActive() &&
+      appConfig.paired &&
+      appConfig.ownerDisplayName[0] != '\0') {
+    displayShowOwnerWelcome(appConfig.ownerDisplayName);
+    delay(Config::OWNER_WELCOME_DURATION_MS);
+    displayShowBoot();
+  }
   networkBegin();
   firebaseBegin();
   // Tentukan systemMode awal berdasarkan status jaringan
@@ -885,9 +894,14 @@ void loop() {
     }
   }
   
-  if (onlineServicesAllowed && appConfig.pairingCode[0] == '\0' && !sessionIsActive() && !wasRecoveryActive) {
-    // Coba ambil kode pairing jika belum ada
-    firebaseFetchPairingCode();
+  if (onlineServicesAllowed && !appConfig.paired && !sessionIsActive() && !wasRecoveryActive &&
+      (lastOwnerBindingPollMs == 0 || now - lastOwnerBindingPollMs >= OWNER_BINDING_POLL_INTERVAL_MS)) {
+    lastOwnerBindingPollMs = now;
+    if (firebaseSyncOwnerBinding()) {
+      displayShowStatus();
+    } else if (appConfig.pairingCode[0] == '\0') {
+      firebaseFetchPairingCode();
+    }
   }
 
   storageUpdate();

@@ -1100,6 +1100,49 @@ bool firebaseFetchPairingCode() {
   return false;
 }
 
+bool firebaseSyncOwnerBinding() {
+  if (appConfig.paired ||
+      appConfig.pairingCode[0] == '\0' ||
+      Config::DEVICE_ID == nullptr ||
+      Config::DEVICE_ID[0] == '\0') {
+    return appConfig.paired;
+  }
+
+  const String path = String("/devices/") + Config::DEVICE_ID + "/ownerProfile.json";
+  String response;
+  if (!httpRequest("GET", path.c_str(), "", &response, false)) {
+    return false;
+  }
+  if (response == "null" || response.length() == 0 || response == "{}") {
+    return false;
+  }
+
+  StaticJsonDocument<256> doc;
+  const DeserializationError error = deserializeJson(doc, response);
+  if (error ||
+      !doc["uid"].is<const char*>() ||
+      !doc["displayName"].is<const char*>() ||
+      !doc["pairingCode"].is<const char*>()) {
+    Serial.println("[pairing] Owner profile ignored: invalid response");
+    return false;
+  }
+
+  String ownerUid = doc["uid"].as<const char*>();
+  String displayName = doc["displayName"].as<const char*>();
+  const String pairingCode = doc["pairingCode"].as<const char*>();
+  ownerUid.trim();
+  displayName.trim();
+  if (ownerUid.length() == 0) {
+    Serial.println("[pairing] Owner profile ignored: empty owner UID");
+    return false;
+  }
+  if (pairingCode != appConfig.pairingCode) {
+    return false;
+  }
+
+  return cacheOwnerBinding(ownerUid.c_str(), displayName.c_str());
+}
+
 bool firebaseDeviceConfigPushBlocked() {
   return configPushBlockedByRules;
 }

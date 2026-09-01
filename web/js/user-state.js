@@ -122,6 +122,9 @@ export async function claimPairingCode(user, code) {
 
   const now = Date.now();
   const nickname = device.name || "VOLTIX Device";
+  const ownerDisplayName = typeof user.displayName === "string"
+    ? user.displayName.trim().slice(0, 80)
+    : "";
   const updates = {
     [`users/${user.uid}/devices/${pairing.deviceId}`]: {
       role: "owner",
@@ -131,6 +134,11 @@ export async function claimPairingCode(user, code) {
     [`devices/${pairing.deviceId}/ownerUid`]: user.uid,
     [`devices/${pairing.deviceId}/paired`]: true,
     [`devices/${pairing.deviceId}/name`]: nickname,
+    [`devices/${pairing.deviceId}/ownerProfile`]: {
+      uid: user.uid,
+      displayName: ownerDisplayName,
+      pairingCode: code
+    },
     [`devices/${pairing.deviceId}/members/${user.uid}`]: {
       role: "owner",
       addedAt: now

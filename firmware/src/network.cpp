@@ -63,6 +63,9 @@ constexpr char PREF_KEY_CHECKPOINT_INTERVAL[] = "chkSec";
 constexpr char PREF_KEY_CONFIG_REVISION[] = "cfgRev";
 constexpr char PREF_KEY_CONFIG_PENDING_SYNC[] = "cfgPend";
 constexpr char PREF_KEY_CONFIG_SOURCE[] = "cfgSrc";
+constexpr char PREF_KEY_PAIRED[] = "paired";
+constexpr char PREF_KEY_OWNER_UID[] = "owner_uid";
+constexpr char PREF_KEY_OWNER_DISPLAY_NAME[] = "owner_name";
 constexpr char PREF_KEY_LEGACY_CONFIG_REVISION[] = "configRevision";
 constexpr char PREF_KEY_LEGACY_CONFIG_SOURCE[] = "configSource";
 
@@ -81,6 +84,9 @@ static_assert(sizeof(PREF_KEY_CHECKPOINT_INTERVAL) - 1 <= NVS_KEY_MAX_LENGTH, "P
 static_assert(sizeof(PREF_KEY_CONFIG_REVISION) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
 static_assert(sizeof(PREF_KEY_CONFIG_PENDING_SYNC) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
 static_assert(sizeof(PREF_KEY_CONFIG_SOURCE) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_PAIRED) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_OWNER_UID) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
+static_assert(sizeof(PREF_KEY_OWNER_DISPLAY_NAME) - 1 <= NVS_KEY_MAX_LENGTH, "Preferences key is too long");
 constexpr const char* SETUP_AP_SSID = "Voltix-Setup";
 constexpr const char* SETUP_AP_PASSWORD = "12345678";
 constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000UL;
@@ -933,6 +939,11 @@ void loadLocalConfig() {
     appConfig.configRevision = prefs.getULong64(PREF_KEY_LEGACY_CONFIG_REVISION, appConfig.configRevision);
   }
   if (prefs.isKey(PREF_KEY_CONFIG_PENDING_SYNC)) appConfig.configPendingSync = prefs.getBool(PREF_KEY_CONFIG_PENDING_SYNC, appConfig.configPendingSync);
+  appConfig.paired = prefs.getBool(PREF_KEY_PAIRED, false);
+  if (appConfig.paired) {
+    prefs.getString(PREF_KEY_OWNER_UID, appConfig.ownerUid, sizeof(appConfig.ownerUid));
+    prefs.getString(PREF_KEY_OWNER_DISPLAY_NAME, appConfig.ownerDisplayName, sizeof(appConfig.ownerDisplayName));
+  }
   if (prefs.isKey(PREF_KEY_CONFIG_SOURCE)) {
     const String source = prefs.getString(PREF_KEY_CONFIG_SOURCE, appConfig.configSource);
     if (source.length() > 0) {
@@ -985,4 +996,42 @@ bool saveLocalConfig() {
   Serial.print(" pendingSync=");
   Serial.println(appConfig.configPendingSync ? "true" : "false");
   return saved;
+}
+
+bool cacheOwnerBinding(const char* ownerUid, const char* displayName) {
+  if (ownerUid == nullptr || ownerUid[0] == '\0') {
+    Serial.println("[pairing] Owner binding cache skipped: empty owner UID");
+    return false;
+  }
+
+  Preferences prefs;
+  if (!prefs.begin(PREF_NAMESPACE, false)) {
+    Serial.println("[pairing] Failed to open Preferences for owner binding cache");
+    return false;
+  }
+
+  const char* safeDisplayName = displayName != nullptr ? displayName : "";
+  const bool uidSaved = prefs.putString(PREF_KEY_OWNER_UID, ownerUid) > 0;
+  bool nameSaved = false;
+  if (safeDisplayName[0] == '\0') {
+    prefs.remove(PREF_KEY_OWNER_DISPLAY_NAME);
+    nameSaved = !prefs.isKey(PREF_KEY_OWNER_DISPLAY_NAME);
+  } else {
+    nameSaved = prefs.putString(PREF_KEY_OWNER_DISPLAY_NAME, safeDisplayName) > 0;
+  }
+  const bool pairedSaved = uidSaved && nameSaved && prefs.putBool(PREF_KEY_PAIRED, true) > 0;
+  prefs.end();
+
+  if (!pairedSaved) {
+    Serial.println("[pairing] Owner binding cache write failed");
+    return false;
+  }
+
+  appConfig.paired = true;
+  strlcpy(appConfig.ownerUid, ownerUid, sizeof(appConfig.ownerUid));
+  strlcpy(appConfig.ownerDisplayName, safeDisplayName, sizeof(appConfig.ownerDisplayName));
+  appConfig.pairingCode[0] = '\0';
+  Serial.print("[pairing] Owner binding cached displayName=");
+  Serial.println(appConfig.ownerDisplayName[0] != '\0' ? "present" : "empty");
+  return true;
 }

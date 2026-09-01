@@ -17,6 +17,9 @@
         "paired": {
           ".write": "auth != null && data.val() === false && newData.val() === true"
         },
+        "ownerProfile": {
+          ".write": "auth != null && data.parent().child('paired').val() === false && newData.child('uid').val() === auth.uid && newData.child('displayName').isString() && newData.child('displayName').val().length <= 80 && newData.child('pairingCode').isString() && newData.child('pairingCode').val().length === 6"
+        },
         "name": {
           ".write": "auth != null && data.parent().child('paired').val() === false && newData.isString()"
         },
