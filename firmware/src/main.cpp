@@ -4,6 +4,7 @@
 #include "display.h"
 #include "firebase_sync.h"
 #include "indicators.h"
+#include "mqtt_manager.h"
 #include "network.h"
 #include "relay.h"
 #include "sensor.h"
@@ -625,6 +626,7 @@ void setup() {
   sessionRecoveryBegin();
   networkBegin();
   firebaseBegin();
+  mqttBegin();
   // Tentukan systemMode awal berdasarkan status jaringan
   systemMode = networkIsPortalActive() ? SystemMode::SETUP : (networkIsConnected() ? SystemMode::ONLINE : SystemMode::OFFLINE);
   displayShowStatus();
@@ -640,6 +642,7 @@ void loop() {
 
   handleSerialCommands();
   networkUpdate();
+  mqttLoop();
   sessionRecoveryUpdate();
 
   const bool recoveryActive = sessionRecoveryIsActive();
