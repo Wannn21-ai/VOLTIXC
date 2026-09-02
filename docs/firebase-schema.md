@@ -1,124 +1,58 @@
-# VOLTIX Firebase Schema and Security Plan
+# Firebase schema
 
-## Status
+The canonical machine-readable paths are in
+`firebase/firebase-paths.json`; production authorization is in
+`firebase/database.rules.json`.
 
-The files under `firebase/` are a design draft for the final VOLTIX Firebase
-Realtime Database. They do not connect the repository to a real Firebase
-project, contain credentials, or implement pairing/invite services.
+## Model
 
-The production-oriented draft is:
+- `/devices/{deviceId}` is shared hardware state.
+- `/users/{uid}` is private data for the signed-in Firebase Auth user.
+- One ESP32 may be used by multiple signed-in accounts.
+- The ESP32 authenticates as `device:{deviceId}` and never receives or
+  hardcodes a human user UID.
 
-- default-deny at the database root;
-- user-scoped for profile, settings, and user history;
-- membership-scoped for device reads;
-- owner-only for device administration;
-- owner/operator for commands;
-- authenticated-device-only for live telemetry and device history writes.
+The protected hardware credential record is:
 
-## Data Ownership
+```text
+/devices/{deviceId}/deviceAuth/enabled
+/devices/{deviceId}/deviceAuth/revoked
+/devices/{deviceId}/deviceAuth/credentialVersion
+/devices/{deviceId}/deviceAuth/hashAlg
+/devices/{deviceId}/deviceAuth/secretHash
+```
 
-VOLTIX keeps device and user ownership separate:
+Only trusted Admin provisioning may access those fields. Browser and firmware
+access is denied by production rules.
 
-- `/devices/{deviceId}` is the authoritative device state and membership tree.
-- `/users/{uid}/devices/{deviceId}` is a user-facing index.
-- `/devices/{deviceId}/history/{historyId}` is the device-scoped completed
-  session source.
-- `/users/{uid}/history/{historyId}` is the authenticated user's web projection.
+## Runtime paths
 
-The ESP32 must never hardcode a user UID. A finished session is saved to
-LittleFS first, then synchronized to a device-scoped Firebase path. A trusted
-web/backend flow can project that record into the currently authenticated
-user's history after checking device membership.
+```text
+/devices/{deviceId}/config
+/devices/{deviceId}/live
+/devices/{deviceId}/commands/current
+/devices/{deviceId}/commands/lastAck
+/devices/{deviceId}/history/{historyId}
+/devices/{deviceId}/completedSessions/{historyId}
+/devices/{deviceId}/historyCleanup/current
+/devices/{deviceId}/historyCleanup/lastAck
+```
 
-The current firmware/web contract still uses
-`/devices/{deviceId}/completedSessions/{historyId}` and plural command paths.
-This sprint does not rename or integrate those paths. The final schema uses
-`/devices/{deviceId}/history/{historyId}` and `/devices/{deviceId}/command`;
-that migration belongs in a later integration sprint.
+Signed-in web users access the shared runtime paths. Hardware access always
+requires `deviceRole === "hardware"` and a matching `deviceId` claim.
 
-## Stage A: Development / TA-Friendly
+## User history
 
-The current ESP32 may write to RTDB without Firebase Auth. During isolated
-development, temporary rules may allow only a known development device to write
-limited paths such as:
+The final history workflow remains:
 
-- `/devices/{developmentDeviceId}/live`
-- `/devices/{developmentDeviceId}/history`
-- the firmware-owned acknowledgement portion of commands
+```text
+Session stop
+-> ESP32 saves LittleFS
+-> ESP32 uploads to the device queue
+-> logged-in web reads the queue
+-> web copies to /users/{currentUser.uid}/history
+```
 
-This fallback is not represented in `firebase/database.rules.json` because it
-would weaken the production draft. If temporary rules are used:
-
-1. use a dedicated non-production Firebase project;
-2. scope writes to one disposable device ID and the minimum required children;
-3. never grant global `.read` or `.write`;
-4. avoid storing personal or production data;
-5. set a removal date and replace the rules before deployment.
-
-A static secret embedded in firmware is not a production security boundary.
-Anyone who extracts it can impersonate the device.
-
-## Stage B: Product-Grade Target
-
-Each device should authenticate before writing. Supported directions include:
-
-- a custom Firebase token containing a verified `deviceId` claim;
-- a secure backend or Cloud Function proxy that validates device requests;
-- another device-auth mechanism that issues short-lived credentials.
-
-The rules use `auth.token.deviceId === $deviceId` for device-scoped runtime
-access. Pairing uses Firebase Admin server authority because it requires a
-validated atomic multi-location write; the hardware token is not granted a
-pairing-service claim.
-
-## Pairing Transaction Target
-
-After validating an unused, unexpired pairing code, a trusted service should
-atomically:
-
-1. set `/devices/{deviceId}/ownerUid`;
-2. set `/devices/{deviceId}/paired` to `true`;
-3. create `/devices/{deviceId}/members/{uid}` with role `owner`;
-4. create `/users/{uid}/devices/{deviceId}` with role `owner`;
-5. mark the pairing code used and record `usedBy`.
-
-Ordinary clients cannot perform this transaction under the draft production
-rules. A trusted Admin SDK service can perform the transaction while enforcing
-expiry, one-time use, and device eligibility in backend code.
-
-The production endpoints are documented in
-[`trusted-pairing-service.md`](trusted-pairing-service.md). The isolated Stage A
-manual procedure remains in [`pairing-foundation.md`](pairing-foundation.md).
-Production rules block every direct client pairing-code read or write.
-
-## Invite Transaction Target
-
-Only the device owner may create an invite for role `operator` or `viewer`.
-After validating an unused, unexpired code, a trusted service should atomically:
-
-1. create `/devices/{deviceId}/members/{uid}`;
-2. create `/users/{uid}/devices/{deviceId}`;
-3. mark the invite used and record `usedBy`.
-
-## Rules Review Notes
-
-`firebase/database.rules.json` is intentionally a draft:
-
-- Firebase rules cannot securely perform every cross-path pairing transaction;
-- code expiry and one-time redemption must be enforced by a trusted service;
-- immutable provisioning fields are not client-writable;
-- command validation allows a compact planned command object, but the final
-  command/ack schema should be reviewed when the backend sprint begins;
-- schema and rules should be exercised with the Firebase Emulator Suite before
-  connecting a final project.
-
-## Pre-Integration Checklist
-
-- Create separate development and production Firebase projects.
-- Define device authentication and credential rotation.
-- Implement trusted pairing and invite redemption.
-- Add Emulator Suite tests for owner, operator, viewer, unauthenticated user,
-  wrong-device token, expired code, and reused code.
-- Review indexes and query patterns.
-- Confirm that web history projection preserves the LittleFS-first flow.
-- Verify no credentials or service-account files are committed.
+If Firebase fails, the LittleFS record remains pending. A user's profile,
+settings, and history remain readable/writable only by that same authenticated
+user.

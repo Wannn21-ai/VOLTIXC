@@ -10,16 +10,14 @@ Non-breaking code scaffolding for this contract lives in
 `firmware/include/firebase_integration_scaffold.h`. The active runtime does not
 call these helpers yet.
 
-## Ownership And Identity
+## Shared Device Identity
 
 - `{deviceId}` is a stable provisioning identity, never a user UID.
 - ESP32 writes only device-scoped data. It never writes directly to
   `/users/{uid}/history`.
 - An authenticated device is the sole writer of final live state.
-- Authorized owner/member clients read live state; web clients do not write it.
+- Signed-in web clients read live state; web clients do not write it.
 - Timestamps in the final contract are Unix epoch milliseconds.
-- Pairing/member metadata belongs under `/devices/{deviceId}` and is not part
-  of the high-frequency live payload.
 
 ## Final Firmware Paths
 
@@ -27,12 +25,12 @@ call these helpers yet.
 | --- | --- | --- |
 | `/devices/{deviceId}/live/system` | Publish connectivity and runtime status. | Authenticated device |
 | `/devices/{deviceId}/live/device` | Publish current electrical measurements. | Authenticated device |
-| `/devices/{deviceId}/config` | Read/cache shared monitoring configuration. | Owner or authenticated device, per final policy |
-| `/devices/{deviceId}/commands/current` | Read permitted command and safely acknowledge/clear it. | Owner/operator writes; device consumes |
+| `/devices/{deviceId}/config` | Read/cache shared monitoring configuration. | Signed-in web user or authenticated device |
+| `/devices/{deviceId}/commands/current` | Read permitted command and safely acknowledge/clear it. | Signed-in web user writes; device consumes |
 | `/devices/{deviceId}/history/{historyId}` | Upload a completed record only after LittleFS save succeeds. | Authenticated device |
 
-The device must be paired and securely authenticated before it reads commands
-or writes these final production paths.
+The device must be securely authenticated before it reads commands or writes
+these final production paths.
 
 ## Live Payload
 
@@ -149,7 +147,7 @@ checkpointIntervalSec
 
 Firmware keeps safe local defaults, caches the last known valid config, and
 uses that cache while offline. Invalid or incomplete remote config must not
-erase a valid cache. Web changes are applied when the paired device reconnects,
+erase a valid cache. Web changes are applied when the device reconnects,
 using the established revision/pending-sync strategy during implementation.
 
 Config persistence uses short stable Preferences/NVS aliases because ESP32 NVS
@@ -186,9 +184,8 @@ The web writes fresh commands to `/devices/{deviceId}/commands/current`:
 
 `createdAt` and `updatedAt` are captured from `Date.now()` at click time.
 
-Commands must preserve existing safety/session validation. In particular, no
-relay/session command executes while unpaired. Firmware clears the current
-command after processing and writes its existing acknowledgement.
+Commands must preserve existing safety/session validation. Firmware clears the
+current command after processing and writes its existing acknowledgement.
 
 Firmware command priority is:
 
@@ -287,11 +284,6 @@ These paths are compatibility references, not approval for anonymous
 production writes. Use a disposable project or trusted test service, and remove
 temporary access immediately after testing.
 
-Stage B requires secure device identity/custom tokens or a trusted backend
-proxy. Pairing code creation/claim and privileged relationship writes belong to
-trusted services. Never put Admin SDK credentials, service-account keys,
-database secrets, permanent pairing secrets, or real Firebase config values in
-firmware or repository documentation.
-
-See [firmware-pairing-flow.md](firmware-pairing-flow.md) for the target state
-machine, OLED flow, and identity persistence plan.
+Production requires secure device identity/custom tokens or a trusted backend
+proxy. Never put Admin SDK credentials, service-account keys, database secrets,
+or real Firebase config values in firmware or repository documentation.

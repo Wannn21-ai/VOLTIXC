@@ -78,31 +78,6 @@ Do not log the request proof, raw credential, custom token, ID token, or refresh
 token. The response should not return service-account material or let the caller
 override claims.
 
-## Pairing Endpoint
-
-```js
-async function claimPairingCode(request) {
-  const user = await verifyFirebaseUserIdToken(request.authorization);
-  enforceRateLimit(request.networkContext, user.uid);
-
-  await database.transaction(async (tx) => {
-    const pairing = await tx.getPairingCode(request.body.code);
-    denyUnless(pairing && !pairing.used && pairing.expiresAt > serverTimestamp());
-
-    const device = await tx.getDevice(pairing.deviceId);
-    denyUnless(device && device.authEnabled && !device.paired);
-
-    tx.setDeviceOwner(device.id, user.uid);
-    tx.setDeviceMember(device.id, user.uid, "owner");
-    tx.setUserDevice(user.uid, device.id, "owner");
-    tx.markPairingCodeUsed(request.body.code, user.uid);
-  });
-}
-```
-
-The real implementation must define atomic database behavior, idempotency,
-ownership-transfer policy, abuse controls, error redaction, and tests.
-
 ## Rotation And Revocation
 
 ```js

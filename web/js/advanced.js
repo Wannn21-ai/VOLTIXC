@@ -181,7 +181,7 @@ function renderSession(session) {
   const tariffAvailable = tariff > 0;
   const sessionId = firstValue(session, ["sessionId", "id", "_key"]) || "-";
   const deviceId = firstValue(session, ["deviceId"]) || "-";
-  const ownerUid = firstValue(session, ["uid"]) || "-";
+  const userUid = firstValue(session, ["uid"]) || "-";
   const pendingSync = session.pendingSync === true ? tr("yes") : session.pendingSync === false ? tr("no") : tr("commonUnknown");
   const source = humanize(firstValue(session, ["createdFrom", "_source", "source"]), tr("commonUnknown"));
   const syncedAt = formatDate(firstValue(session, ["syncedAt", "syncedTimestamp"]));
@@ -233,7 +233,7 @@ function renderSession(session) {
   document.getElementById("detail-metadata").innerHTML = [
     metadataRow(tr("detailSessionId"), sessionId),
     metadataRow(tr("deviceId"), deviceId),
-    metadataRow(tr("detailOwnerUid"), ownerUid),
+    metadataRow(tr("detailUserUid"), userUid),
     metadataRow(tr("detailStartTime"), startTime),
     metadataRow(tr("detailEndTime"), endTime),
     metadataRow(tr("detailStartMode"), startMode),

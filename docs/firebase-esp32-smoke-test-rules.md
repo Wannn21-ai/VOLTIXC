@@ -12,7 +12,7 @@ correctly reject its requests with `401 AUTH_REQUIRED`. Local operation and
 LittleFS history must continue safely when that happens.
 
 This guide temporarily enables hardware smoke testing. It does not change the
-pairing/Auth model and is not product-grade device authentication.
+production Auth model and is not product-grade device authentication.
 
 ## Safety Boundaries
 
@@ -50,12 +50,12 @@ except the following paths for the exact disposable device ID
 
 The example also retains authenticated, UID-scoped `/users/{uid}` access needed
 for the signed-in dashboard and history import. It does not grant temporary
-public access to `/users`, pairing codes, other devices, or the pairing model.
+public access to `/users` or other devices.
 
 Because RTDB rules are not an overlay/merge format, publishing the example
 temporarily replaces the active ruleset. All paths not listed above, including
-pairing codes and every other device ID, remain denied while it is active.
-Normal pairing and multi-device authorization should be tested only after
+every other device ID remains denied while it is active.
+Normal shared-device authorization should be tested only after
 production rules are restored.
 
 The fallback `commands/current` delete is temporarily public because the
@@ -70,7 +70,7 @@ deployed.
 - [ ] Confirm the only hardware device under test is
       `esp32-voltix-001`.
 - [ ] Confirm the signed-in disposable test account is already linked to
-      `esp32-voltix-001`; do not run pairing while temporary rules are active.
+      `esp32-voltix-001`; do not run production traffic while temporary rules are active.
 - [ ] Record the project name, tester, start time, and planned restore time.
 - [ ] Save/export the currently published RTDB rules for comparison.
 - [ ] Confirm the repository production rules file is unchanged:
@@ -159,7 +159,7 @@ Restore verification checklist:
 
 - [ ] Confirm local monitoring remains available and pending cloud sync data
       remains safe in LittleFS.
-- [ ] Confirm authenticated web access follows the production pairing/member
+- [ ] Confirm authenticated web access follows the production shared-device
       rules again.
 - [ ] Keep redacted hardware-test notes, results, and timestamps.
 - [ ] Confirm production rules were not changed in the worktree:

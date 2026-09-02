@@ -4,122 +4,95 @@
     ".write": false,
     "users": {
       "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
+        ".read": "auth != null && auth.token.deviceRole !== 'hardware' && auth.uid === $uid",
         "profile": {
-          ".write": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && auth.uid === $uid",
           ".validate": "newData.hasChildren(['displayName', 'email', 'createdAt']) && newData.child('displayName').isString() && newData.child('email').isString() && newData.child('createdAt').isNumber()"
         },
         "settings": {
-          ".write": "auth != null && auth.uid === $uid"
-        },
-        "devices": {
-          "$deviceId": {
-            ".write": "auth != null && (auth.token.inviteService === true || (auth.uid === $uid && root.child('devices').child($deviceId).child('ownerUid').val() === auth.uid && (!newData.exists() || newData.child('role').val() === 'owner')))",
-            ".validate": "!newData.exists() || (newData.hasChildren(['role', 'nickname', 'addedAt']) && (newData.child('role').val() === 'owner' || newData.child('role').val() === 'operator' || newData.child('role').val() === 'viewer') && newData.child('nickname').isString() && newData.child('addedAt').isNumber())"
-          }
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && auth.uid === $uid"
         },
         "history": {
-          ".write": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && auth.uid === $uid",
           "$historyId": {
-            ".validate": "!newData.exists() || (newData.child('deviceId').isString() && root.child('devices').child(newData.child('deviceId').val()).child('members').child(auth.uid).exists())"
+            ".validate": "!newData.exists() || newData.child('deviceId').isString()"
           }
         }
       }
     },
     "devices": {
       "$deviceId": {
-        ".read": "auth != null && data.child('ownerUid').val() === auth.uid",
-        "ownerUid": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
-          ".write": false
-        },
-        "paired": {
-          ".read": "auth != null && (auth.token.deviceId === $deviceId || data.parent().child('members').child(auth.uid).exists())",
-          ".write": false
-        },
-        "ownerProfile": {
-          ".read": "auth != null && (auth.token.deviceId === $deviceId || data.parent().child('members').child(auth.uid).exists())",
-          ".write": false,
-          ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'displayName', 'pairingCode']) && newData.child('uid').isString() && newData.child('uid').val() === newData.parent().child('ownerUid').val() && newData.child('displayName').isString() && newData.child('displayName').val().length <= 80 && newData.child('pairingCode').isString() && newData.child('pairingCode').val().length === 6)"
-        },
         "name": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
-          ".write": "auth != null && data.parent().child('ownerUid').val() === auth.uid",
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
         },
         "firmwareVersion": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
-          ".write": "auth != null && auth.token.deviceId === $deviceId",
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
+          ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId",
           ".validate": "newData.isString()"
         },
         "createdAt": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
           ".write": false
         },
         "lastSeen": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
-          ".write": "auth != null && auth.token.deviceId === $deviceId",
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
+          ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId",
           ".validate": "newData.isNumber()"
         },
-        "members": {
-          "$memberUid": {
-            ".read": "auth != null && (data.parent().parent().child('ownerUid').val() === auth.uid || $memberUid === auth.uid)",
-            ".write": "auth != null && (auth.token.inviteService === true || (data.parent().parent().child('ownerUid').val() === auth.uid && $memberUid !== auth.uid && (!newData.exists() || newData.child('role').val() !== 'owner')))",
-            ".validate": "!newData.exists() || (newData.hasChildren(['role', 'addedAt']) && (newData.child('role').val() === 'owner' || newData.child('role').val() === 'operator' || newData.child('role').val() === 'viewer') && newData.child('addedAt').isNumber())"
-          }
+        "deviceAuth": {
+          ".read": false,
+          ".write": false
         },
         "config": {
-          ".read": "auth != null && (data.parent().child('members').child(auth.uid).exists() || auth.token.deviceId === $deviceId)",
-          ".write": "auth != null && (data.parent().child('ownerUid').val() === auth.uid || auth.token.deviceId === $deviceId)",
+          ".read": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'))",
+          ".write": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'))",
           ".validate": "newData.hasChildren(['currency', 'tariff', 'overloadThreshold', 'overloadWarningPercent', 'loadPowerThreshold', 'loadCurrentThreshold', 'loadRemovedDelaySec', 'offlineTimeoutSec', 'checkpointIntervalSec']) && newData.child('currency').isString() && newData.child('tariff').isNumber() && newData.child('tariff').val() > 0 && newData.child('overloadThreshold').isNumber() && newData.child('overloadThreshold').val() > 0 && newData.child('overloadWarningPercent').isNumber() && newData.child('overloadWarningPercent').val() >= 1 && newData.child('overloadWarningPercent').val() <= 100 && newData.child('loadPowerThreshold').isNumber() && newData.child('loadPowerThreshold').val() > 0 && newData.child('loadCurrentThreshold').isNumber() && newData.child('loadCurrentThreshold').val() > 0 && newData.child('loadRemovedDelaySec').isNumber() && newData.child('loadRemovedDelaySec').val() > 0 && newData.child('offlineTimeoutSec').isNumber() && newData.child('offlineTimeoutSec').val() > 0 && newData.child('checkpointIntervalSec').isNumber() && newData.child('checkpointIntervalSec').val() > 0"
         },
         "live": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
-          ".write": "auth != null && auth.token.deviceId === $deviceId"
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
+          ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
         },
         "command": {
-          ".read": "auth != null && (auth.token.deviceId === $deviceId || data.parent().child('ownerUid').val() === auth.uid || data.parent().child('members').child(auth.uid).child('role').val() === 'operator')",
-          ".write": "auth != null && (data.parent().child('ownerUid').val() === auth.uid || data.parent().child('members').child(auth.uid).child('role').val() === 'operator')",
+          ".read": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'))",
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
           ".validate": "newData.hasChildren(['relay', 'startSession', 'stopSession', 'resetAlarm', 'updatedAt']) && newData.child('relay').isString() && (newData.child('relay').val() === 'ON' || newData.child('relay').val() === 'OFF' || newData.child('relay').val() === 'UNCHANGED') && newData.child('startSession').isBoolean() && newData.child('stopSession').isBoolean() && newData.child('resetAlarm').isBoolean() && newData.child('updatedAt').isNumber()"
         },
+        "commands": {
+          "current": {
+            ".read": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'))",
+            ".write": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId && !newData.exists()) || (auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'))"
+          },
+          "lastAck": {
+            ".read": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
+            ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
+          }
+        },
         "history": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
           "$historyId": {
-            ".write": "auth != null && (auth.token.deviceId === $deviceId || data.parent().parent().child('ownerUid').val() === auth.uid)"
+            ".write": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001' && !newData.exists()))"
           }
         },
         "completedSessions": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
           "$historyId": {
-            ".write": "auth != null && (auth.token.deviceId === $deviceId || data.parent().parent().child('ownerUid').val() === auth.uid)"
+            ".write": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001' && !newData.exists()))"
           }
         },
         "historyCleanup": {
           "current": {
-            ".read": "auth != null && (auth.token.deviceId === $deviceId || data.parent().parent().child('ownerUid').val() === auth.uid || data.parent().parent().child('members').child(auth.uid).child('role').val() === 'operator')",
-            ".write": "auth != null && ((auth.token.deviceId === $deviceId && !newData.exists()) || (auth.token.deviceId !== $deviceId && (data.parent().parent().child('ownerUid').val() === auth.uid || data.parent().parent().child('members').child(auth.uid).child('role').val() === 'operator')))",
-            ".validate": "!newData.exists() || (newData.hasChildren(['type', 'requestId', 'requestedBy', 'createdAt']) && ((newData.child('type').val() === 'DELETE_HISTORY_SESSION' && newData.child('sessionIds').exists()) || (newData.child('type').val() === 'DELETE_ALL_HISTORY' && newData.child('beforeTs').isNumber())) && newData.child('requestId').isString() && newData.child('requestedBy').val() === auth.uid && newData.child('createdAt').isNumber())"
+            ".read": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId) || (auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'))",
+            ".write": "auth != null && ((auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId && !newData.exists()) || (auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'))",
+            ".validate": "!newData.exists() || (auth.token.deviceRole !== 'hardware' && newData.hasChildren(['type', 'requestId', 'requestedBy', 'createdAt']) && ((newData.child('type').val() === 'DELETE_HISTORY_SESSION' && newData.child('sessionIds').exists()) || (newData.child('type').val() === 'DELETE_ALL_HISTORY' && newData.child('beforeTs').isNumber())) && newData.child('requestId').isString() && newData.child('requestedBy').val() === auth.uid && newData.child('createdAt').isNumber())"
           },
           "lastAck": {
-            ".read": "auth != null && data.parent().parent().child('members').child(auth.uid).exists()",
-            ".write": "auth != null && auth.token.deviceId === $deviceId"
+            ".read": "auth != null && auth.token.deviceRole !== 'hardware' && $deviceId === 'esp32-voltix-001'",
+            ".write": "auth != null && auth.token.deviceRole === 'hardware' && auth.token.deviceId === $deviceId"
           }
         }
       }
-    },
-   "pairingCodes": {
-  "$code": {
-    ".read": false,
-    ".write": false,
-    ".validate": "newData.exists() && newData.hasChildren(['deviceId', 'createdAt', 'expiresAt', 'used']) && newData.child('deviceId').isString() && newData.child('createdAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() > newData.child('createdAt').val() && newData.child('used').isBoolean() && (newData.child('used').val() === false || newData.child('usedBy').isString()) && (!data.exists() || data.child('used').val() === false || (newData.child('used').val() === true && newData.child('usedBy').val() === data.child('usedBy').val()))"
-  }
-},
-"inviteCodes": {
-  "$code": {
-    ".read": "auth != null && auth.token.inviteService === true",
-    ".write": "auth != null && (auth.token.inviteService === true || (!data.exists() && newData.child('used').val() === false && root.child('devices').child(newData.child('deviceId').val()).child('ownerUid').val() === auth.uid && newData.child('createdBy').val() === auth.uid))",
-    ".validate": "newData.exists() && newData.hasChildren(['deviceId', 'createdBy', 'role', 'createdAt', 'expiresAt', 'used']) && newData.child('deviceId').isString() && newData.child('createdBy').isString() && (newData.child('role').val() === 'operator' || newData.child('role').val() === 'viewer') && newData.child('createdAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() > newData.child('createdAt').val() && newData.child('used').isBoolean() && (newData.child('used').val() === false || newData.child('usedBy').isString()) && (!data.exists() || data.child('used').val() === false || (newData.child('used').val() === true && newData.child('usedBy').val() === data.child('usedBy').val()))"
-  }
-}
+    }
   }
 }

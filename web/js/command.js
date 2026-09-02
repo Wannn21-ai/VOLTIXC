@@ -129,7 +129,7 @@ function normalizeCompletedSession(session, sessionId, deviceId, uid) {
     pendingSync: false,
     createdFrom: session.createdFrom || "ESP32",
     copiedAt: Date.now(),
-    ownerUid: uid,
+    uid,
     sourcePath
   };
 }

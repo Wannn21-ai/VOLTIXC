@@ -161,7 +161,7 @@ function makeId(prefix) {
 
 async function sendRelayCommand(type, payload = {}) {
   if (!selectedDevice?.id) {
-    showToast(tr("pairDeviceToMonitor"), "error");
+    showToast(tr("deviceAccessUnavailable"), "error");
     return false;
   }
 

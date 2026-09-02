@@ -94,12 +94,11 @@ After generating `dist/` with all seven Firebase variables:
 4. Confirm the authenticated user is redirected to `index.html`.
 5. Confirm `/users/{uid}/profile` and missing `/users/{uid}/settings` defaults
    are initialized without replacing existing values.
-6. With no `/users/{uid}/devices` entries, confirm Dashboard, Device, Members,
-   and Settings render the safe no-device state.
+6. Confirm Dashboard and Settings use the shared device
+   `esp32-voltix-001`.
 
-The web selects the earliest device listed under `/users/{uid}/devices` as the
-initial current device and caches that ID locally. This is selection foundation
-only; it does not implement pairing or create fake devices.
+The web uses the shared device ID exported by `web/js/user-state.js`. It does
+not create per-user device-index records.
 
 ## Mode 3: Vercel or Netlify
 
@@ -127,5 +126,5 @@ authorized domains and RTDB rules separately.
 - Injection is all-or-nothing.
 - Missing values preserve local visual mode.
 - Every file and asset under `web/` is copied to `dist/`.
-- This workflow does not deploy Firebase rules, implement pairing, or modify
+- This workflow does not deploy Firebase rules or modify
   firmware/backend behavior.

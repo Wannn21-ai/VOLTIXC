@@ -1,29 +1,10 @@
 {
-  "users": {
-    "<uid>": {
-      "devices": {
-        "<deviceId>": {
-          "role": "owner",
-          "nickname": "VOLTIX Disposable Test Device",
-          "addedAt": 1893456000000
-        }
-      }
-    }
-  },
   "devices": {
     "<deviceId>": {
-      "ownerUid": "<uid>",
-      "paired": true,
       "name": "VOLTIX Disposable Test Device",
       "firmwareVersion": "test-fixture-only",
       "createdAt": 1893456000000,
       "lastSeen": 1893456000000,
-      "members": {
-        "<uid>": {
-          "role": "owner",
-          "addedAt": 1893456000000
-        }
-      },
       "config": {
         "currency": "IDR",
         "tariff": 1444.7,
@@ -34,61 +15,6 @@
         "loadRemovedDelaySec": 2,
         "offlineTimeoutSec": 300,
         "checkpointIntervalSec": 30
-      },
-      "live": {
-        "system": {
-          "timestampUnixMs": 1893456000000,
-          "timestamp": 1893456000000,
-          "internet": true,
-          "mode": "ONLINE",
-          "systemMode": "ONLINE",
-          "relayState": "OFF",
-          "relay": false,
-          "wifiStatus": "CONNECTED",
-          "activeSsid": "DISPOSABLE-TEST-NETWORK",
-          "firmwareVersion": "test-fixture-only"
-        },
-        "device": {
-          "connected": true,
-          "voltage": 229.5,
-          "current": 0.25,
-          "power": 55.5,
-          "apparent": 57.2,
-          "apparentPower": 57.2,
-          "pf": 0.97,
-          "powerFactor": 0.97,
-          "frequency": 50,
-          "energy": 0.015,
-          "cost": 21.67,
-          "duration": 900,
-          "overload": false
-        }
-      },
-      "history": {
-        "<historyId>": {
-          "id": "<historyId>",
-          "sessionId": "<historyId>",
-          "deviceId": "<deviceId>",
-          "name": "Seeded Read-Only Session",
-          "startTime": 1893455100000,
-          "endTime": 1893456000000,
-          "durationSec": 900,
-          "energyKwh": 0.015,
-          "cost": 21.67,
-          "voltageAvg": 229.4,
-          "currentAvg": 0.25,
-          "powerAvg": 55.5,
-          "powerMax": 60,
-          "pfAvg": 0.97,
-          "frequencyAvg": 50,
-          "apparentAvg": 57.2,
-          "modeStart": "ONLINE",
-          "modeEnd": "ONLINE",
-          "modePath": "ONLINE",
-          "endReason": "TEST_FIXTURE",
-          "overload": false,
-          "syncStatus": "SYNCED"
-        }
       }
     }
   }

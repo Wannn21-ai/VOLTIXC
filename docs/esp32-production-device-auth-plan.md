@@ -27,8 +27,8 @@ RTDB REST requests.
 | ESP32 | Prove possession of its rotatable device credential; use short-lived tokens; operate safely offline | Service-account key, Admin SDK credential, user UID authorization, public-rule assumptions |
 | Token broker | Verify device credential/state; issue narrowly claimed custom tokens; rotate/revoke credentials | Return service-account material; trust caller-supplied claims |
 | Firebase Auth | Exchange custom token and refresh token for ID tokens | Treat the Web API key as authorization |
-| RTDB rules | Enforce user membership and same-device hardware claims | Grant anonymous device access |
-| Logged-in web app | Read device queue/history as an authorized member; project records to the current user's history | Give its user token or UID to the ESP32 |
+| RTDB rules | Enforce signed-in web access and same-device hardware claims | Grant anonymous device access |
+| Logged-in web app | Read the shared device queue and project records to the current user's history | Give its user token or UID to the ESP32 |
 
 ## Recommended Token Flow
 
@@ -93,8 +93,6 @@ rules.
 Recommended authoritative relationship and device-auth metadata:
 
 ```text
-/devices/{deviceId}/ownerUid
-/devices/{deviceId}/members/{uid}/role
 /devices/{deviceId}/deviceAuth/enabled
 /devices/{deviceId}/deviceAuth/credentialVersion
 /devices/{deviceId}/deviceAuth/keyHash
@@ -149,19 +147,9 @@ auth.token.deviceRole === 'hardware'
 auth.token.deviceId === $deviceId
 ```
 
-`ownerUid` may be included as short-lived informational metadata only after the
-broker reads the current relationship:
-
-```json
-{
-  "ownerUid": "current-owner-uid"
-}
-```
-
-Do not authorize hardware access from the `ownerUid` claim. Ownership and
-membership can change, one ESP32 can serve multiple accounts, and an old ID
-token can contain a stale owner. RTDB user authorization remains based on the
-current `/devices/{deviceId}/members/{uid}` relationship.
+The hardware claim contains no human account UID. One ESP32 can serve multiple
+accounts; the logged-in web user determines only the destination user-history
+projection.
 
 Use `credentialVersion` to reject a device at the broker before issuing another
 custom token after rotation. Because already-issued ID tokens remain usable
@@ -183,19 +171,19 @@ Required intent:
 
 | Path | Human user | Hardware token for same `$deviceId` |
 | --- | --- | --- |
-| `/devices/{deviceId}/config` | Member reads; owner writes | Read only by default |
-| `/devices/{deviceId}/live` | Member reads | Write |
-| `/devices/{deviceId}/command` | Owner/operator writes | Read |
-| `/devices/{deviceId}/commandAck` or reviewed ack path | Member reads | Write |
-| `/devices/{deviceId}/history/{id}` | Member reads | Write |
-| `/devices/{deviceId}/completedSessions/{id}` | Member reads during migration | Write during migration |
+| `/devices/{deviceId}/config` | Authenticated users read/write | Read/write |
+| `/devices/{deviceId}/live` | Authenticated users read | Write |
+| `/devices/{deviceId}/commands/current` | Authenticated users write | Read/clear |
+| `/devices/{deviceId}/commands/lastAck` | Authenticated users read | Write |
+| `/devices/{deviceId}/history/{id}` | Authenticated users read/delete | Write |
+| `/devices/{deviceId}/completedSessions/{id}` | Authenticated users read/delete | Write |
 | `/devices/{deviceId}/deviceAuth` | No ordinary client access | No access |
-| `/users/{uid}/history` | Same logged-in user, after membership validation | No access |
+| `/users/{uid}/history` | Same logged-in user | No access |
 
 Important rule-review points:
 
 - Do not grant a hardware token `.read` at `/devices/{deviceId}` because that
-  would expose membership and private auth metadata.
+  would expose private auth metadata.
 - Every hardware permission must check both `deviceRole` and matching
   `deviceId`; checking only `deviceId` is weaker and risks claim confusion.
 - Keep human user command writes separate from hardware command reads/acks.
@@ -255,34 +243,6 @@ For either production broker:
 - Issue claims only after reading the authoritative device record.
 - Log token issuance metadata, not tokens or raw secrets.
 - Expose credential rotation/revocation and incident-response procedures.
-
-## Pairing And Provisioning Flow
-
-Pairing a human account and authenticating hardware are related but separate.
-A six-digit pairing code proves a short-lived user/device association attempt;
-it must not become the permanent device credential.
-
-Recommended flow:
-
-1. Manufacturing or trusted provisioning assigns a unique `deviceId` and
-   high-entropy bootstrap/device credential.
-2. The backend stores only a protected derived credential value and marks
-   `/devices/{deviceId}/deviceAuth/enabled = true`.
-3. The ESP32 authenticates to the broker as its device identity and requests a
-   short-lived pairing code.
-4. A user signs into the web app with Firebase Auth and submits that code to a
-   trusted pairing endpoint.
-5. The backend verifies the user's ID token, pairing-code expiry/one-time use,
-   device state, and existing ownership.
-6. The backend atomically creates/updates `ownerUid`, device membership, the
-   user's device index, and pairing-code used state.
-7. The device continues authenticating as hardware. It never receives the
-   user's UID credential or user ID token.
-8. Credential rotation creates a new version, provisions it through an
-   authenticated/recovery flow, confirms use, then revokes the prior version.
-
-Loss/recovery and ownership transfer must explicitly revoke or rotate the old
-device credential. Removing a human member alone does not revoke hardware.
 
 ## Migration And Verification Phases
 
@@ -357,23 +317,18 @@ device credential. Removing a human member alone does not revoke hardware.
   trusted records, not request fields.
 - Admin SDK bypasses RTDB rules. Broker code needs its own strict authorization,
   validation, logging, and tests.
-- A pairing code is not a permanent credential and must be short-lived,
-  one-time, rate-limited, and backend-validated.
 
 ## Acceptance Mapping
 
 - Custom token, ID token, refresh, and RTDB REST use: documented above.
-- Device identity, claims, and production rule intent: documented above and in
-  the clearly named draft rules.
+- Device identity, claims, and production rule intent: documented above.
 - Firmware changes and safe auth-failure behavior: documented without runtime
   changes.
-- Broker options and pairing/provisioning flow: compared and documented.
+- Broker options and device provisioning flow: compared and documented.
 - Migration/test phases include `esp32-voltix-001` and pending LittleFS history.
 - Security warnings explicitly forbid service-account material in firmware.
 
 See also:
 
 - [`device-token-broker-pseudocode.md`](device-token-broker-pseudocode.md)
-- [`firmware-pairing-flow.md`](firmware-pairing-flow.md)
 - [`device-live-schema.md`](device-live-schema.md)
-- [`../firebase/database.rules.device-auth.draft.json`](../firebase/database.rules.device-auth.draft.json)

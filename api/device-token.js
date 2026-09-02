@@ -149,13 +149,8 @@ function verifyDeviceCredentialRecord(
   device,
   options
 ) {
-  const requireOwner = options.requireOwner !== false;
-
   const deviceAuth = device?.deviceAuth;
-  const ownerUid = typeof device?.ownerUid === "string"
-    ? device.ownerUid.trim()
-    : "";
-  if ((requireOwner && !ownerUid) || !deviceAuth || deviceAuth.enabled !== true ||
+  if (!deviceAuth || deviceAuth.enabled !== true ||
       deviceAuth.revoked === true ||
       deviceAuth.credentialVersion !== credentialVersion ||
       deviceAuth.hashAlg !== "sha256-pepper-v1") {
@@ -176,7 +171,6 @@ function verifyDeviceCredentialRecord(
     verified: true,
     deviceRecord: {
       deviceId,
-      ownerUid,
       credentialVersion,
     },
   };
@@ -186,7 +180,6 @@ function buildCustomClaims(deviceRecord) {
   return {
     deviceId: deviceRecord.deviceId,
     deviceRole: "hardware",
-    ownerUid: deviceRecord.ownerUid,
     credentialVersion: deviceRecord.credentialVersion,
   };
 }

@@ -8,8 +8,7 @@
     "smoke:device-token": "node scripts/smoke-device-token.mjs",
     "test:firmware-device-auth": "node --test test/firmware-device-auth.test.mjs",
     "test:device-auth-lab": "node --test test/device-auth-lab.test.mjs",
-    "test:token-broker": "node --test test/device-token.test.js",
-    "test:pairing-service": "node --test test/pairing-service.test.js"
+    "test:token-broker": "node --test test/device-token.test.js"
   },
   "dependencies": {
     "firebase-admin": "^13.10.0"

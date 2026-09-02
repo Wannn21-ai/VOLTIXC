@@ -8,9 +8,7 @@
 enum class VoltixDeviceState {
   BOOT,
   WIFI_SETUP,
-  UNPAIRED,
-  PAIRING_DISPLAY,
-  PAIRED_IDLE,
+  IDLE,
   MONITORING_ONLINE,
   MONITORING_OFFLINE,
   TRANSITION_SYNC,
@@ -18,14 +16,9 @@ enum class VoltixDeviceState {
   ERROR_STATE
 };
 
-// Persistence scaffold only. Pairing generation and storage are not active.
 struct VoltixIdentity {
   String deviceId;
   String firmwareVersion;
-  bool paired = false;
-  String ownerUid;
-  String lastPairingCode;
-  uint64_t pairingCodeExpiresAt = 0;
 };
 
 struct LiveSystemPayloadInput {

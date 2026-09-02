@@ -23,7 +23,7 @@ export const DEFAULT_USER_SETTINGS = Object.freeze({
   }
 });
 
-const CURRENT_DEVICE_KEY_PREFIX = "voltix_current_device_";
+export const SHARED_DEVICE_ID = "esp32-voltix-001";
 
 function addMissingValues(target, defaults, prefix, updates) {
   for (const [key, value] of Object.entries(defaults)) {
@@ -58,84 +58,7 @@ export async function ensureInitialUserState(user) {
 
 export async function getCurrentDevice(uid) {
   if (!FIREBASE_CONFIGURED || !uid) return null;
-
-  const snapshot = await get(ref(db, `users/${uid}/devices`));
-  if (!snapshot.exists()) {
-    localStorage.removeItem(`${CURRENT_DEVICE_KEY_PREFIX}${uid}`);
-    return null;
-  }
-
-  const devices = snapshot.val() || {};
-  const deviceIds = Object.keys(devices).sort((a, b) => {
-    const addedA = Number(devices[a]?.addedAt || 0);
-    const addedB = Number(devices[b]?.addedAt || 0);
-    return addedA - addedB || a.localeCompare(b);
-  });
-  if (deviceIds.length === 0) return null;
-
-  const storageKey = `${CURRENT_DEVICE_KEY_PREFIX}${uid}`;
-  const cachedId = localStorage.getItem(storageKey);
-  const deviceId = cachedId && devices[cachedId] ? cachedId : deviceIds[0];
-  localStorage.setItem(storageKey, deviceId);
-  return { id: deviceId, ...devices[deviceId] };
-}
-
-export async function claimPairingCode(user, code) {
-  if (!FIREBASE_CONFIGURED) throw new Error("Pairing is unavailable in local visual mode.");
-  if (!user?.uid) throw new Error("Sign in before pairing a device.");
-  if (!/^\d{6}$/.test(code)) throw new Error("Enter a valid 6-digit pairing code.");
-
-  let idToken;
-  try {
-    idToken = await user.getIdToken();
-  } catch {
-    throw Object.assign(new Error("Your sign-in session has expired. Sign in again."), {
-      code: "pairing/authentication_expired"
-    });
-  }
-
-  let response;
-  try {
-    response = await fetch("/api/claim-device", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${idToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ code })
-    });
-  } catch {
-    throw Object.assign(new Error("Pairing service is unavailable. Try again shortly."), {
-      code: "pairing/backend_unavailable"
-    });
-  }
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const messages = {
-      invalid_code: "Pairing code is invalid.",
-      expired_code: "Pairing code has expired. Wait for a new code on the device.",
-      code_already_used: "Pairing code has already been used.",
-      device_already_owned: "Device is already owned by another account.",
-      authentication_expired: "Your sign-in session has expired. Sign in again.",
-      pairing_service_unavailable: "Pairing service is unavailable. Try again shortly."
-    };
-    const reason = typeof payload.error === "string"
-      ? payload.error
-      : "pairing_service_unavailable";
-    throw Object.assign(new Error(messages[reason] || "Device pairing failed."), {
-      code: `pairing/${reason}`,
-      status: response.status
-    });
-  }
-
-  if (!payload.id || !payload.nickname) {
-    throw Object.assign(new Error("Pairing service returned an invalid response."), {
-      code: "pairing/backend_unavailable"
-    });
-  }
-  localStorage.setItem(`${CURRENT_DEVICE_KEY_PREFIX}${user.uid}`, payload.id);
-  return { id: payload.id, nickname: payload.nickname, role: "owner" };
+  return { id: SHARED_DEVICE_ID, nickname: "VOLTIX Device" };
 }
 
 export function readableFirebaseError(error, fallback = "Firebase request failed.") {
@@ -144,6 +67,5 @@ export function readableFirebaseError(error, fallback = "Firebase request failed
     return "Access denied. Check your account permissions.";
   }
   if (code === "auth/network-request-failed") return "Network error. Check your connection.";
-  if (code.startsWith("pairing/")) return error?.message || fallback;
   return fallback;
 }

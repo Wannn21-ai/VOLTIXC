@@ -58,7 +58,7 @@ export const LANG = {
     aboutTitle:"ℹ About", aboutApp:"Application", aboutVer:"Version",
     aboutHw:"Hardware", aboutCloud:"Cloud",
     // Sidebar & nav
-    navDashboard:"Dashboard", navHistory:"History", navDevice:"Device", navMembers:"Members", navSettings:"Settings",
+    navDashboard:"Dashboard", navHistory:"History", navSettings:"Settings",
     signOut:"Sign Out",
     // Dashboard page strings
     dashTitle:"Dashboard", noActiveDevice:"No active device",
@@ -116,7 +116,7 @@ export const LANG = {
     aboutTitle:"ℹ Tentang", aboutApp:"Aplikasi", aboutVer:"Versi",
     aboutHw:"Perangkat Keras", aboutCloud:"Cloud",
     // Sidebar & nav
-    navDashboard:"Dasbor", navHistory:"Riwayat", navDevice:"Device", navMembers:"Anggota", navSettings:"Pengaturan",
+    navDashboard:"Dasbor", navHistory:"Riwayat", navSettings:"Pengaturan",
     signOut:"Keluar",
     // Dashboard page strings
     dashTitle:"Dasbor", noActiveDevice:"Tidak ada device aktif",
@@ -154,13 +154,9 @@ Object.assign(LANG.en, {
   saving: "Saving...",
   commonDelete: "Delete",
   commonUnknown: "Unknown",
-  paired: "Paired",
-  pairingPending: "Pairing pending",
   statusUnavailable: "Status unavailable",
   notReported: "Not reported",
   deviceAccessUnavailable: "Device access unavailable",
-  noDevicePairedYet: "No device paired yet",
-  pairDeviceToMonitor: "Pair your VOLTIX device to start monitoring.",
   dashboardEyebrow: "Smart energy command center",
   dashboardLiveTitle: "Live Energy Dashboard",
   dashboardHeroInitial: "Ready to monitor when ESP32 is online.",
@@ -205,10 +201,9 @@ Object.assign(LANG.en, {
   dashboardLinkWaitingFresh: "ESP32 internet is online; waiting for fresh telemetry.",
   dashboardLinkLastKnown: "Using last known ESP32 update.",
   dashboardLinkWaitingFirst: "Waiting for first live packet.",
-  dashboardNoDeviceTitle: "No device paired yet",
-  dashboardNoDeviceSub: "Pair your VOLTIX device to unlock live monitoring.",
+  dashboardNoDeviceTitle: "Device unavailable",
+  dashboardNoDeviceSub: "Check Firebase configuration and try again.",
   dashboardLiveUnavailable: "Device live data unavailable",
-  dashboardOpenDevice: "Open Device Page",
   dashboardCurrentSession: "Current session",
   dashboardEnergySummary: "Energy Summary",
   dashboardTechnicalSnapshot: "Technical snapshot",
@@ -315,7 +310,6 @@ Object.assign(LANG.en, {
   historySessionSingular: "session",
   historySessionPlural: "sessions",
   historyAccessDenied: "Access denied for this device history",
-  historyNoDevicePaired: "No device paired",
   historyNoSessionsYet: "No sessions yet",
   historyNoSessionsFound: "No sessions found",
   historyEmptySub: "No sessions yet. Start monitoring from Dashboard.",
@@ -352,41 +346,6 @@ Object.assign(LANG.en, {
   historyNothingDelete: "Nothing to delete",
   historyExported: "Exported successfully",
   historyExportedSession: "Exported {name}",
-  membersEyebrow: "Access control",
-  membersTitle: "Member Management",
-  membersSub: "Owner, operator, and viewer support will be added later.",
-  membersComingSoon: "Coming Soon",
-  membersComingSoonTitle: "Member Management Coming Soon",
-  membersComingSoonSub: "Owner/operator/viewer controls will be added later.",
-  membersPlaceholderSub: "VOLTIX will support owner, operator, and viewer roles in a future release. This page is a visual placeholder only and does not change account sharing, device access, Firebase paths, or member rules.",
-  membersBackDashboard: "Back to Dashboard",
-  membersFullControl: "Full Control",
-  membersOwnerDesc: "Device management and member invitations.",
-  membersOperate: "Operate",
-  membersOperatorDesc: "Start, stop, and monitor assigned devices.",
-  membersReadOnly: "Read Only",
-  membersViewerDesc: "View live status and history reports.",
-  deviceTitle: "Device",
-  deviceSub: "Pair and view your current VOLTIX device.",
-  devicePairTitle: "Pair your VOLTIX device",
-  devicePairPrompt: "Enter the 6-digit code shown on the OLED display.",
-  devicePairSub: "Stage A claims work only when the documented development pairing rules are active.",
-  devicePairingCode: "Pairing code",
-  devicePairButton: "Pair Device",
-  devicePairing: "Pairing...",
-  deviceCurrentTitle: "Current Device",
-  deviceName: "Name",
-  deviceId: "Device ID",
-  deviceRole: "Role",
-  deviceFirmware: "Firmware",
-  deviceStatus: "Status",
-  deviceFoundationNote: "Device actions and pairing management remain intentionally unavailable in this foundation sprint.",
-  deviceOpenDashboard: "Open Dashboard",
-  deviceCodeInvalid: "Enter the 6-digit code shown on the device.",
-  devicePairingUnavailable: "Pairing is unavailable in local visual mode.",
-  devicePairedSuccess: "Device \"{name}\" paired successfully",
-  devicePairingFailed: "Pairing failed.",
-  deviceStateLoadFailed: "Device state could not be loaded.",
   detailTitle: "Session Detail",
   detailExported: "Detail exported",
   settingsValidTariff: "Enter a valid tariff value",
@@ -439,7 +398,7 @@ Object.assign(LANG.en, {
   detailApparentPowerAverage: "Apparent Power Average",
   detailOverloadThreshold: "Overload Threshold",
   detailSessionId: "Session ID",
-  detailOwnerUid: "Owner UID",
+  detailUserUid: "Account UID",
   detailStartTime: "Start Time",
   detailEndTime: "End Time",
   detailStartMode: "Start Mode",
@@ -535,13 +494,9 @@ Object.assign(LANG.id, {
   saving: "Menyimpan...",
   commonDelete: "Hapus",
   commonUnknown: "Tidak diketahui",
-  paired: "Terpasang",
-  pairingPending: "Menunggu pairing",
   statusUnavailable: "Status tidak tersedia",
   notReported: "Belum dilaporkan",
   deviceAccessUnavailable: "Akses device tidak tersedia",
-  noDevicePairedYet: "Belum ada device terpasang",
-  pairDeviceToMonitor: "Pasangkan device VOLTIX untuk mulai monitoring.",
   dashboardEyebrow: "Pusat kendali energi pintar",
   dashboardLiveTitle: "Dasbor Energi Real-time",
   dashboardHeroInitial: "Siap monitoring saat ESP32 online.",
@@ -586,10 +541,9 @@ Object.assign(LANG.id, {
   dashboardLinkWaitingFresh: "Internet ESP32 online; menunggu telemetri terbaru.",
   dashboardLinkLastKnown: "Menggunakan update ESP32 terakhir.",
   dashboardLinkWaitingFirst: "Menunggu paket data langsung pertama.",
-  dashboardNoDeviceTitle: "Belum ada device terpasang",
-  dashboardNoDeviceSub: "Pasangkan device VOLTIX untuk membuka monitoring langsung.",
+  dashboardNoDeviceTitle: "Device tidak tersedia",
+  dashboardNoDeviceSub: "Periksa konfigurasi Firebase lalu coba lagi.",
   dashboardLiveUnavailable: "Data langsung device tidak tersedia",
-  dashboardOpenDevice: "Buka Halaman Device",
   dashboardCurrentSession: "Sesi saat ini",
   dashboardEnergySummary: "Ringkasan Energi",
   dashboardTechnicalSnapshot: "Snapshot teknis",
@@ -696,7 +650,6 @@ Object.assign(LANG.id, {
   historySessionSingular: "sesi",
   historySessionPlural: "sesi",
   historyAccessDenied: "Akses riwayat device ini ditolak",
-  historyNoDevicePaired: "Belum ada device terpasang",
   historyNoSessionsYet: "Belum ada sesi",
   historyNoSessionsFound: "Tidak ada sesi ditemukan",
   historyEmptySub: "Belum ada sesi. Mulai monitoring dari Dasbor.",
@@ -733,41 +686,6 @@ Object.assign(LANG.id, {
   historyNothingDelete: "Tidak ada yang bisa dihapus",
   historyExported: "Berhasil diekspor",
   historyExportedSession: "{name} diekspor",
-  membersEyebrow: "Kontrol akses",
-  membersTitle: "Manajemen Anggota",
-  membersSub: "Dukungan owner, operator, dan viewer akan ditambahkan nanti.",
-  membersComingSoon: "Segera Hadir",
-  membersComingSoonTitle: "Manajemen Anggota Segera Hadir",
-  membersComingSoonSub: "Kontrol owner/operator/viewer akan ditambahkan nanti.",
-  membersPlaceholderSub: "VOLTIX akan mendukung peran owner, operator, dan viewer di rilis mendatang. Halaman ini hanya placeholder visual dan tidak mengubah berbagi akun, akses device, path Firebase, atau rules anggota.",
-  membersBackDashboard: "Kembali ke Dasbor",
-  membersFullControl: "Kontrol Penuh",
-  membersOwnerDesc: "Manajemen device dan undangan anggota.",
-  membersOperate: "Operasikan",
-  membersOperatorDesc: "Mulai, hentikan, dan monitor device yang ditugaskan.",
-  membersReadOnly: "Hanya Baca",
-  membersViewerDesc: "Melihat status langsung dan laporan riwayat.",
-  deviceTitle: "Device",
-  deviceSub: "Pasangkan dan lihat device VOLTIX saat ini.",
-  devicePairTitle: "Pasangkan device VOLTIX",
-  devicePairPrompt: "Masukkan kode 6 digit yang tampil di OLED.",
-  devicePairSub: "Claim Tahap A hanya berjalan saat rules pairing development yang terdokumentasi aktif.",
-  devicePairingCode: "Kode pairing",
-  devicePairButton: "Pasangkan Device",
-  devicePairing: "Memasangkan...",
-  deviceCurrentTitle: "Device Saat Ini",
-  deviceName: "Nama",
-  deviceId: "Device ID",
-  deviceRole: "Peran",
-  deviceFirmware: "Firmware",
-  deviceStatus: "Status",
-  deviceFoundationNote: "Aksi device dan manajemen pairing sengaja belum tersedia di sprint fondasi ini.",
-  deviceOpenDashboard: "Buka Dasbor",
-  deviceCodeInvalid: "Masukkan kode 6 digit yang tampil di device.",
-  devicePairingUnavailable: "Pairing tidak tersedia dalam mode visual lokal.",
-  devicePairedSuccess: "Device \"{name}\" berhasil dipasangkan",
-  devicePairingFailed: "Pairing gagal.",
-  deviceStateLoadFailed: "Status device tidak dapat dimuat.",
   detailTitle: "Detail Sesi",
   detailExported: "Detail diekspor",
   settingsValidTariff: "Masukkan nilai tarif yang valid",
@@ -820,7 +738,7 @@ Object.assign(LANG.id, {
   detailApparentPowerAverage: "Daya Semu Rata-rata",
   detailOverloadThreshold: "Batas Overload",
   detailSessionId: "Session ID",
-  detailOwnerUid: "Owner UID",
+  detailUserUid: "UID Akun",
   detailStartTime: "Waktu Mulai",
   detailEndTime: "Waktu Selesai",
   detailStartMode: "Mode Mulai",
@@ -1029,7 +947,6 @@ export function applyLanguage(lang) {
   s("btn-start-inline",          t.dashboardStart);
   s("no-device-title",           t.dashboardNoDeviceTitle);
   s("no-device-sub",             t.dashboardNoDeviceSub);
-  s("no-device-link",            t.dashboardOpenDevice);
   s("dashboard-current-session", t.dashboardCurrentSession);
   s("dashboard-energy-summary",  t.dashboardEnergySummary);
   s("dashboard-technical-snapshot", t.dashboardTechnicalSnapshot);
@@ -1063,8 +980,6 @@ export function applyLanguage(lang) {
   // ── Sidebar nav labels (rendered by renderShell) ──
   s("nav-label-dashboard",      t.navDashboard);
   s("nav-label-history",        t.navHistory);
-  s("nav-label-device",         t.navDevice);
-  s("nav-label-members",        t.navMembers);
   s("nav-label-settings",       t.navSettings);
   s("sidebar-signout-txt",      t.signOut);
 
@@ -1120,38 +1035,6 @@ export function applyLanguage(lang) {
   optionText("#sort-history option[value='cost']", t.historyHighestCost);
   optionText("#sort-history option[value='duration']", t.historyLongestDuration);
 
-  // ── Device page ──
-  s("device-page-title",         t.deviceTitle);
-  s("device-page-sub",           t.deviceSub);
-  s("device-pair-title",         t.devicePairTitle);
-  s("device-pair-prompt",        t.devicePairPrompt);
-  s("device-pair-sub",           t.devicePairSub);
-  s("device-pair-code-label",    t.devicePairingCode);
-  s("btn-pair-device",           t.devicePairButton);
-  s("device-current-title",      t.deviceCurrentTitle);
-  s("device-name-label",         t.deviceName);
-  s("device-id-label",           t.deviceId);
-  s("device-role-label",         t.deviceRole);
-  s("device-firmware-label",     t.deviceFirmware);
-  s("device-status-label",       t.deviceStatus);
-  s("device-foundation-note",    t.deviceFoundationNote);
-  s("device-open-dashboard",     t.deviceOpenDashboard);
-
-  // ── Members page ──
-  s("members-eyebrow-main",      t.membersEyebrow);
-  s("members-page-title",        t.membersTitle);
-  s("members-page-sub",          t.membersSub);
-  s("members-coming-soon",       t.membersComingSoon);
-  s("placeholder-title",         t.membersComingSoonTitle);
-  s("placeholder-sub",           t.membersPlaceholderSub);
-  s("members-back-dashboard",    t.membersBackDashboard);
-  s("members-owner-title",       t.membersFullControl);
-  s("members-owner-desc",        t.membersOwnerDesc);
-  s("members-operator-title",    t.membersOperate);
-  s("members-operator-desc",     t.membersOperatorDesc);
-  s("members-viewer-title",      t.membersReadOnly);
-  s("members-viewer-desc",       t.membersViewerDesc);
-
   // ── History detail page ──
   s("detail-back-link",          t.detailBack);
   s("detail-report-eyebrow",     t.detailReportEyebrow);
@@ -1184,16 +1067,12 @@ export function renderShell(activePage, pageTitle) {
     ? "detailTitle"
     : activePage === "dashboard" ? "dashTitle"
       : activePage === "history" ? "histTitle"
-      : activePage === "device" ? "deviceTitle"
-      : activePage === "members" ? "membersTitle"
       : activePage === "settings" ? "settingsTitle"
       : activePage === "advanced" ? "advTitle"
       : "";
   const navItems  = [
     { href: "index.html",    icon: "⊡", key: "dashboard", labelId: "nav-label-dashboard", defaultLabel: "Dashboard" },
     { href: "history.html",  icon: "◷", key: "history",   labelId: "nav-label-history",   defaultLabel: "History"   },
-    { href: "device.html",   icon: "◈", key: "device",    labelId: "nav-label-device",    defaultLabel: "Device"    },
-    { href: "members.html",  icon: "◇", key: "members",   labelId: "nav-label-members",   defaultLabel: "Members"   },
     { href: "settings.html", icon: "⚙", key: "settings",  labelId: "nav-label-settings",  defaultLabel: "Settings"  },
   ];
 

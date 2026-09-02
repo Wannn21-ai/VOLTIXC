@@ -1,103 +1,38 @@
 {
   "users": {
-    "uid-owner-demo": {
+    "uid-demo": {
       "profile": {
-        "displayName": "Alya Owner",
+        "displayName": "Alya",
         "email": "alya@example.test",
         "createdAt": 1749092400000
       },
       "settings": {
         "currency": "IDR",
         "tariff": 1444.7,
-        "overloadThreshold": 2000,
-        "overloadWarningPercent": 99,
-        "loadPowerThreshold": 1,
-        "loadCurrentThreshold": 0.02,
-        "loadRemovedDelaySec": 2,
-        "offlineTimeoutSec": 300,
-        "checkpointIntervalSec": 30,
         "theme": "dark",
-        "language": "id",
-        "notifications": {
-          "deviceConnected": true,
-          "deviceDisconnected": true,
-          "sessionSaved": true,
-          "overload": true,
-          "refreshIntervalMs": 3000
-        }
-      },
-      "devices": {
-        "voltix-001": {
-          "role": "owner",
-          "nickname": "Workshop Meter",
-          "addedAt": 1749092500000
-        }
+        "language": "id"
       },
       "history": {
         "session-20250605-001": {
-          "deviceId": "voltix-001",
+          "deviceId": "esp32-voltix-001",
           "name": "Workshop Drill",
           "startTime": 1749096000000,
           "endTime": 1749097800000,
           "durationSec": 1800,
           "energyKwh": 0.42,
           "cost": 606.77,
-          "powerAvg": 840,
-          "powerMax": 1210,
-          "modeStart": "ONLINE",
-          "modeEnd": "ONLINE",
           "endReason": "USER_STOP",
-          "overload": false,
           "syncStatus": "SYNCED"
-        }
-      }
-    },
-    "uid-viewer-demo": {
-      "profile": {
-        "displayName": "Bima Viewer",
-        "email": "bima@example.test",
-        "createdAt": 1749093000000
-      },
-      "settings": {
-        "currency": "IDR",
-        "tariff": 1444.7,
-        "theme": "dark",
-        "language": "en",
-        "notifications": {
-          "deviceConnected": true,
-          "deviceDisconnected": true,
-          "sessionSaved": true,
-          "overload": true,
-          "refreshIntervalMs": 3000
-        }
-      },
-      "devices": {
-        "voltix-001": {
-          "role": "viewer",
-          "nickname": "Shared Workshop Meter",
-          "addedAt": 1749093100000
         }
       }
     }
   },
   "devices": {
-    "voltix-001": {
-      "ownerUid": "uid-owner-demo",
-      "paired": true,
-      "name": "Workshop Meter",
+    "esp32-voltix-001": {
+      "name": "VOLTIX Device",
       "firmwareVersion": "v1.0.0",
       "createdAt": 1749092000000,
       "lastSeen": 1749099600000,
-      "members": {
-        "uid-owner-demo": {
-          "role": "owner",
-          "addedAt": 1749092500000
-        },
-        "uid-viewer-demo": {
-          "role": "viewer",
-          "addedAt": 1749093100000
-        }
-      },
       "config": {
         "currency": "IDR",
         "tariff": 1444.7,
@@ -114,75 +49,10 @@
           "timestamp": 1749099600000,
           "internet": true,
           "mode": "ONLINE",
-          "relay": true,
-          "wifiStatus": "CONNECTED",
-          "activeSsid": "VOLTIX-LAB",
-          "firmwareVersion": "v1.0.0"
-        },
-        "device": {
-          "connected": true,
-          "voltage": 229.6,
-          "current": 3.66,
-          "power": 840.2,
-          "apparent": 840.3,
-          "pf": 0.99,
-          "frequency": 50.01,
-          "energy": 0.42,
-          "cost": 606.77,
-          "duration": 1800,
-          "overload": false
-        }
-      },
-      "command": {
-        "relay": "UNCHANGED",
-        "startSession": false,
-        "stopSession": false,
-        "resetAlarm": false,
-        "updatedAt": 1749099600000
-      },
-      "history": {
-        "session-20250605-001": {
-          "name": "Workshop Drill",
-          "startTime": 1749096000000,
-          "endTime": 1749097800000,
-          "durationSec": 1800,
-          "energyKwh": 0.42,
-          "cost": 606.77,
-          "voltageAvg": 229.4,
-          "currentAvg": 3.66,
-          "powerAvg": 840.2,
-          "powerMax": 1210.4,
-          "pfAvg": 0.99,
-          "frequencyAvg": 50.01,
-          "apparentAvg": 840.3,
-          "modeStart": "ONLINE",
-          "modeEnd": "ONLINE",
-          "modePath": "ONLINE",
-          "endReason": "USER_STOP",
-          "overload": false,
-          "syncStatus": "SYNCED"
+          "relay": false,
+          "wifiStatus": "CONNECTED"
         }
       }
-    }
-  },
-  "pairingCodes": {
-    "PAIR-7K2M": {
-      "deviceId": "voltix-002",
-      "createdAt": 1749099000000,
-      "expiresAt": 1749100800000,
-      "used": false,
-      "usedBy": null
-    }
-  },
-  "inviteCodes": {
-    "INVITE-4T9Q": {
-      "deviceId": "voltix-001",
-      "createdBy": "uid-owner-demo",
-      "role": "viewer",
-      "createdAt": 1749099000000,
-      "expiresAt": 1749185400000,
-      "used": false,
-      "usedBy": null
     }
   }
 }

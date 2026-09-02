@@ -299,7 +299,7 @@ function render() {
     const title = readState.kind === "permission"
       ? tr("historyAccessDenied")
       : readState.kind === "no-device"
-        ? tr("historyNoDevicePaired")
+        ? tr("deviceAccessUnavailable")
         : historyData.length === 0
           ? tr("historyNoSessionsYet")
           : tr("historyNoSessionsFound");

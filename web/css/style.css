@@ -441,11 +441,6 @@ body::after {
 .empty-state-sub { font-size: 13px; color: var(--text-muted); }
 .placeholder-card { max-width: 720px; }
 .placeholder-card .empty-state { min-height: 280px; }
-.device-detail-list { display: flex; flex-direction: column; gap: 12px; }
-.device-detail-list div { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
-.device-detail-list span { color: var(--text-muted); }
-.device-detail-list strong { max-width: 68%; color: var(--text-secondary); font-family: var(--font-display); font-size: 10px; text-align: right; overflow-wrap: anywhere; }
-.device-foundation-note { margin-top: 18px; padding: 12px; border-left: 2px solid var(--cyan); background: var(--cyan-dim); color: var(--text-muted); font-size: 11px; line-height: 1.6; }
 
 /* ===== DETAIL PAGE ===== */
 .detail-back-link { color: var(--cyan); display: inline-block; font-size: 12px; margin-bottom: 8px; text-decoration: none; }
@@ -984,166 +979,6 @@ body::after {
   .command-panel-grid, .hero-status-grid { grid-template-columns: 1fr; }
 }
 
-/* ===== VOLTIX MEMBERS PLACEHOLDER ===== */
-.members-page {
-  background:
-    radial-gradient(circle at 78% -10%, rgba(0,229,255,0.12), transparent 34%),
-    radial-gradient(circle at 12% 28%, rgba(0,230,118,0.07), transparent 28%),
-    var(--bg-base);
-}
-.members-page .topbar {
-  box-shadow: 0 14px 40px rgba(0,0,0,0.22);
-}
-.members-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  margin: 0 auto;
-  max-width: 1680px;
-  min-width: 0;
-  width: 100%;
-}
-.members-page-header {
-  align-items: flex-end;
-  display: flex;
-  gap: 24px;
-  justify-content: space-between;
-  padding: 4px 0;
-}
-.members-page-header h1,
-.members-hero-copy h2 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: -0.035em;
-}
-.members-page-header h1 {
-  font-size: clamp(24px, 3vw, 38px);
-  line-height: 1.15;
-}
-.members-eyebrow {
-  color: var(--cyan);
-  font-family: var(--font-display);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-.members-hero-card {
-  align-items: stretch;
-  background:
-    radial-gradient(circle at 12% 0%, rgba(0,229,255,0.18), transparent 38%),
-    radial-gradient(circle at 82% 10%, rgba(0,230,118,0.12), transparent 34%),
-    linear-gradient(145deg, rgba(13,23,31,0.9), rgba(6,9,13,0.96));
-  border: 1px solid rgba(0,229,255,0.16);
-  border-radius: 26px;
-  box-shadow: var(--shadow-soft), var(--shadow-glow), inset 0 1px 0 rgba(255,255,255,0.08);
-  display: grid;
-  gap: 24px;
-  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
-  min-height: 360px;
-  overflow: hidden;
-  padding: clamp(22px, 3vw, 34px);
-  position: relative;
-}
-.members-hero-card::before {
-  background: linear-gradient(90deg, var(--cyan), var(--green), transparent);
-  content: "";
-  height: 2px;
-  inset: 0 0 auto;
-  opacity: 0.86;
-  position: absolute;
-}
-.members-orb {
-  background: radial-gradient(circle, rgba(0,229,255,0.48), rgba(0,229,255,0.08) 44%, transparent 68%);
-  filter: blur(2px);
-  height: 260px;
-  opacity: 0.68;
-  position: absolute;
-  right: -70px;
-  top: -90px;
-  width: 260px;
-}
-.members-hero-copy,
-.members-role-grid {
-  position: relative;
-  z-index: 1;
-}
-.members-hero-copy {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.members-hero-copy h2 {
-  font-size: clamp(28px, 4vw, 54px);
-  line-height: 1.02;
-  margin-top: 10px;
-}
-.members-hero-copy p {
-  color: var(--text-secondary);
-  font-size: 14px;
-  margin: 14px 0 24px;
-  max-width: 540px;
-}
-.members-hero-copy .btn {
-  align-self: flex-start;
-}
-.members-role-grid {
-  align-content: center;
-  display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.members-role-card {
-  background: rgba(255,255,255,0.035);
-  border: 1px solid rgba(255,255,255,0.09);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255,255,255,0.055);
-  min-height: 170px;
-  overflow: hidden;
-  padding: 18px;
-  position: relative;
-}
-.members-role-card::before {
-  background: var(--accent-color, var(--cyan));
-  content: "";
-  inset: 0 0 auto;
-  height: 2px;
-  position: absolute;
-}
-.members-role-card.cyan { --accent-color: var(--cyan); }
-.members-role-card.green { --accent-color: var(--green); }
-.members-role-card.amber { --accent-color: var(--amber); }
-.members-role-card span {
-  color: var(--text-muted);
-  display: block;
-  font-family: var(--font-display);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.members-role-card strong {
-  color: var(--text-primary);
-  display: block;
-  font-family: var(--font-display);
-  font-size: 18px;
-  margin-top: 18px;
-}
-.members-role-card p {
-  color: var(--text-muted);
-  font-size: 12px;
-  margin-top: 10px;
-}
-@media (max-width: 1100px) {
-  .members-hero-card { grid-template-columns: 1fr; }
-}
-@media (max-width: 760px) {
-  .members-page-header { align-items: flex-start; flex-direction: column; }
-  .members-hero-card { border-radius: 20px; padding: 20px; }
-  .members-role-grid { grid-template-columns: 1fr; }
-  .members-hero-copy .btn { align-self: stretch; justify-content: center; }
-}
-
 /* ===== VOLTIX HISTORY + SESSION REPORT ===== */
 .history-page, .history-detail-page {
   background:
@@ -1415,7 +1250,6 @@ button, input, select, textarea, .btn {
 .dashboard-shell,
 .history-shell,
 .detail-shell,
-.members-shell,
 .settings-grid,
 .device-tabs,
 .tab-content,
@@ -1430,7 +1264,6 @@ button, input, select, textarea, .btn {
 .topbar-title,
 .history-page-header h1,
 .detail-page-header h1,
-.members-page-header h1,
 .dashboard-heading h1,
 .dashboard-status-text,
 .status-pill,
@@ -1502,8 +1335,7 @@ textarea:focus-visible {
   .dashboard-heading,
   .dashboard-command-panel,
   .history-page-header,
-  .detail-page-header,
-  .members-page-header {
+  .detail-page-header {
     align-items: stretch;
     flex-direction: column;
   }
@@ -1511,8 +1343,7 @@ textarea:focus-visible {
   .dashboard-stop-button,
   .command-panel-actions .btn,
   .history-header-actions .btn,
-  .detail-page-header .btn,
-  .members-hero-copy .btn {
+  .detail-page-header .btn {
     justify-content: center;
     width: 100%;
   }
@@ -1533,8 +1364,7 @@ textarea:focus-visible {
   .history-card-meta,
   .detail-summary-grid,
   .detail-reading-grid,
-  .detail-projection-grid,
-  .members-role-grid {
+  .detail-projection-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1560,15 +1390,13 @@ textarea:focus-visible {
     width: 100%;
   }
 
-  .detail-metadata-row,
-  .device-detail-list div {
+  .detail-metadata-row {
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;
   }
 
-  .detail-metadata-row strong,
-  .device-detail-list strong {
+  .detail-metadata-row strong {
     max-width: 100%;
     text-align: left;
   }
@@ -1581,8 +1409,7 @@ textarea:focus-visible {
 
   .dashboard-shell,
   .history-shell,
-  .detail-shell,
-  .members-shell {
+  .detail-shell {
     gap: 20px;
   }
 
@@ -1596,8 +1423,7 @@ textarea:focus-visible {
   .history-card,
   .detail-session-header,
   .detail-column-panel,
-  .settings-card,
-  .members-hero-card {
+  .settings-card {
     border-radius: 16px;
     padding-left: 16px;
     padding-right: 16px;

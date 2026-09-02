@@ -2,80 +2,42 @@
   "rules": {
     ".read": false,
     ".write": false,
-    "users": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        "profile": {
-          ".write": "auth != null && auth.uid === $uid",
-          ".validate": "newData.hasChildren(['displayName', 'email', 'createdAt']) && newData.child('displayName').isString() && newData.child('email').isString() && newData.child('createdAt').isNumber()"
-        },
-        "settings": {
-          ".write": "auth != null && auth.uid === $uid"
-        },
-        "devices": {
-          "$deviceId": {
-            ".write": "auth != null && (auth.token.pairingService === true || auth.token.inviteService === true || (auth.uid === $uid && root.child('devices').child($deviceId).child('ownerUid').val() === auth.uid && (!newData.exists() || newData.child('role').val() === 'owner')))",
-            ".validate": "!newData.exists() || (newData.hasChildren(['role', 'nickname', 'addedAt']) && (newData.child('role').val() === 'owner' || newData.child('role').val() === 'operator' || newData.child('role').val() === 'viewer') && newData.child('nickname').isString() && newData.child('addedAt').isNumber())"
-          }
-        },
-        "history": {
-          ".write": "auth != null && auth.uid === $uid",
-          "$historyId": {
-            ".validate": "!newData.exists() || (newData.child('deviceId').isString() && root.child('devices').child(newData.child('deviceId').val()).child('members').child(auth.uid).exists())"
-          }
-        }
-      }
-    },
     "devices": {
       "esp32-voltix-001": {
         "config": {
           ".read": true,
-          ".write": "auth != null && data.parent().child('ownerUid').val() === auth.uid"
+          ".write": "auth != null && auth.token.deviceRole !== 'hardware'"
         },
         "live": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware'",
           ".write": true
-        },
-        "command": {
-          ".read": true,
-          ".write": "auth != null && (data.parent().child('ownerUid').val() === auth.uid || data.parent().child('members').child(auth.uid).child('role').val() === 'operator')"
         },
         "commands": {
           "current": {
             ".read": true,
-            ".write": "!newData.exists() || (auth != null && (data.parent().parent().child('ownerUid').val() === auth.uid || data.parent().parent().child('members').child(auth.uid).child('role').val() === 'operator'))"
+            ".write": "!newData.exists() || (auth != null && auth.token.deviceRole !== 'hardware')"
           },
           "lastAck": {
-            ".read": "auth != null && data.parent().parent().child('members').child(auth.uid).exists()",
+            ".read": "auth != null && auth.token.deviceRole !== 'hardware'",
             ".write": true
           }
         },
         "history": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware'",
           ".write": true
         },
         "completedSessions": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
+          ".read": "auth != null && auth.token.deviceRole !== 'hardware'",
           ".write": true
         },
         "historyCleanup": {
           "current": {
             ".read": true,
-            ".write": "!newData.exists() || (auth != null && (data.parent().parent().child('ownerUid').val() === auth.uid || data.parent().parent().child('members').child(auth.uid).child('role').val() === 'operator'))"
+            ".write": "!newData.exists() || (auth != null && auth.token.deviceRole !== 'hardware')"
           },
           "lastAck": {
-            ".read": "auth != null && data.parent().parent().child('members').child(auth.uid).exists()",
+            ".read": "auth != null && auth.token.deviceRole !== 'hardware'",
             ".write": true
-          }
-        },
-        "ownerUid": {
-          ".read": "auth != null && data.parent().child('members').child(auth.uid).exists()",
-          ".write": false
-        },
-        "members": {
-          "$memberUid": {
-            ".read": "auth != null && (data.parent().parent().child('ownerUid').val() === auth.uid || $memberUid === auth.uid)",
-            ".write": false
           }
         }
       }

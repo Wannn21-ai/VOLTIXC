@@ -94,7 +94,6 @@ device secrets, the pepper, custom tokens, ID tokens, or refresh tokens.
 The broker initializes one named Firebase Admin app per warm serverless runtime
 and uses Admin privileges to read `/devices/{deviceId}`. It requires:
 
-- `ownerUid` is a non-empty string.
 - `deviceAuth.enabled === true`.
 - `deviceAuth.revoked !== true`.
 - `deviceAuth.credentialVersion` exactly matches the request.
@@ -144,7 +143,6 @@ resulting server-side record through a trusted Admin/operator path:
 
 ```json
 {
-  "ownerUid": "trusted-owner-record-uid",
   "deviceAuth": {
     "enabled": true,
     "revoked": false,
@@ -167,15 +165,13 @@ derives claims from the trusted device record:
 {
   "deviceId": "esp32-voltix-001",
   "deviceRole": "hardware",
-  "ownerUid": "trusted-owner-record-uid",
   "credentialVersion": 1
 }
 ```
 
 The custom-token subject is `device:{deviceId}`, never a human user's Firebase
-Auth UID. `ownerUid` is trusted metadata, not permission for firmware to write
-`/users/{uid}/history`. One ESP32 may still be shared by multiple user accounts,
-and the logged-in web app remains responsible for copying the device
+Auth UID. One ESP32 may be shared by multiple user accounts, and the logged-in
+web app remains responsible for copying the device
 completed-session queue into `/users/{currentUser.uid}/history`.
 
 ## Future Firmware Integration

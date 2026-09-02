@@ -14,7 +14,6 @@ import { runSmoke } from "../scripts/smoke-device-token.mjs";
 
 const DEVICE_SECRET = "example-device-secret-not-real";
 const PEPPER = "example-server-pepper-not-real";
-const OWNER_UID = "example-owner-uid";
 
 const PROVISION_ENV = {
   FIREBASE_PROJECT_ID: "example-project",
@@ -24,7 +23,6 @@ const PROVISION_ENV = {
   DEVICE_AUTH_PEPPER: PEPPER,
   DEVICE_SECRET,
   CREDENTIAL_VERSION: "1",
-  OWNER_UID,
 };
 
 const SMOKE_ENV = {
@@ -46,10 +44,6 @@ function createDatabaseMock(deviceAuth) {
             return {
               exists: () => true,
               val: () => ({
-                ownerUid: OWNER_UID,
-                members: {
-                  [OWNER_UID]: { role: "owner" },
-                },
                 deviceAuth,
               }),
             };
@@ -117,7 +111,7 @@ test("provisioning fails before Admin access when env is missing", async () => {
   assert.equal(accessed, false);
 });
 
-test("provisioning dry run verifies ownership without writing", async () => {
+test("provisioning dry run verifies the device record without writing", async () => {
   const mock = createDatabaseMock();
   const logs = [];
 

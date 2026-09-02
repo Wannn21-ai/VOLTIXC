@@ -37,19 +37,18 @@ revealing usable tokens.
 
 ## Prerequisites
 
-Before provisioning, confirm these existing RTDB relationships:
+Before provisioning, confirm this existing RTDB record:
 
 ```text
-/devices/esp32-voltix-001/ownerUid = <ownerUid>
-/devices/esp32-voltix-001/members/<ownerUid>/role = "owner"
+/devices/esp32-voltix-001/deviceAuth
 ```
 
-The provisioning script refuses to write if either relationship is missing or
-mismatched. It never creates or changes ownership/membership.
+The provisioning script refuses to write if the device record is missing. It
+only creates or updates the derived `deviceAuth` fields.
 
 This sprint does not change Firebase rules. Do not treat `secretHash` as a
 standalone secret or rely on rules alone to protect it: the committed rules may
-allow the device owner to read the parent device record. The raw device secret
+allow authenticated clients to read nearby device data. The raw device secret
 and server-only pepper must remain protected and high entropy. Restricting
 device-auth metadata further is a separate reviewed rules-hardening task.
 

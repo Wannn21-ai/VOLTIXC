@@ -43,7 +43,6 @@ function validBody() {
 function enabledDevice(overrides = {}) {
   const body = validBody();
   return {
-    ownerUid: "firebase-owner-uid",
     deviceAuth: {
       enabled: true,
       revoked: false,
@@ -119,7 +118,7 @@ test("rejects malformed request bodies", async () => {
     { deviceId: "bad id", deviceSecret: "long-enough-secret", credentialVersion: 1 },
     { deviceId: "esp32-voltix-001", deviceSecret: "short", credentialVersion: 1 },
     { deviceId: "esp32-voltix-001", deviceSecret: "long-enough-secret", credentialVersion: 0 },
-    { ...validBody(), ownerUid: "caller-controlled" },
+    { ...validBody(), unexpectedField: "caller-controlled" },
   ];
 
   for (const body of invalidBodies) {
@@ -162,7 +161,6 @@ test("returns generic 503 when Admin initialization fails", async () => {
 
 for (const [name, deviceValue, body] of [
   ["unknown device", null, validBody()],
-  ["missing owner", { ...enabledDevice(), ownerUid: null }, validBody()],
   ["disabled device", enabledDevice({ enabled: false }), validBody()],
   ["revoked device", enabledDevice({ revoked: true }), validBody()],
   ["version mismatch", enabledDevice({ credentialVersion: 2 }), validBody()],
@@ -195,7 +193,6 @@ test("issues a custom token only after successful credential verification", asyn
     claims: {
       deviceId: "esp32-voltix-001",
       deviceRole: "hardware",
-      ownerUid: "firebase-owner-uid",
       credentialVersion: 1,
     },
   }]);

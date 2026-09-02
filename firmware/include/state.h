@@ -17,10 +17,6 @@ struct AppConfig {
   bool configPendingSync;
   char configSource[24];
   char deviceName[32];
-  char pairingCode[8];
-  bool paired;
-  char ownerUid[64];
-  char ownerDisplayName[81];
 };
 
 struct SensorData {

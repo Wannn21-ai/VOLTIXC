@@ -3,7 +3,7 @@
 Use this checklist only after the web/Firebase/ESP32 communication smoke tests
 have passed and production Firebase rules have been restored. This is a manual
 validation procedure, not permission to change firmware, rules, credentials,
-relay/session semantics, or the pairing/Auth model.
+relay/session semantics, or the device Auth model.
 
 Mains AC can cause electric shock, fire, or equipment damage. AC wiring and
 energized testing must be performed only by a competent person using a
@@ -253,7 +253,7 @@ and create a follow-up test plan; do not increase the physical load.
 - [ ] Confirm expected production denials, such as `401 AUTH_REQUIRED`, do not
       stop local operation or remove pending LittleFS data.
 - [ ] Confirm no firmware, web behavior, Firebase rules, credentials/env
-      values, relay/session semantics, or pairing/Auth model changed during the
+      values, relay/session semantics, or device Auth model changed during the
       test.
 - [ ] Confirm no credentials, secrets, unredacted logs, real UIDs, generated
       files, or temporary test data are staged for commit.

@@ -16,7 +16,6 @@ const REQUIRED_ENV = [
   "DEVICE_AUTH_PEPPER",
   "DEVICE_SECRET",
   "CREDENTIAL_VERSION",
-  "OWNER_UID",
 ];
 
 export async function getAdminDatabase(env) {
@@ -46,7 +45,6 @@ export async function runProvision({
   requireEnv(env, REQUIRED_ENV);
   const deviceId = requireLabDeviceId(env.DEVICE_ID);
   const credentialVersion = parseCredentialVersion(env.CREDENTIAL_VERSION);
-  const ownerUid = env.OWNER_UID.trim();
   const secretHash = computeDeviceSecretHash(
     env.DEVICE_AUTH_PEPPER,
     deviceId,
@@ -65,16 +63,11 @@ export async function runProvision({
   try {
     snapshot = await database.ref(`/devices/${deviceId}`).get();
   } catch {
-    throw new Error("Lab device ownership lookup failed.");
+    throw new Error("Lab device lookup failed.");
   }
   if (!snapshot.exists()) throw new Error("Lab device record does not exist.");
 
   const device = snapshot.val();
-  if (device?.ownerUid !== ownerUid ||
-      device?.members?.[ownerUid]?.role !== "owner") {
-    throw new Error("Existing ownerUid/owner membership verification failed.");
-  }
-
   const hashMatches = device?.deviceAuth?.hashAlg === DEVICE_AUTH_HASH_ALG &&
     device.deviceAuth.credentialVersion === credentialVersion &&
     device.deviceAuth.secretHash === secretHash;
