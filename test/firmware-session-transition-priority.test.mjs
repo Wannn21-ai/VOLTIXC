@@ -140,7 +140,8 @@ test("primary commands/current rejects stale commands before START or STOP execu
   const preActionSource = firebaseSource.slice(pollStart, startBranch);
   assert.match(preActionSource, /!hasCommandTimestamp \|\| primaryCommandIsStale\(commandUpdatedAt\)/);
   assert.match(preActionSource, /Stale command ignored/);
-  assert.match(preActionSource, /commands\/current\.json", "null"/);
+  assert.match(preActionSource, /const String commandPath = .*\/commands\/current\.json"/);
+  assert.match(preActionSource, /httpRequest\("PUT", commandPath\.c_str\(\), "null"/);
 });
 
 test("transition and history timing diagnostics are present", () => {

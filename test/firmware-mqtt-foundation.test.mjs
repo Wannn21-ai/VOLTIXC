@@ -14,6 +14,10 @@ const mqttSource = await readFile(
   new URL("../firmware/src/mqtt_manager.cpp", import.meta.url),
   "utf8",
 );
+const mqttStateSyncSource = await readFile(
+  new URL("../firmware/src/mqtt_state_sync.cpp", import.meta.url),
+  "utf8",
+);
 const credentialsExample = await readFile(
   new URL("../firmware/include/credentials.h.example", import.meta.url),
   "utf8",
@@ -94,12 +98,25 @@ test("command and config payloads are bounded, parsed, and not wired to control 
 });
 
 test("main integration is minimal and leaves Firebase initialization intact", () => {
-  assert.match(mainSource, /firebaseBegin\(\);\s+mqttBegin\(\);/);
+  assert.match(mainSource, /firebaseBegin\(\);\s+mqttBegin\(\);\s+mqttStateSyncBegin\(\);/);
   assert.match(
     mainSource,
     /networkUpdate\(\);\s+mqttLoop\(\);\s+sessionRecoveryUpdate\(\);/,
   );
 
-  const mqttCalls = mainSource.match(/mqtt[A-Z][A-Za-z]+\(/g) ?? [];
-  assert.deepEqual(mqttCalls, ["mqttBegin(", "mqttLoop("]);
+  assert.match(mainSource, /mqttStateSyncUpdate\(\)/);
+  assert.doesNotMatch(mainSource, /mqttPublish(?:Status|Telemetry|Session|Event)\(/);
+});
+
+test("state sync mirrors existing state without controlling the system", () => {
+  assert.match(mqttStateSyncSource, /TELEMETRY_INTERVAL_MS = 1000UL/);
+  assert.match(mqttStateSyncSource, /STATUS_INTERVAL_MS = 5000UL/);
+  assert.match(mqttStateSyncSource, /mqttPublishStatus\(message\)/);
+  assert.match(mqttStateSyncSource, /mqttPublishTelemetry\(message\)/);
+  assert.match(mqttStateSyncSource, /mqttPublishSession\(message\)/);
+  assert.match(mqttStateSyncSource, /mqttPublishEvent\("session_started"/);
+  assert.doesNotMatch(
+    mqttStateSyncSource,
+    /sessionStart\(|sessionStop\(|relaySet\(|storageAppend|sessionRecoveryUpdate\(/,
+  );
 });

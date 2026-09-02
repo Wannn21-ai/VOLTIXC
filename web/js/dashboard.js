@@ -7,6 +7,7 @@ import { db, ref, onValue, set, push, get } from "./firebase-config.js";
 import { loadDeviceHistory } from "./local-history.js";
 import { getCurrentDevice, readableFirebaseError } from "./user-state.js";
 import { clampRefreshInterval, createMetersUpdateScheduler } from "./dashboard-live-update.js";
+import { startMqttLive } from "./mqtt-live.js";
 
 // ================= INIT =================
 const user = await requireAuth();
@@ -114,6 +115,10 @@ let firebaseWifiStatus = "";
 let firebaseActiveSsid = "";
 let firebaseFirmwareVersion = "";
 let deviceNameFromEsp = "—";  // Device name dari ESP32 (untuk offline mode)
+let mqttTransportConnected = false;
+let mqttStatusOnline = null;
+let mqttStatusReceivedAtMs = 0;
+let mqttTelemetryReceivedAtMs = 0;
 
 // ================= STATE — WEB =================
 let systemMode = SystemMode.OFFLINE;
@@ -1087,7 +1092,15 @@ function updateLiveEnergyCheckpoint() {
   }
 }
 
+function mqttRealtimePreferred(nowMs = Date.now()) {
+  return mqttTransportConnected &&
+    mqttStatusReceivedAtMs > 0 &&
+    nowMs - mqttStatusReceivedAtMs >= 0 &&
+    nowMs - mqttStatusReceivedAtMs <= DEVICE_OFFLINE_TIMEOUT_MS;
+}
+
 function showLiveReadError(error) {
+  if (mqttRealtimePreferred()) return;
   const state = document.getElementById("no-device-state");
   if (!state) return;
   state.style.display = "block";
@@ -1095,10 +1108,75 @@ function showLiveReadError(error) {
   state.querySelector(".empty-state-sub").textContent = readableFirebaseError(error);
 }
 
+startMqttLive(user, {
+  onConnection({ connected }) {
+    mqttTransportConnected = connected;
+    scheduleMetersUpdate();
+  },
+  onStatus(status, receivedAtMs) {
+    mqttStatusReceivedAtMs = receivedAtMs;
+    mqttStatusOnline = status.online === true;
+    firebaseHeartbeatMs = receivedAtMs;
+    firebaseTimestamp = Math.floor(receivedAtMs / 1000);
+    firebaseSystemReceivedAtMs = receivedAtMs;
+    firebaseLiveDeviceAvailable = true;
+    systemInternet = mqttStatusOnline;
+    firebaseRelay = relayIsOn(status.relay);
+    firebaseSessionActive = status.sessionActive ?? firebaseSessionActive;
+    firebaseSystemMode = status.mode || firebaseSystemMode;
+    firebaseSessionState = status.sessionState || firebaseSessionState;
+    firebaseOffline = String(status.mode || "").toUpperCase() === "OFFLINE";
+    if (typeof status.sensorValid === "boolean") {
+      firebaseDeviceConnected = status.sensorValid;
+    }
+    scheduleMetersUpdate();
+  },
+  onTelemetry(telemetry, receivedAtMs) {
+    mqttTelemetryReceivedAtMs = receivedAtMs;
+    firebaseTelemetryAtMs = receivedAtMs;
+    voltage = Number(telemetry.voltage || 0);
+    current = Number(telemetry.current || 0);
+    firebasePower = Number(telemetry.power || 0);
+    firebaseApparent = Number(telemetry.apparentPower ?? voltage * current);
+    firebasePF = Number(telemetry.powerFactor || 0);
+    firebaseFreq = Number(telemetry.frequency || 0);
+    firebaseEnergy = Number(telemetry.energy || 0);
+    firebaseCost = Number(telemetry.cost || 0);
+    firebaseElapsedSec = Number(telemetry.duration ?? firebaseElapsedSec);
+    firebaseOverload = telemetry.overload === true;
+    if (typeof telemetry.valid === "boolean") {
+      firebaseDeviceConnected = telemetry.valid;
+    }
+    updateTimer();
+    updateLiveEnergyCheckpoint();
+    scheduleMetersUpdate();
+  },
+  onSession(session) {
+    firebaseSessionActive = session.active ?? firebaseSessionActive;
+    firebaseElapsedSec = Number(session.duration ?? firebaseElapsedSec);
+    firebaseSessionId = session.sessionId || firebaseSessionId;
+    firebaseSessionUid = session.uid || firebaseSessionUid;
+    firebaseSessionState = session.sessionState || firebaseSessionState;
+    firebaseSystemMode = session.mode || firebaseSystemMode;
+    deviceNameFromEsp = session.deviceName || deviceNameFromEsp;
+    updateTimer();
+    scheduleMetersUpdate();
+  },
+  onEvent(event) {
+    if (event.type === "overload") firebaseOverload = true;
+    console.info("[mqtt-web] Device event:", event.type || "unknown");
+    scheduleMetersUpdate();
+  },
+}).catch(error => {
+  mqttTransportConnected = false;
+  console.warn("[mqtt-web] Startup failed; using Firebase fallback:", error.message);
+});
+
 if (selectedDevice) {
   const liveBase = `devices/${selectedDevice.id}/live`;
 
   onValue(ref(db, `${liveBase}/system`), snapshot => {
+    if (mqttRealtimePreferred()) return;
     firebaseSystemReceivedAtMs = Date.now();
     const sys = snapshot.val() || {};
     firebaseWifiStatus = String(sys.wifiStatus || "");
@@ -1131,6 +1209,7 @@ if (selectedDevice) {
   }, showLiveReadError);
 
   onValue(ref(db, `${liveBase}/device`), snapshot => {
+    if (mqttRealtimePreferred()) return;
     const dev = snapshot.val() || {};
     firebaseLiveDeviceAvailable = snapshot.exists();
     firebaseDeviceConnected = typeof dev.connected === "boolean" ? dev.connected : null;
@@ -1156,6 +1235,7 @@ if (selectedDevice) {
 
   // Transitional firmware still publishes active-session metadata here.
   onValue(ref(db, `${liveBase}/session`), snapshot => {
+    if (mqttRealtimePreferred()) return;
     const session = snapshot.val() || {};
     firebaseSessionActive = session.active ?? firebaseSessionActive;
     firebaseSessionStartTs = timestampSeconds(session.startTs ?? session.sessionStartTs ?? firebaseSessionStartTs);
@@ -1185,9 +1265,15 @@ async function updateMeters() {
   const diff = Math.abs(now - firebaseTimestamp);
 
   // ── Hitung systemOnline ──────────────────────────────────
+  const mqttPreferred = mqttRealtimePreferred(nowMs);
   const heartbeatAgeMs = firebaseHeartbeatMs > 0 ? nowMs - firebaseHeartbeatMs : Number.POSITIVE_INFINITY;
-  const telemetryAgeMs = firebaseTelemetryAtMs > 0 ? nowMs - firebaseTelemetryAtMs : Number.POSITIVE_INFINITY;
-  const espTimestampFresh = heartbeatAgeMs >= 0 && heartbeatAgeMs <= DEVICE_OFFLINE_TIMEOUT_MS;
+  const telemetryTimestamp = mqttPreferred ? mqttTelemetryReceivedAtMs : firebaseTelemetryAtMs;
+  const telemetryAgeMs = telemetryTimestamp > 0
+    ? nowMs - telemetryTimestamp
+    : Number.POSITIVE_INFINITY;
+  const espTimestampFresh = mqttPreferred
+    ? mqttStatusOnline === true
+    : heartbeatAgeMs >= 0 && heartbeatAgeMs <= DEVICE_OFFLINE_TIMEOUT_MS;
   const telemetryFresh = telemetryAgeMs >= 0 && telemetryAgeMs <= DEVICE_OFFLINE_TIMEOUT_MS;
   liveDataFresh = espTimestampFresh && telemetryFresh;
   systemOnline = espTimestampFresh;

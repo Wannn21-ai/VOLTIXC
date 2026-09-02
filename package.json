@@ -6,11 +6,13 @@
     "hash:device-secret": "node scripts/hash-device-secret.mjs",
     "provision:device-auth": "node scripts/provision-device-auth.mjs",
     "smoke:device-token": "node scripts/smoke-device-token.mjs",
+    "test:mqtt": "node --test test/firmware-mqtt-foundation.test.mjs test/web-mqtt-live.test.mjs test/mqtt-web-config.test.js",
     "test:firmware-device-auth": "node --test test/firmware-device-auth.test.mjs",
     "test:device-auth-lab": "node --test test/device-auth-lab.test.mjs",
     "test:token-broker": "node --test test/device-token.test.js"
   },
   "dependencies": {
-    "firebase-admin": "^13.10.0"
+    "firebase-admin": "^13.10.0",
+    "mqtt": "5.15.2"
   }
 }

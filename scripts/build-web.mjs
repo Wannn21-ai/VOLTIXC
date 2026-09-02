@@ -66,10 +66,16 @@ if (existsSync(localEnvPath)) {
 const missingVariables = Object.keys(firebaseVariables)
   .filter(name => !process.env[name]?.trim());
 const injectFirebaseConfig = missingVariables.length === 0;
-
 await rm(outputDir, { recursive: true, force: true });
 await mkdir(outputDir, { recursive: true });
 await cp(sourceDir, outputDir, { recursive: true });
+
+const mqttBrowserBundle = path.join(rootDir, "node_modules", "mqtt", "dist", "mqtt.min.js");
+if (!existsSync(mqttBrowserBundle)) {
+  throw new Error("MQTT.js browser bundle is missing. Run npm install before build:web.");
+}
+await mkdir(path.join(outputDir, "vendor"), { recursive: true });
+await cp(mqttBrowserBundle, path.join(outputDir, "vendor", "mqtt.min.js"));
 
 const htmlFiles = await htmlFilesUnder(outputDir);
 

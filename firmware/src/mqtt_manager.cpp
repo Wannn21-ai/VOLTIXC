@@ -330,12 +330,33 @@ void mqttSetConfigHandler(MqttConfigHandler handler) {
 }
 
 bool mqttPublishStatus(bool online, const char* mode, bool relayOn) {
-  StaticJsonDocument<160> document;
-  document["online"] = online;
-  if (hasText(mode)) {
-    document["mode"] = mode;
+  const MqttStatusMessage message{
+    online,
+    mode,
+    relayOn,
+    nullptr,
+    false,
+    false,
+    false
+  };
+  return mqttPublishStatus(message);
+}
+
+bool mqttPublishStatus(const MqttStatusMessage& message) {
+  StaticJsonDocument<256> document;
+  document["deviceId"] = MqttConfig::DEVICE_ID;
+  document["online"] = message.online;
+  if (hasText(message.mode)) {
+    document["mode"] = message.mode;
   }
-  document["relay"] = relayOn;
+  document["relay"] = message.relayOn;
+  if (hasText(message.sessionState)) {
+    document["sessionState"] = message.sessionState;
+  }
+  document["sessionActive"] = message.sessionActive;
+  document["sensorValid"] = message.sensorValid;
+  document["loadDetected"] = message.loadDetected;
+  document["uptimeMs"] = millis();
   return enqueueJson(MqttConfig::TOPIC_STATUS, document, 1, true);
 }
 
@@ -347,13 +368,39 @@ bool mqttPublishTelemetry(
   float frequency,
   float powerFactor
 ) {
-  StaticJsonDocument<256> document;
-  document["voltage"] = voltage;
-  document["current"] = current;
-  document["power"] = power;
-  document["energy"] = energy;
-  document["frequency"] = frequency;
-  document["powerFactor"] = powerFactor;
+  const MqttTelemetryMessage message{
+    voltage,
+    current,
+    power,
+    energy,
+    frequency,
+    powerFactor,
+    voltage * current,
+    0.0f,
+    0,
+    true,
+    false,
+    false
+  };
+  return mqttPublishTelemetry(message);
+}
+
+bool mqttPublishTelemetry(const MqttTelemetryMessage& message) {
+  StaticJsonDocument<384> document;
+  document["deviceId"] = MqttConfig::DEVICE_ID;
+  document["voltage"] = message.voltage;
+  document["current"] = message.current;
+  document["power"] = message.power;
+  document["energy"] = message.energy;
+  document["frequency"] = message.frequency;
+  document["powerFactor"] = message.powerFactor;
+  document["apparentPower"] = message.apparentPower;
+  document["cost"] = message.cost;
+  document["duration"] = message.durationSeconds;
+  document["valid"] = message.valid;
+  document["loadDetected"] = message.loadDetected;
+  document["overload"] = message.overload;
+  document["uptimeMs"] = millis();
   return enqueueJson(MqttConfig::TOPIC_TELEMETRY, document, 0, false);
 }
 
@@ -364,16 +411,49 @@ bool mqttPublishSession(
   unsigned long durationSeconds,
   float energyKwh
 ) {
-  StaticJsonDocument<256> document;
-  document["active"] = active;
-  if (hasText(sessionId)) {
-    document["sessionId"] = sessionId;
+  const MqttSessionMessage message{
+    active,
+    sessionId,
+    nullptr,
+    nullptr,
+    mode,
+    nullptr,
+    nullptr,
+    durationSeconds,
+    energyKwh * 1000.0f,
+    energyKwh,
+    0.0f
+  };
+  return mqttPublishSession(message);
+}
+
+bool mqttPublishSession(const MqttSessionMessage& message) {
+  StaticJsonDocument<512> document;
+  document["deviceId"] = MqttConfig::DEVICE_ID;
+  document["active"] = message.active;
+  if (hasText(message.sessionId)) {
+    document["sessionId"] = message.sessionId;
   }
-  if (hasText(mode)) {
-    document["mode"] = mode;
+  if (hasText(message.uid)) {
+    document["uid"] = message.uid;
   }
-  document["duration"] = durationSeconds;
-  document["energy"] = energyKwh;
+  if (hasText(message.deviceName)) {
+    document["deviceName"] = message.deviceName;
+  }
+  if (hasText(message.mode)) {
+    document["mode"] = message.mode;
+  }
+  if (hasText(message.state)) {
+    document["sessionState"] = message.state;
+  }
+  if (hasText(message.endReason)) {
+    document["endReason"] = message.endReason;
+  }
+  document["duration"] = message.durationSeconds;
+  document["energyWh"] = message.energyWh;
+  document["energy"] = message.energyKwh;
+  document["cost"] = message.cost;
+  document["uptimeMs"] = millis();
   return enqueueJson(MqttConfig::TOPIC_SESSION, document, 1, false);
 }
 
