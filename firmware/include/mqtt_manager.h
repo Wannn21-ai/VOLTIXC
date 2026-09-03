@@ -11,12 +11,28 @@ enum class MqttCommandType : uint8_t {
 
 struct MqttCommand {
   MqttCommandType type;
+  char id[64];
+  char uid[64];
+  char sessionId[48];
+  char deviceName[32];
+  uint64_t issuedAt;
+  uint64_t expiresAt;
   bool hasRelayValue;
   bool relayValue;
+  bool hasTariff;
+  float tariff;
+  bool hasOverloadThreshold;
+  float overloadThreshold;
+  bool hasLoadPowerThreshold;
+  float loadPowerThreshold;
+  bool hasLoadCurrentThreshold;
+  float loadCurrentThreshold;
 };
 
 using MqttCommandHandler = void (*)(const MqttCommand& command);
 using MqttConfigHandler = void (*)(const char* json, size_t length);
+using MqttHistoryAckHandler = void (*)(const char* sessionId, bool stored);
+using MqttHistoryCleanupHandler = void (*)(const char* json, size_t length);
 
 struct MqttStatusMessage {
   bool online;
@@ -68,6 +84,8 @@ bool mqttConnected();
 
 void mqttSetCommandHandler(MqttCommandHandler handler);
 void mqttSetConfigHandler(MqttConfigHandler handler);
+void mqttSetHistoryAckHandler(MqttHistoryAckHandler handler);
+void mqttSetHistoryCleanupHandler(MqttHistoryCleanupHandler handler);
 
 bool mqttPublishStatus(bool online, const char* mode, bool relayOn);
 bool mqttPublishStatus(const MqttStatusMessage& message);
@@ -94,3 +112,17 @@ bool mqttPublishEvent(
   bool includePower = false,
   float power = 0.0f
 );
+bool mqttPublishCommandAck(
+  const char* id,
+  const char* command,
+  const char* status,
+  const char* message,
+  const char* reason = nullptr
+);
+bool mqttPublishHistoryJson(const char* json, size_t length);
+bool mqttPublishHistoryCleanupAck(
+  const char* requestId,
+  const char* status,
+  int deleted
+);
+bool mqttPublishConfigStateJson(const char* json, size_t length);

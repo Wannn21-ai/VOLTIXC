@@ -23,4 +23,4 @@ bool storagePendingHistorySyncRequested();
 void storageRequestFastHistoryUpload(const char* sessionId);
 bool storageFastHistoryUploadRequested();
 bool storageUploadFastCompletedSession();
-bool storageSyncPendingHistoryToFirebase(unsigned int maxUploads = 1);
+bool storageSyncPendingHistoryToCloud(unsigned int maxUploads = 1);

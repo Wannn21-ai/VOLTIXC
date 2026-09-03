@@ -2,8 +2,8 @@
 
 #include "config.h"
 #include "display.h"
-#include "firebase_sync.h"
 #include "indicators.h"
+#include "mqtt_cloud_sync.h"
 #include "mqtt_manager.h"
 #include "mqtt_state_sync.h"
 #include "network.h"
@@ -24,7 +24,6 @@ static constexpr float SERIAL_THRESHOLD_MIN_W = 1.0f;
 static constexpr float SERIAL_THRESHOLD_MAX_W = 5000.0f;
 static constexpr unsigned long REQUESTED_HISTORY_SYNC_RETRY_MS = 2000UL;
 static constexpr unsigned long PERIODIC_HISTORY_SYNC_MS = 30000UL;
-static constexpr unsigned long HISTORY_CLEANUP_POLL_INTERVAL_MS = 5000UL;
 static constexpr unsigned int AUTO_HISTORY_SYNC_MAX_UPLOADS = 3;
 static constexpr unsigned long IDLE_COMMAND_POLL_COOLDOWN_MS = 750UL;
 static constexpr unsigned long MONITORING_COMMAND_POLL_COOLDOWN_MS = 500UL;
@@ -35,11 +34,10 @@ static constexpr unsigned long COMMAND_POLL_SKIP_LOG_INTERVAL_MS = 1000UL;
 static unsigned long lastSensorUpdateMs = 0;
 static unsigned long lastSessionUpdateMs = 0;
 static unsigned long lastLivePrintMs = 0;
-static unsigned long lastFirebaseConfigMs = 0;
-static unsigned long lastFirebaseLiveMs = 0;
-static unsigned long lastFirebaseCommandCompletedMs = 0;
+static unsigned long lastCloudConfigMs = 0;
+static unsigned long lastCloudLiveMs = 0;
+static unsigned long lastCloudCommandCompletedMs = 0;
 static unsigned long lastPendingHistorySyncMs = 0;
-static unsigned long lastHistoryCleanupPollMs = 0;
 static unsigned long offlineNoNetworkSinceMs = 0;
 static unsigned long lastCommandPollSkipLogMs = 0;
 static char serialCommandBuffer[32];
@@ -75,8 +73,8 @@ static void flushSessionTransitionPriority(bool onlineServicesAllowed) {
   }
 
   if (onlineServicesAllowed && sessionLivePublishRequested()) {
-    firebasePublishLive();
-    lastFirebaseLiveMs = millis();
+    mqttStateSyncUpdate();
+    lastCloudLiveMs = millis();
     sessionMarkLivePublished();
     Serial.print("[timing] live published after ");
     Serial.print(label);
@@ -147,17 +145,17 @@ static bool pollCommandIfDue(
 
   const unsigned long now = millis();
   if (!force &&
-      lastFirebaseCommandCompletedMs != 0 &&
-      now - lastFirebaseCommandCompletedMs < commandPollIntervalMs()) {
+      lastCloudCommandCompletedMs != 0 &&
+      now - lastCloudCommandCompletedMs < commandPollIntervalMs()) {
     logCommandPollSkipped("cooldown active");
     return false;
   }
 
-  firebasePollCommand();
-  lastFirebaseCommandCompletedMs = millis();
+  mqttCloudSyncUpdate();
+  lastCloudCommandCompletedMs = millis();
   flushSessionTransitionPriority(onlineServicesAllowed);
-  if (firebaseTransitionAckRequested()) {
-    firebaseFlushTransitionAck();
+  if (mqttCloudTransitionAckRequested()) {
+    mqttCloudFlushTransitionAck();
   }
   return true;
 }
@@ -363,7 +361,8 @@ static void printStatus() {
   Serial.println("W");
   Serial.print("[status] recovery=");
   Serial.println(sessionRecoveryStatus());
-  firebasePrintAuthStatus();
+  Serial.print("[status] mqtt=");
+  Serial.println(mqttConnected() ? "connected" : "disconnected");
 }
 
 static void printTimeStatus() {
@@ -508,7 +507,7 @@ static void processSerialCommand(char* rawCommand) {
 
   if (strcmp(command, "sync") == 0) {
     if (networkIsConnected()) {
-      const bool ok = storageSyncPendingHistoryToFirebase();
+      const bool ok = storageSyncPendingHistoryToCloud();
       Serial.print("[serial] ");
       Serial.println(ok ? "OK: pending history sync cycle complete" : "WARN: pending history sync cycle incomplete");
     } else {
@@ -626,8 +625,8 @@ void setup() {
   sessionBegin();
   sessionRecoveryBegin();
   networkBegin();
-  firebaseBegin();
   mqttBegin();
+  mqttCloudSyncBegin();
   mqttStateSyncBegin();
   // Tentukan systemMode awal berdasarkan status jaringan
   systemMode = networkIsPortalActive() ? SystemMode::SETUP : (networkIsConnected() ? SystemMode::ONLINE : SystemMode::OFFLINE);
@@ -710,7 +709,7 @@ void loop() {
       Serial.println("[network] Manual offline unlocked, WiFi connected");
     }
     timeSyncBegin();
-    firebaseAuthenticateDevice();
+    mqttCloudSyncUpdate();
     serviceLocalRealtimeTasks(recoveryActive);
     flushSessionTransitionPriority(onlineServicesAllowed);
     displayUpdate();
@@ -721,13 +720,13 @@ void loop() {
     }
     if (sessionData.state != SessionState::WAITING_LOAD &&
         !localRealtimeTasksDue(recoveryActive)) {
-      firebasePublishLive();
-      lastFirebaseLiveMs = millis();
+      mqttStateSyncUpdate();
+      lastCloudLiveMs = millis();
       if (restoredFromManualOffline) {
-        Serial.println("[firebase] Live publish after manual offline unlock");
+        Serial.println("[mqtt] Live publish after manual offline unlock");
       }
     }
-    lastFirebaseConfigMs = millis();
+    lastCloudConfigMs = millis();
     if (storageCountPendingHistory() > 0) {
       storageRequestPendingHistorySync();
       Serial.println("[history] pending auto-sync requested after online services restored");
@@ -744,45 +743,26 @@ void loop() {
       logCommandPollSkipped("fast history upload pending");
     }
 
-    const bool commandTransitionPending = firebaseCommandTransitionPending();
+    const bool commandTransitionPending = mqttCloudCommandTransitionPending();
     const bool localTasksDueAfterCommand = localRealtimeTasksDue(recoveryActive);
     const bool waitingLoad = sessionData.state == SessionState::WAITING_LOAD;
     const bool finishing = sessionData.state == SessionState::FINISHING;
-    const unsigned long firebaseNow = millis();
+    const unsigned long cloudNow = millis();
     const bool requestedHistorySyncDue =
       storagePendingHistorySyncRequested() &&
       (lastPendingHistorySyncMs == 0 ||
-       firebaseNow - lastPendingHistorySyncMs >= REQUESTED_HISTORY_SYNC_RETRY_MS);
+       cloudNow - lastPendingHistorySyncMs >= REQUESTED_HISTORY_SYNC_RETRY_MS);
     const bool periodicHistorySyncDue =
       lastPendingHistorySyncMs == 0 ||
-      firebaseNow - lastPendingHistorySyncMs >= PERIODIC_HISTORY_SYNC_MS;
+      cloudNow - lastPendingHistorySyncMs >= PERIODIC_HISTORY_SYNC_MS;
     const bool fastHistoryUploadDue = storageFastHistoryUploadRequested();
-    const bool cleanupPollDue =
-      lastHistoryCleanupPollMs == 0 ||
-      firebaseNow - lastHistoryCleanupPollMs >= HISTORY_CLEANUP_POLL_INTERVAL_MS;
     const bool requestedHistorySyncEvaluated = requestedHistorySyncDue;
-    const bool cleanupRequiredBeforeHistorySync =
-      fastHistoryUploadDue ||
-      requestedHistorySyncDue ||
-      (commandPollRan && periodicHistorySyncDue);
-    bool cleanupPollEvaluated = false;
-    HistoryCleanupPollResult cleanupResult = HistoryCleanupPollResult::NO_REQUEST;
-
-    if ((cleanupPollDue || cleanupRequiredBeforeHistorySync) &&
-        !localTasksDueAfterCommand &&
-        !commandTransitionPending) {
-      cleanupPollEvaluated = true;
-      lastHistoryCleanupPollMs = millis();
-      if (waitingLoad) {
-        cleanupResult = HistoryCleanupPollResult::SKIPPED_UNSAFE;
-        Serial.println("[history-cleanup] skipped reason=waiting load");
-      } else if (sessionIsActive()) {
-        cleanupResult = HistoryCleanupPollResult::SKIPPED_UNSAFE;
-        Serial.println("[history-cleanup] skipped reason=active session");
-      } else {
-        cleanupResult = firebasePollHistoryCleanup();
-      }
-    }
+    const bool cloudSyncSafe =
+      !localTasksDueAfterCommand &&
+      !commandTransitionPending &&
+      !waitingLoad &&
+      !finishing &&
+      !sessionIsActive();
 
     if (fastHistoryUploadDue) {
       if (waitingLoad) {
@@ -791,10 +771,8 @@ void loop() {
         Serial.println("[history] fast upload skipped reason=transition pending");
       } else if (sessionIsActive()) {
         Serial.println("[history] fast upload skipped reason=active session");
-      } else if (!cleanupPollEvaluated ||
-          (cleanupResult != HistoryCleanupPollResult::NO_REQUEST &&
-           cleanupResult != HistoryCleanupPollResult::PROCESSED)) {
-        Serial.println("[history] fast upload skipped reason=cleanup unavailable");
+      } else if (!cloudSyncSafe) {
+        Serial.println("[history] fast upload skipped reason=local task priority");
       } else {
         storageUploadFastCompletedSession();
       }
@@ -803,22 +781,20 @@ void loop() {
     if (requestedHistorySyncDue) {
       Serial.println("[history] auto-sync requested=true");
       if (fastHistoryUploadDue) {
-        lastPendingHistorySyncMs = firebaseNow;
+        lastPendingHistorySyncMs = cloudNow;
         Serial.println("[history] auto-sync skipped reason=fast upload pending");
       } else if (waitingLoad) {
-        lastPendingHistorySyncMs = firebaseNow;
+        lastPendingHistorySyncMs = cloudNow;
         Serial.println("[history] auto-sync skipped reason=WAITING_LOAD");
       } else if (finishing || commandTransitionPending) {
-        lastPendingHistorySyncMs = firebaseNow;
+        lastPendingHistorySyncMs = cloudNow;
         Serial.println("[history] auto-sync skipped reason=transition pending");
       } else if (sessionIsActive()) {
-        lastPendingHistorySyncMs = firebaseNow;
+        lastPendingHistorySyncMs = cloudNow;
         Serial.println("[history] auto-sync skipped reason=active session");
-      } else if (!cleanupPollEvaluated ||
-          (cleanupResult != HistoryCleanupPollResult::NO_REQUEST &&
-           cleanupResult != HistoryCleanupPollResult::PROCESSED)) {
-        lastPendingHistorySyncMs = firebaseNow;
-        Serial.println("[history] auto-sync skipped reason=cleanup unavailable");
+      } else if (!cloudSyncSafe) {
+        lastPendingHistorySyncMs = cloudNow;
+        Serial.println("[history] auto-sync skipped reason=local task priority");
       } else {
         if (sessionData.state == SessionState::FINISHED) {
           Serial.println("[history] auto-sync allowed after STOP");
@@ -827,7 +803,7 @@ void loop() {
         Serial.println("[history] auto-sync started");
         Serial.print("[timing] history sync started millis=");
         Serial.println(millis());
-        storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
+        storageSyncPendingHistoryToCloud(AUTO_HISTORY_SYNC_MAX_UPLOADS);
         Serial.println("[history] sync completed");
         Serial.print("[timing] history sync completed millis=");
         Serial.println(millis());
@@ -835,18 +811,18 @@ void loop() {
     }
 
     if (requestedHistorySyncEvaluated) {
-      // Do not repeat requested cleanup/sync or start optional Firebase work this loop.
+      // Do not repeat requested cloud work in this loop.
     } else if (fastHistoryUploadDue) {
-      // Do not start optional Firebase work before the just-finished session upload settles.
+      // Do not start optional cloud work before the just-finished session upload settles.
     } else if (recoveryCompletedOnline && !waitingLoad && !localTasksDueAfterCommand) {
-      lastFirebaseLiveMs = firebaseNow;
-      firebasePublishLive();
+      lastCloudLiveMs = cloudNow;
+      mqttStateSyncUpdate();
     } else if (commandPollRan &&
         !waitingLoad &&
         !localTasksDueAfterCommand &&
-        (lastFirebaseLiveMs == 0 || firebaseNow - lastFirebaseLiveMs >= 2000UL)) {
-      lastFirebaseLiveMs = firebaseNow;
-      firebasePublishLive();
+        (lastCloudLiveMs == 0 || cloudNow - lastCloudLiveMs >= 2000UL)) {
+      lastCloudLiveMs = cloudNow;
+      mqttStateSyncUpdate();
     } else if (commandPollRan &&
         !localTasksDueAfterCommand &&
         !commandTransitionPending &&
@@ -855,16 +831,14 @@ void loop() {
         Serial.println("[history] auto-sync skipped reason=unsafe session state");
       } else if (sessionIsActive()) {
         Serial.println("[history] auto-sync skipped reason=active session");
-      } else if (!cleanupPollEvaluated ||
-          (cleanupResult != HistoryCleanupPollResult::NO_REQUEST &&
-           cleanupResult != HistoryCleanupPollResult::PROCESSED)) {
-        Serial.println("[history] auto-sync skipped reason=cleanup unavailable");
+      } else if (!cloudSyncSafe) {
+        Serial.println("[history] auto-sync skipped reason=local task priority");
       } else {
         lastPendingHistorySyncMs = millis();
         Serial.println("[history] auto-sync started");
         Serial.print("[timing] history sync started millis=");
         Serial.println(millis());
-        storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS);
+        storageSyncPendingHistoryToCloud(AUTO_HISTORY_SYNC_MAX_UPLOADS);
         Serial.println("[history] sync completed");
         Serial.print("[timing] history sync completed millis=");
         Serial.println(millis());
@@ -873,21 +847,14 @@ void loop() {
         !localTasksDueAfterCommand &&
         appConfig.configPendingSync &&
         !commandTransitionPending &&
-        !firebaseDeviceConfigPushBlocked() &&
-        (lastFirebaseConfigMs == 0 || firebaseNow - lastFirebaseConfigMs >= 30000UL)) {
-      lastFirebaseConfigMs = firebaseNow;
-      Serial.println("[config] Syncing pending config to Firebase");
-      if (firebasePushDeviceConfig()) {
+        (lastCloudConfigMs == 0 || cloudNow - lastCloudConfigMs >= 30000UL)) {
+      lastCloudConfigMs = cloudNow;
+      Serial.println("[config] Syncing pending config to MQTT");
+      if (mqttCloudPublishLocalConfig()) {
         Serial.println("[config] Pending config sync OK");
       } else {
         Serial.println("[config] Pending config sync FAIL");
       }
-    } else if (commandPollRan &&
-        !localTasksDueAfterCommand &&
-        !commandTransitionPending &&
-        (lastFirebaseConfigMs == 0 || firebaseNow - lastFirebaseConfigMs >= 30000UL)) {
-      lastFirebaseConfigMs = firebaseNow;
-      firebaseReadConfig();
     }
   }
   

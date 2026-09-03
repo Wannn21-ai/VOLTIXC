@@ -3,12 +3,10 @@ import {
   startStatusWatcher, applyTheme, applyLanguage,
   loadAndApplySettings, tr
 } from "./auth-guard.js";
-import { auth, db, ref, set, get, update } from "./firebase-config.js";
+import { auth } from "./firebase-config.js";
 import { updateProfile } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { authenticatedApi } from "./cloud-api.js";
 import { loadDeviceHistory } from "./local-history.js";
-import {
-  deleteAllPathsForSessions, cleanupRequestForAll, deleteFirebasePaths
-} from "./history-delete.js";
 import { getCurrentDevice, readableFirebaseError } from "./user-state.js";
 
 const user = await requireAuth();
@@ -27,8 +25,6 @@ try {
 // FIX: Deklarasikan USD_RATE di ATAS segalanya supaya tidak terjadi
 // "Cannot access before initialization" saat applyToUI() → updateConvertedPreview()
 const USD_RATE      = 16500;
-const SETTINGS_PATH = `users/${uid}/settings`;
-const HISTORY_PATH  = `users/${uid}/history`;
 
 // ================= DEFAULTS =================
 const DEFAULTS = {
@@ -52,7 +48,7 @@ let settings = { ...DEFAULTS };
 // dan updateConvertedPreview, supaya tidak ada referensi ke fungsi/const
 // yang belum diinisialisasi.
 
-function sanitizeForFirebase(obj) {
+function sanitizeSettingsPayload(obj) {
   const clean = {};
   for (const [key, val] of Object.entries(obj)) {
     if (val !== undefined && val !== null) clean[key] = val;
@@ -103,81 +99,19 @@ function setBtnLoading(btnId, loading, originalText) {
   if (span) span.textContent = loading ? tr("saving") : originalText;
 }
 
-async function saveSettingsToFirebase(partial) {
-  const payload  = sanitizeForFirebase(partial);
-  const merged   = sanitizeForFirebase({ ...settings, ...payload });
-  const freshRef = ref(db, SETTINGS_PATH);
-  let savedOk    = false;
-
-  try {
-    await update(freshRef, payload);
-    savedOk = true;
-    console.log("[SEM] Settings saved via update():", payload);
-  } catch (updateErr) {
-    console.warn("[SEM] update() gagal, fallback ke set():", updateErr.message);
-    try {
-      await set(freshRef, merged);
-      savedOk = true;
-      console.log("[SEM] Settings saved via set() fallback");
-    } catch (setErr) {
-      console.error("[SEM] set() juga gagal:", setErr.message);
-      throw setErr;
-    }
-  }
-
-  if (savedOk) {
-    settings = merged;
-    localStorage.setItem(`sem_settings_${uid}`, JSON.stringify(settings));
-  }
+async function saveSettingsToCloud(partial) {
+  const payload  = sanitizeSettingsPayload(partial);
+  const merged   = sanitizeSettingsPayload({ ...settings, ...payload });
+  await authenticatedApi(user, "/api/settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  settings = merged;
+  localStorage.setItem(`sem_settings_${uid}`, JSON.stringify(settings));
 }
 
 async function syncSharedConfigToSettings() {
-  if (!currentDevice) return;
-  try {
-    const snap = await get(ref(db, `devices/${currentDevice.id}/config`));
-    if (!snap.exists()) return;
-    const shared = snap.val() || {};
-    const sharedThreshold = Number(shared.overloadThreshold ?? shared.threshold);
-    const sharedTariff = Number(shared.electricityCostPerKwh ?? shared.tariff ?? shared.tarif);
-    const next = { ...settings };
-    if (Number.isFinite(sharedThreshold) && sharedThreshold > 0) next.overloadThreshold = sharedThreshold;
-    if (Number.isFinite(sharedTariff) && sharedTariff > 0) next.tariff = sharedTariff;
-    if (shared.currency) next.currency = shared.currency;
-    ["overloadWarningPercent", "loadPowerThreshold", "loadCurrentThreshold",
-     "loadRemovedDelaySec", "offlineTimeoutSec", "checkpointIntervalSec"].forEach(key => {
-      const value = Number(shared[key]);
-      if (Number.isFinite(value) && value > 0) next[key] = value;
-    });
-    if (JSON.stringify(next) === JSON.stringify(settings)) return;
-
-    settings = next;
-    localStorage.setItem(`sem_settings_${uid}`, JSON.stringify(settings));
-    await update(ref(db, SETTINGS_PATH), {
-      overloadThreshold: settings.overloadThreshold,
-      tariff: settings.tariff
-    });
-  } catch (e) {
-    console.warn("[SEM] Gagal sync config global ke settings:", e);
-  }
-}
-
-function cleanupStorageKey(deviceId) {
-  return `sem_pending_history_cleanup_${uid}_${deviceId || ""}`;
-}
-
-async function queueDeviceCleanup(cleanupRequest, cloudDeleted = true) {
-  if (!cleanupRequest) {
-    showToast(tr("historyCloudDeletedNoCleanup"), "error");
-    return false;
-  }
-  await set(ref(db, cleanupRequest.path), cleanupRequest.payload);
-  const cleanupDeviceId = cleanupRequest.path.split("/")[1] || currentDevice?.id;
-  const requestId = cleanupRequest.payload.requestId;
-  if (cleanupDeviceId) {
-    sessionStorage.setItem(cleanupStorageKey(cleanupDeviceId), requestId);
-  }
-  showToast(cloudDeleted ? tr("historyCloudDeletedCleanupPending") : tr("historyDeviceCleanupPending"), "");
-  return true;
+  settings = await loadAndApplySettings(uid);
 }
 
 // ================= LOAD SETTINGS =================
@@ -226,23 +160,7 @@ document.getElementById("btn-save-settings").addEventListener("click", async () 
   setBtnLoading("btn-save-settings", true, originalText);
 
   try {
-    await saveSettingsToFirebase({ currency, tariff, overloadThreshold: threshold });
-    try {
-      if (currentDevice) await update(ref(db, `devices/${currentDevice.id}/config`), {
-        tariff,
-        currency,
-        overloadThreshold: threshold,
-        overloadWarningPercent: settings.overloadWarningPercent,
-        loadPowerThreshold: settings.loadPowerThreshold,
-        loadCurrentThreshold: settings.loadCurrentThreshold,
-        loadRemovedDelaySec: settings.loadRemovedDelaySec,
-        offlineTimeoutSec: settings.offlineTimeoutSec,
-        checkpointIntervalSec: settings.checkpointIntervalSec
-      });
-      await update(ref(db, SETTINGS_PATH), { overloadThreshold: threshold, tariff });
-    } catch (e) {
-      console.warn("[SEM] Gagal sync config device:", e);
-    }
+    await saveSettingsToCloud({ currency, tariff, overloadThreshold: threshold });
     showToast(tr("settingsSaved"), "success");
   } catch (e) {
     console.error("[SEM] Gagal simpan pricing settings:", e);
@@ -284,7 +202,7 @@ document.getElementById("btn-save-appearance").addEventListener("click", async (
   setBtnLoading("btn-save-appearance", true, originalText);
 
   try {
-    await saveSettingsToFirebase({ theme, language });
+    await saveSettingsToCloud({ theme, language });
     localStorage.setItem(`sem_theme_${uid}`, theme);
     applyTheme(theme);
     applyLanguage(language);
@@ -320,7 +238,7 @@ document.getElementById("btn-save-notif").addEventListener("click", async () => 
   setBtnLoading("btn-save-notif", true, originalText);
 
   try {
-    await saveSettingsToFirebase(partial);
+    await saveSettingsToCloud(partial);
     showToast(tr("settingsPreferencesSaved"), "success");
   } catch (e) {
     console.error("[SEM] Gagal simpan notifikasi:", e);
@@ -335,9 +253,8 @@ document.getElementById("btn-export-all").addEventListener("click", async () => 
   const btn = document.getElementById("btn-export-all");
   btn.disabled = true;
   try {
-    const snap = await get(ref(db, HISTORY_PATH));
-    if (!snap.exists()) { showToast(tr("settingsExportNoData"), "error"); return; }
-    const history = Object.values(snap.val()).sort((a, b) => b.timestamp - a.timestamp);
+    const history = await loadDeviceHistory(uid);
+    if (history.length === 0) { showToast(tr("settingsExportNoData"), "error"); return; }
     let csv = "Name,Duration,Power (W),Energy (kWh),Cost,Date\n";
     history.forEach(s => { csv += `${s.name},${s.duration},${s.power},${s.energy},${s.cost},${s.date}\n`; });
     const blob = new Blob([csv], { type: "text/csv" });
@@ -367,26 +284,12 @@ document.getElementById("btn-delete-all").addEventListener("click", async () => 
       return;
     }
 
-    const activeDeviceId = currentDevice?.id || "";
-    const deletePaths = deleteAllPathsForSessions(historyData, activeDeviceId);
-    const cleanupRequest = cleanupRequestForAll(historyData, activeDeviceId, uid);
-
-    if (deletePaths.length === 0 && !cleanupRequest) {
-      showToast(tr("historyResolveDeviceFail"), "error");
-      return;
-    }
     if (!confirm(tr("historyDeleteAllConfirm"))) return;
-
-    const result = await deleteFirebasePaths(deletePaths, path => set(ref(db, path), null));
-
-    if (result.permissionDenied) {
-      showToast(tr("historyDeleteDenied"), "error");
-    } else if (result.successCount > 0 || deletePaths.length === 0) {
-      await queueDeviceCleanup(cleanupRequest, result.successCount > 0);
-      showToast(tr("settingsDeleteSuccess"), "success");
-    } else {
-      showToast(tr("settingsDeleteFailed"), "error");
-    }
+    await authenticatedApi(user, "/api/history", {
+      method: "DELETE",
+      body: JSON.stringify({ all: true }),
+    });
+    showToast(tr("settingsDeleteSuccess"), "success");
   } catch (e) {
     console.error("[SEM] Gagal hapus semua history:", e);
     showToast(tr("settingsDeleteFailed"), "error"); return;

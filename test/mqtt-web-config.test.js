@@ -13,7 +13,6 @@ const COMPLETE_ENV = Object.freeze({
   FIREBASE_PROJECT_ID: "test-project",
   FIREBASE_CLIENT_EMAIL: "firebase@example.test",
   FIREBASE_PRIVATE_KEY: "not-a-real-private-key",
-  FIREBASE_DATABASE_URL: "https://example.test",
   MQTT_WEB_USERNAME: "limited-web-user",
   MQTT_WEB_PASSWORD: "not-a-real-password",
 });
@@ -42,7 +41,6 @@ test("MQTT web config fails closed when server env is incomplete", async () => {
     "FIREBASE_PROJECT_ID",
     "FIREBASE_CLIENT_EMAIL",
     "FIREBASE_PRIVATE_KEY",
-    "FIREBASE_DATABASE_URL",
     "MQTT_WEB_USERNAME",
     "MQTT_WEB_PASSWORD",
   ]);
@@ -70,15 +68,10 @@ test("verified Firebase user receives only scoped connection configuration", asy
   const response = makeResponse();
   const handler = createHandler({
     env: COMPLETE_ENV,
-    getAdminServices: async () => ({
-      auth: {
-        async verifyIdToken(token, checkRevoked) {
-          verifiedToken = token;
-          assert.equal(checkRevoked, true);
-          return { uid: "user-1" };
-        },
-      },
-    }),
+    verifyUser: async request => {
+      verifiedToken = bearerToken(request.headers.authorization);
+      return { uid: "user-1" };
+    },
   });
 
   await handler({
@@ -103,9 +96,7 @@ test("revoked or invalid Firebase token is rejected without MQTT config", async 
   const response = makeResponse();
   const handler = createHandler({
     env: COMPLETE_ENV,
-    getAdminServices: async () => ({
-      auth: { verifyIdToken: async () => { throw new Error("invalid"); } },
-    }),
+    verifyUser: async () => { throw new Error("invalid"); },
   });
 
   await handler({

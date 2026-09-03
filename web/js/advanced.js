@@ -2,7 +2,6 @@ import {
   requireAuth, renderShell, fillUserInfo, showToast,
   startStatusWatcher, loadAndApplySettings, tr
 } from "./auth-guard.js";
-import { db, ref, get } from "./firebase-config.js";
 import { loadDeviceHistory } from "./local-history.js";
 
 const user = await requireAuth();
@@ -277,9 +276,7 @@ async function loadSelectedSession() {
   const allHistory = await loadDeviceHistory(uid);
   const finalFirst = allHistory.find(item => item._key === selectedKey);
   if (finalFirst) return finalFirst;
-
-  const snapshot = await get(ref(db, `users/${uid}/history/${selectedKey}`));
-  return snapshot.exists() ? { ...snapshot.val(), _key: selectedKey } : null;
+  return null;
 }
 
 try {

@@ -28,7 +28,7 @@ export async function startMqttLive(user, handlers = {}) {
   };
 
   if (!globalThis.mqtt?.connect) {
-    console.warn("[mqtt-web] MQTT.js browser bundle unavailable; using Firebase fallback");
+    console.warn("[mqtt-web] MQTT.js browser bundle unavailable; using backend fallback");
     notifyConnection(false, "library_missing");
     return { configured: false, stop() {} };
   }
@@ -37,12 +37,12 @@ export async function startMqttLive(user, handlers = {}) {
   try {
     config = await loadMqttWebConfig(user);
   } catch (error) {
-    console.warn("[mqtt-web] Configuration unavailable; using Firebase fallback:", error.message);
+    console.warn("[mqtt-web] Configuration unavailable; using backend fallback:", error.message);
     notifyConnection(false, "configuration_unavailable");
     return { configured: false, stop() {} };
   }
   if (!config) {
-    console.info("[mqtt-web] Disabled in local visual mode; using Firebase fallback");
+    console.info("[mqtt-web] Disabled in local visual mode; using backend fallback");
     notifyConnection(false, "configuration_missing");
     return { configured: false, stop() {} };
   }
@@ -52,12 +52,14 @@ export async function startMqttLive(user, handlers = {}) {
     telemetry: `${config.baseTopic}/telemetry`,
     session: `${config.baseTopic}/session`,
     event: `${config.baseTopic}/event`,
+    commandAck: `${config.baseTopic}/command/ack`,
   });
   const topicHandlers = new Map([
     [topics.status, handlers.onStatus],
     [topics.telemetry, handlers.onTelemetry],
     [topics.session, handlers.onSession],
     [topics.event, handlers.onEvent],
+    [topics.commandAck, handlers.onCommandAck],
   ]);
 
   const client = globalThis.mqtt.connect(config.url, {
@@ -79,6 +81,7 @@ export async function startMqttLive(user, handlers = {}) {
       [topics.telemetry]: { qos: 0 },
       [topics.session]: { qos: 1 },
       [topics.event]: { qos: 1 },
+      [topics.commandAck]: { qos: 1 },
     }, error => {
       if (error) {
         console.warn("[mqtt-web] Subscription failed:", error.message);

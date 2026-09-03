@@ -1,12 +1,9 @@
-import { auth, db, ref, get, set } from "./firebase-config.js";
+import { auth } from "./firebase-config.js";
+import { authenticatedApi } from "./cloud-api.js";
 import { getCurrentDevice } from "./user-state.js";
 
 const LOCAL_FETCH_TIMEOUT_MS = 1500;
 let lastHistoryReadState = { kind: "ok", message: "" };
-
-function isPermissionDenied(error) {
-  return error?.code === "PERMISSION_DENIED" || error?.code === "database/permission-denied";
-}
 
 function setHistoryReadState(kind, message = "") {
   lastHistoryReadState = { kind, message };
@@ -42,14 +39,7 @@ function formatDuration(value) {
   return `${h}:${m}:${s}`;
 }
 
-function historyIdentity(session) {
-  if (session.id) return `sid:${session.id}`;
-  if (session.sessionId) return `sid:${session.sessionId}`;
-  if (session.timestamp) return `ts:${Math.round(session.timestamp / 1000)}:${session.name || ""}`;
-  return `key:${session._key || Math.random().toString(36).slice(2)}`;
-}
-
-function normalizeFirebaseHistory(raw, source = "firebase", deviceId = "") {
+function normalizeCloudHistory(raw, source = "cloud-api", deviceId = "") {
   if (!raw) return [];
   return Object.entries(raw)
     .filter(([, val]) => val && typeof val === "object")
@@ -93,98 +83,19 @@ function normalizeLocalHistory(entries) {
 }
 
 async function getEspHistoryUrl(uid, deviceId) {
-  if (deviceId) {
-    try {
-      const snap = await get(ref(db, `devices/${deviceId}/live/system`));
-      const sys = snap.exists() ? snap.val() : {};
-      const ip = sys.ip || sys.localIp || "";
-      if (ip) {
-        localStorage.setItem(`sem_esp_ip_${uid}`, ip);
-        return `http://${ip}/history`;
-      }
-    } catch {}
-  }
-
   const cachedIp = localStorage.getItem(`sem_esp_ip_${uid}`);
   return cachedIp ? `http://${cachedIp}/history` : "";
-}
-
-function normalizeCompletedSession(session, sessionId, deviceId, uid) {
-  const timestamp = toTimestampMs(session.endTime || session.timestamp || session.startTime) || Date.now();
-  const sourcePath = `/devices/${deviceId}/completedSessions/${sessionId}`;
-  return {
-    ...session,
-    id: session.id || sessionId,
-    sessionId: session.sessionId || session.id || sessionId,
-    deviceId: session.deviceId || deviceId,
-    name: session.name || "Device",
-    duration: formatDuration(session.durationSec ?? session.duration),
-    power: Number(session.powerAvg ?? session.power ?? 0),
-    energy: Number(session.energyKwh ?? session.energy ?? 0),
-    cost: Number(session.cost || 0),
-    costText: session.costText || formatCost(session.cost),
-    date: session.date || formatDate(timestamp),
-    timestamp,
-    syncStatus: "SYNCED",
-    pendingSync: false,
-    createdFrom: session.createdFrom || "ESP32",
-    copiedAt: Date.now(),
-    uid,
-    sourcePath
-  };
-}
-
-const activeImports = new Map();
-
-async function importCompletedSessions(uid) {
-  let currentDevice;
-  try {
-    currentDevice = await getCurrentDevice(uid);
-  } catch {
-    return 0;
-  }
-  if (!currentDevice) return 0;
-
-  const deviceId = currentDevice.id;
-  try {
-    const finalHistorySnap = await get(ref(db, `devices/${deviceId}/history`));
-    if (finalHistorySnap.exists()) return 0;
-
-    const queueSnap = await get(ref(db, `devices/${deviceId}/completedSessions`));
-    const sessions = queueSnap.val() || {};
-
-    let copied = 0;
-    for (const [key, session] of Object.entries(sessions)) {
-      if (!session || typeof session !== "object") continue;
-      const sessionId = String(session.id || session.sessionId || key);
-      if (!sessionId) continue;
-
-      const userHistoryRef = ref(db, `users/${uid}/history/${sessionId}`);
-      const existing = await get(userHistoryRef);
-      if (existing.exists()) continue;
-
-      await set(userHistoryRef, normalizeCompletedSession(session, sessionId, deviceId, uid));
-      copied++;
-    }
-
-    return copied;
-  } catch (e) {
-    if (!isPermissionDenied(e)) console.warn("[History Import] skipped:", e?.message || e);
-    return 0;
-  }
 }
 
 export async function importCompletedSessionsForCurrentUser(user = auth.currentUser) {
   const uid = typeof user === "string" ? user : user?.uid;
   if (!uid) {
-    console.warn("[History Import] skipped: Firebase Auth currentUser is not available");
+    console.warn("[History Import] skipped: authenticated user is not available");
     return 0;
   }
-
-  if (activeImports.has(uid)) return activeImports.get(uid);
-  const task = importCompletedSessions(uid).finally(() => activeImports.delete(uid));
-  activeImports.set(uid, task);
-  return task;
+  // The backend atomically assigns unowned offline sessions to the current
+  // authenticated user when /api/history is read.
+  return 0;
 }
 
 async function fetchLocalHistory(uid, deviceId) {
@@ -205,63 +116,22 @@ async function fetchLocalHistory(uid, deviceId) {
   }
 }
 
-async function fetchHistoryPath(path, source, deviceId = "") {
-  try {
-    const snap = await get(ref(db, path));
-    return {
-      sessions: snap.exists() ? normalizeFirebaseHistory(snap.val(), source, deviceId) : [],
-      denied: false
-    };
-  } catch (e) {
-    if (!isPermissionDenied(e)) console.warn(`[History] ${source} unavailable:`, e?.message || e);
-    return { sessions: [], denied: isPermissionDenied(e) };
-  }
-}
-
 export async function loadDeviceHistory(uid) {
   setHistoryReadState("ok");
-  let currentDevice = null;
-  let deviceLookupDenied = false;
-  try {
-    currentDevice = await getCurrentDevice(uid);
-  } catch (error) {
-    if (isPermissionDenied(error)) {
-      deviceLookupDenied = true;
-      setHistoryReadState("permission", "Access denied for this device history");
-    }
-  }
-
+  const currentDevice = await getCurrentDevice(uid).catch(() => null);
   const deviceId = currentDevice?.id || "";
-  const [local, finalHistory, completedSessions, userHistory] = await Promise.all([
-    fetchLocalHistory(uid, deviceId),
-    deviceId
-      ? fetchHistoryPath(`devices/${deviceId}/history`, "device-history", deviceId)
-      : Promise.resolve({ sessions: [], denied: false }),
-    deviceId
-      ? fetchHistoryPath(`devices/${deviceId}/completedSessions`, "completed-sessions", deviceId)
-      : Promise.resolve({ sessions: [], denied: false }),
-    fetchHistoryPath(`users/${uid}/history`, "user-history", deviceId)
-  ]);
-
-  const noHistory = local.length === 0 &&
-    finalHistory.sessions.length === 0 &&
-    completedSessions.sessions.length === 0 &&
-    userHistory.sessions.length === 0;
-  if (!deviceId && !deviceLookupDenied && noHistory) {
-    setHistoryReadState("no-device", "Pair a device to view its history");
-  } else if (noHistory && (deviceLookupDenied || finalHistory.denied || userHistory.denied)) {
-    setHistoryReadState("permission", "Access denied for this device history");
+  try {
+    const cloud = await authenticatedApi(auth.currentUser, "/api/history");
+    return normalizeCloudHistory(
+      Object.fromEntries((cloud.sessions || []).map(session => [session.sessionId || session.id, session])),
+      "cloud-api",
+      deviceId,
+    ).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  } catch (error) {
+    // LittleFS is a recovery fallback only. Do not merge it into a successful
+    // cloud response because a history item deleted from the cloud could then
+    // appear again while the ESP32 is reachable on the LAN.
+    setHistoryReadState("unavailable", error.message);
+    return fetchLocalHistory(uid, deviceId);
   }
-
-  if (deviceId && finalHistory.sessions.length === 0) {
-    await importCompletedSessionsForCurrentUser(uid);
-  }
-
-  const merged = new Map();
-  local.forEach(session => merged.set(historyIdentity(session), session));
-  userHistory.sessions.forEach(session => merged.set(historyIdentity(session), session));
-  completedSessions.sessions.forEach(session => merged.set(historyIdentity(session), session));
-  finalHistory.sessions.forEach(session => merged.set(historyIdentity(session), session));
-
-  return [...merged.values()].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 }

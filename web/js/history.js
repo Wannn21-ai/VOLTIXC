@@ -2,16 +2,8 @@ import {
   requireAuth, renderShell, fillUserInfo, showToast,
   startStatusWatcher, loadAndApplySettings, tr
 } from "./auth-guard.js";
-import { db, ref, set, onValue } from "./firebase-config.js";
+import { authenticatedApi } from "./cloud-api.js";
 import { getHistoryReadState, loadDeviceHistory } from "./local-history.js";
-import { getCurrentDevice } from "./user-state.js";
-import {
-  cleanupRequestForAll,
-  cleanupRequestForSession,
-  deleteAllPathsForSessions,
-  deleteFirebasePaths,
-  deletePathsForSession,
-} from "./history-delete.js";
 
 const user = await requireAuth();
 renderShell("history", "HISTORY");
@@ -21,7 +13,6 @@ const uid = user.uid;
 
 await loadAndApplySettings(uid);
 
-const historyRef = ref(db, `users/${uid}/history`);
 const listEl = document.getElementById("history-list");
 const countEl = document.getElementById("history-count");
 const searchInput = document.getElementById("search-input");
@@ -36,26 +27,7 @@ const btnDeleteAll = document.getElementById("btn-delete-all");
 
 let historyData = [];
 let refreshToken = 0;
-let activeDeviceId = "";
-let pendingCleanupRequestId = "";
 let historyLoading = true;
-
-function cleanupStorageKey(deviceId) {
-  return `sem_pending_history_cleanup_${uid}_${deviceId}`;
-}
-
-async function queueDeviceCleanup(cleanupRequest, cloudDeleted = true) {
-  if (!cleanupRequest) {
-    showToast(tr("historyCloudDeletedNoCleanup"), "error");
-    return false;
-  }
-  await set(ref(db, cleanupRequest.path), cleanupRequest.payload);
-  pendingCleanupRequestId = cleanupRequest.payload.requestId;
-  const cleanupDeviceId = cleanupRequest.path.split("/")[1] || activeDeviceId;
-  sessionStorage.setItem(cleanupStorageKey(cleanupDeviceId), pendingCleanupRequestId);
-  showToast(cloudDeleted ? tr("historyCloudDeletedCleanupPending") : tr("historyDeviceCleanupPending"), "");
-  return true;
-}
 
 function firstValue(session, keys) {
   for (const key of keys) {
@@ -372,29 +344,8 @@ async function refreshHistory() {
   }
 }
 
-const historyWatchRefs = [historyRef];
-try {
-  const currentDevice = await getCurrentDevice(uid);
-  if (currentDevice?.id) {
-    activeDeviceId = currentDevice.id;
-    pendingCleanupRequestId = sessionStorage.getItem(cleanupStorageKey(activeDeviceId)) || "";
-    historyWatchRefs.push(
-      ref(db, `devices/${currentDevice.id}/history`),
-      ref(db, `devices/${currentDevice.id}/completedSessions`)
-    );
-    onValue(ref(db, `devices/${currentDevice.id}/historyCleanup/lastAck`), snapshot => {
-      const ack = snapshot.val();
-      if (!pendingCleanupRequestId || ack?.requestId !== pendingCleanupRequestId) return;
-      if (ack?.status === "DONE") {
-        sessionStorage.removeItem(cleanupStorageKey(activeDeviceId));
-        pendingCleanupRequestId = "";
-        showToast(tr("historyDeviceLocalCleared"), "success");
-      }
-    });
-  }
-} catch {}
-historyWatchRefs.forEach(sourceRef => onValue(sourceRef, refreshHistory, refreshHistory));
 await refreshHistory();
+setInterval(refreshHistory, 5000);
 
 [searchInput, deviceFilter, modeFilter, statusFilter, dateFilter, sortSelect].forEach(control => {
   control.addEventListener(control === searchInput ? "input" : "change", render);
@@ -422,24 +373,21 @@ listEl.addEventListener("click", async event => {
     event.stopPropagation();
     const key = event.target.dataset.key;
     const session = historyData.find(item => item._key === key);
-    const deletePaths = deletePathsForSession(session, activeDeviceId);
-    const cleanupRequest = cleanupRequestForSession(session, activeDeviceId, uid);
-    if (deletePaths.length === 0 && !cleanupRequest) {
+    const sessionId = session?.sessionId || session?.id;
+    if (!sessionId) {
       showToast(tr("historyResolveSourceFail"), "error");
       return;
     }
     if (!confirm(tr("historyDeleteSessionConfirm"))) return;
-    const result = await deleteFirebasePaths(deletePaths, path => set(ref(db, path), null));
-    if (result.permissionDenied) {
-      showToast(tr("historyDeleteDenied"), "error");
-    } else if (result.successCount > 0 || deletePaths.length === 0) {
-      try {
-        await queueDeviceCleanup(cleanupRequest, result.successCount > 0);
-      } catch (error) {
-        console.error("[history] Device cleanup request failed", error);
-        showToast(tr("historyCleanupRequestFailed"), "error");
-      }
-    } else {
+    try {
+      await authenticatedApi(user, "/api/history", {
+        method: "DELETE",
+        body: JSON.stringify({ sessionId }),
+      });
+      await refreshHistory();
+      showToast(tr("historyDeleteSuccess"), "success");
+    } catch (error) {
+      console.error("[history] Delete failed", error);
       showToast(tr("historyDeleteFailed"), "error");
     }
     return;
@@ -471,24 +419,16 @@ btnDeleteAll.addEventListener("click", async () => {
     showToast(tr("historyNothingDelete"), "error");
     return;
   }
-  const deletePaths = deleteAllPathsForSessions(historyData, activeDeviceId);
-  const cleanupRequest = cleanupRequestForAll(historyData, activeDeviceId, uid);
-  if (deletePaths.length === 0 && !cleanupRequest) {
-    showToast(tr("historyResolveDeviceFail"), "error");
-    return;
-  }
   if (!confirm(tr("historyDeleteAllConfirm"))) return;
-  const result = await deleteFirebasePaths(deletePaths, path => set(ref(db, path), null));
-  if (result.permissionDenied) {
-    showToast(tr("historyDeleteDenied"), "error");
-  } else if (result.successCount > 0 || deletePaths.length === 0) {
-    try {
-      await queueDeviceCleanup(cleanupRequest, result.successCount > 0);
-    } catch (error) {
-      console.error("[history] Device cleanup request failed", error);
-      showToast(tr("historyCleanupRequestFailed"), "error");
-    }
-  } else {
+  try {
+    await authenticatedApi(user, "/api/history", {
+      method: "DELETE",
+      body: JSON.stringify({ all: true }),
+    });
+    await refreshHistory();
+    showToast(tr("historyDeleteSuccess"), "success");
+  } catch (error) {
+    console.error("[history] Delete all failed", error);
     showToast(tr("historyDeleteFailed"), "error");
   }
 });

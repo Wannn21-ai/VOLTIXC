@@ -88,17 +88,18 @@ test("meter scheduler queues one rerun while update is active", async () => {
   assert.equal(updateCount, 2);
 });
 
-test("all dashboard live listeners schedule an immediate meter update", () => {
-  for (const path of ["system", "device", "session"]) {
-    const listenerStart = dashboardSource.indexOf(`onValue(ref(db, \`\${liveBase}/${path}\`)`);
-    const nextListener = dashboardSource.indexOf("onValue(ref(db,", listenerStart + 1);
-    const listenerSource = dashboardSource.slice(
-      listenerStart,
-      nextListener >= 0 ? nextListener : dashboardSource.indexOf("// ================================================================", listenerStart),
-    );
-    assert.equal(listenerStart >= 0, true);
-    assert.match(listenerSource, /scheduleMetersUpdate\(\)/);
+test("all MQTT live handlers schedule an immediate meter update", () => {
+  const mqttStart = dashboardSource.indexOf("startMqttLive(user, {");
+  const mqttEnd = dashboardSource.indexOf("}).catch(error =>", mqttStart);
+  const mqttSource = dashboardSource.slice(mqttStart, mqttEnd);
+  for (const handler of ["onStatus", "onTelemetry", "onSession", "onEvent", "onCommandAck"]) {
+    const handlerStart = mqttSource.indexOf(`${handler}(`);
+    const nextHandler = mqttSource.indexOf("\n  on", handlerStart + 1);
+    const handlerSource = mqttSource.slice(handlerStart, nextHandler >= 0 ? nextHandler : undefined);
+    assert.equal(handlerStart >= 0, true);
+    assert.match(handlerSource, /scheduleMetersUpdate\(\)/);
   }
+  assert.match(dashboardSource, /async function refreshBackendLive\(\)[\s\S]*scheduleMetersUpdate\(\)/);
 });
 
 test("fallback interval is clamped and uses the guarded scheduler", () => {

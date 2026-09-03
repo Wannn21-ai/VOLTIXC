@@ -19,6 +19,8 @@ unsigned long nextStartAttemptMs = 0;
 
 MqttCommandHandler commandHandler = nullptr;
 MqttConfigHandler configHandler = nullptr;
+MqttHistoryAckHandler historyAckHandler = nullptr;
+MqttHistoryCleanupHandler historyCleanupHandler = nullptr;
 
 char inboundPayload[MqttConfig::MAX_INBOUND_PAYLOAD_BYTES + 1];
 char inboundTopic[96];
@@ -75,6 +77,22 @@ bool enqueueJson(
   return messageId >= 0;
 }
 
+bool enqueuePayload(const char* topic, const char* payload, size_t length, int qos, bool retain) {
+  if (!mqttIsConnected || mqttClient == nullptr || payload == nullptr || length == 0) {
+    return false;
+  }
+  const int messageId = esp_mqtt_client_enqueue(
+    mqttClient,
+    topic,
+    payload,
+    static_cast<int>(length),
+    qos,
+    retain ? 1 : 0,
+    qos > 0
+  );
+  return messageId >= 0;
+}
+
 bool publishAvailability(bool online) {
   StaticJsonDocument<64> document;
   document["online"] = online;
@@ -82,7 +100,7 @@ bool publishAvailability(bool online) {
 }
 
 void dispatchCommand(const char* payload, size_t length) {
-  StaticJsonDocument<192> document;
+  StaticJsonDocument<768> document;
   const DeserializationError error = deserializeJson(document, payload, length);
   if (error || !document.is<JsonObject>()) {
     Serial.print("[mqtt] Rejected invalid command JSON: ");
@@ -115,6 +133,29 @@ void dispatchCommand(const char* payload, size_t length) {
     return;
   }
 
+  strlcpy(command.id, document["id"] | "", sizeof(command.id));
+  strlcpy(command.uid, document["uid"] | "", sizeof(command.uid));
+  strlcpy(command.sessionId, document["sessionId"] | "", sizeof(command.sessionId));
+  strlcpy(command.deviceName, document["deviceName"] | "", sizeof(command.deviceName));
+  command.issuedAt = document["issuedAt"] | 0ULL;
+  command.expiresAt = document["expiresAt"] | 0ULL;
+  if (document["tariff"].is<float>()) {
+    command.hasTariff = true;
+    command.tariff = document["tariff"].as<float>();
+  }
+  if (document["overloadThreshold"].is<float>()) {
+    command.hasOverloadThreshold = true;
+    command.overloadThreshold = document["overloadThreshold"].as<float>();
+  }
+  if (document["loadPowerThreshold"].is<float>()) {
+    command.hasLoadPowerThreshold = true;
+    command.loadPowerThreshold = document["loadPowerThreshold"].as<float>();
+  }
+  if (document["loadCurrentThreshold"].is<float>()) {
+    command.hasLoadCurrentThreshold = true;
+    command.loadCurrentThreshold = document["loadCurrentThreshold"].as<float>();
+  }
+
   if (commandHandler != nullptr) {
     commandHandler(command);
     return;
@@ -122,6 +163,19 @@ void dispatchCommand(const char* payload, size_t length) {
 
   Serial.print("[mqtt] Command parsed but not connected to system logic: ");
   Serial.println(commandName(command.type));
+}
+
+void dispatchHistoryAck(const char* payload, size_t length) {
+  StaticJsonDocument<192> document;
+  const DeserializationError error = deserializeJson(document, payload, length);
+  const char* sessionId = document["sessionId"] | "";
+  if (error || sessionId[0] == '\0' || !document["stored"].is<bool>()) {
+    Serial.println("[mqtt] Rejected invalid history ACK");
+    return;
+  }
+  if (historyAckHandler != nullptr) {
+    historyAckHandler(sessionId, document["stored"].as<bool>());
+  }
 }
 
 void dispatchConfig(const char* payload, size_t length) {
@@ -141,11 +195,21 @@ void dispatchConfig(const char* payload, size_t length) {
   Serial.println("[mqtt] Config parsed but not connected to system settings");
 }
 
+void dispatchHistoryCleanup(const char* payload, size_t length) {
+  if (historyCleanupHandler != nullptr) {
+    historyCleanupHandler(payload, length);
+  }
+}
+
 void dispatchInboundMessage() {
   if (topicEquals(inboundTopic, MqttConfig::TOPIC_COMMAND)) {
     dispatchCommand(inboundPayload, inboundExpectedBytes);
   } else if (topicEquals(inboundTopic, MqttConfig::TOPIC_CONFIG)) {
     dispatchConfig(inboundPayload, inboundExpectedBytes);
+  } else if (topicEquals(inboundTopic, MqttConfig::TOPIC_HISTORY_ACK)) {
+    dispatchHistoryAck(inboundPayload, inboundExpectedBytes);
+  } else if (topicEquals(inboundTopic, MqttConfig::TOPIC_HISTORY_CLEANUP)) {
+    dispatchHistoryCleanup(inboundPayload, inboundExpectedBytes);
   } else {
     Serial.print("[mqtt] Ignored unexpected topic: ");
     Serial.println(inboundTopic);
@@ -212,6 +276,8 @@ void handleMqttEvent(
       Serial.println("[mqtt] Connected to HiveMQ Cloud");
       esp_mqtt_client_subscribe(mqttClient, MqttConfig::TOPIC_COMMAND, 1);
       esp_mqtt_client_subscribe(mqttClient, MqttConfig::TOPIC_CONFIG, 1);
+      esp_mqtt_client_subscribe(mqttClient, MqttConfig::TOPIC_HISTORY_ACK, 1);
+      esp_mqtt_client_subscribe(mqttClient, MqttConfig::TOPIC_HISTORY_CLEANUP, 1);
       publishAvailability(true);
       break;
 
@@ -327,6 +393,14 @@ void mqttSetCommandHandler(MqttCommandHandler handler) {
 
 void mqttSetConfigHandler(MqttConfigHandler handler) {
   configHandler = handler;
+}
+
+void mqttSetHistoryAckHandler(MqttHistoryAckHandler handler) {
+  historyAckHandler = handler;
+}
+
+void mqttSetHistoryCleanupHandler(MqttHistoryCleanupHandler handler) {
+  historyCleanupHandler = handler;
 }
 
 bool mqttPublishStatus(bool online, const char* mode, bool relayOn) {
@@ -476,4 +550,53 @@ bool mqttPublishEvent(
     document["power"] = power;
   }
   return enqueueJson(MqttConfig::TOPIC_EVENT, document, 1, false);
+}
+
+bool mqttPublishCommandAck(
+  const char* id,
+  const char* command,
+  const char* status,
+  const char* message,
+  const char* reason
+) {
+  if (!hasText(id) || !hasText(command) || !hasText(status)) return false;
+  StaticJsonDocument<384> document;
+  document["deviceId"] = MqttConfig::DEVICE_ID;
+  document["id"] = id;
+  document["command"] = command;
+  document["status"] = status;
+  document["message"] = hasText(message) ? message : "Command processed";
+  if (hasText(reason)) document["reason"] = reason;
+  document["processedAtUptimeMs"] = millis();
+  return enqueueJson(MqttConfig::TOPIC_COMMAND_ACK, document, 1, false);
+}
+
+bool mqttPublishHistoryJson(const char* json, size_t length) {
+  if (length > 16384) {
+    Serial.println("[mqtt] History payload too large");
+    return false;
+  }
+  return enqueuePayload(MqttConfig::TOPIC_HISTORY, json, length, 1, false);
+}
+
+bool mqttPublishHistoryCleanupAck(
+  const char* requestId,
+  const char* status,
+  int deleted
+) {
+  if (!hasText(requestId) || !hasText(status)) return false;
+  StaticJsonDocument<256> document;
+  document["deviceId"] = MqttConfig::DEVICE_ID;
+  document["requestId"] = requestId;
+  document["status"] = status;
+  document["deleted"] = deleted;
+  return enqueueJson(MqttConfig::TOPIC_HISTORY_CLEANUP_ACK, document, 1, false);
+}
+
+bool mqttPublishConfigStateJson(const char* json, size_t length) {
+  if (length > MqttConfig::MAX_INBOUND_PAYLOAD_BYTES) {
+    Serial.println("[mqtt] Config state payload too large");
+    return false;
+  }
+  return enqueuePayload(MqttConfig::TOPIC_CONFIG_STATE, json, length, 1, true);
 }

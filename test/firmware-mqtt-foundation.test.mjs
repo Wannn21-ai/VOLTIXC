@@ -18,12 +18,24 @@ const mqttStateSyncSource = await readFile(
   new URL("../firmware/src/mqtt_state_sync.cpp", import.meta.url),
   "utf8",
 );
+const mqttCloudSyncSource = await readFile(
+  new URL("../firmware/src/mqtt_cloud_sync.cpp", import.meta.url),
+  "utf8",
+);
+const platformio = await readFile(
+  new URL("../firmware/platformio.ini", import.meta.url),
+  "utf8",
+);
 const credentialsExample = await readFile(
   new URL("../firmware/include/credentials.h.example", import.meta.url),
   "utf8",
 );
 const mainSource = await readFile(
   new URL("../firmware/src/main.cpp", import.meta.url),
+  "utf8",
+);
+const storageSource = await readFile(
+  new URL("../firmware/src/storage.cpp", import.meta.url),
   "utf8",
 );
 
@@ -40,6 +52,10 @@ test("MQTT identity and all device01 topics are centralized", () => {
     "event",
     "command",
     "config",
+    "command/ack",
+    "config/state",
+    "history",
+    "history/ack",
   ]) {
     assert.match(mqttConfig, new RegExp(`voltix/device01/${topic}`));
   }
@@ -82,7 +98,7 @@ test("LWT, retain flags, and QoS follow the topic contract", () => {
   );
 });
 
-test("command and config payloads are bounded, parsed, and not wired to control logic", () => {
+test("command/config payloads are bounded and network callbacks only enqueue work", () => {
   assert.match(mqttHeader, /enum class MqttCommandType/);
   assert.match(mqttSource, /deserializeJson\(document, payload, length\)/);
   assert.match(mqttSource, /MAX_INBOUND_PAYLOAD_BYTES/);
@@ -90,22 +106,36 @@ test("command and config payloads are bounded, parsed, and not wired to control 
   assert.match(mqttSource, /strcmp\(commandText, "stop"\)/);
   assert.match(mqttSource, /strcmp\(commandText, "relay"\)/);
   assert.match(mqttSource, /strcmp\(commandText, "reset"\)/);
-  assert.match(mqttSource, /Command parsed but not connected to system logic/);
   assert.doesNotMatch(
     mqttSource,
     /sessionStart|sessionStop|relaySet|factoryReset|systemReset|storageAppendCompletedSession/,
   );
+  assert.match(mqttCloudSyncSource, /mqttSetCommandHandler\(queueCommandFromMqtt\)/);
+  assert.match(mqttCloudSyncSource, /mqttSetConfigHandler\(queueConfigFromMqtt\)/);
+  assert.match(mqttCloudSyncSource, /if \(takeCommand\(command\)\) processCommand\(command\)/);
+  assert.match(mqttCloudSyncSource, /sessionStart\(deviceName\)/);
+  assert.match(mqttCloudSyncSource, /sessionStop\(EndReason::USER_STOP\)/);
 });
 
-test("main integration is minimal and leaves Firebase initialization intact", () => {
-  assert.match(mainSource, /firebaseBegin\(\);\s+mqttBegin\(\);\s+mqttStateSyncBegin\(\);/);
+test("main uses MQTT cloud sync and Firebase transport sources are excluded", () => {
+  assert.match(mainSource, /mqttBegin\(\);\s+mqttCloudSyncBegin\(\);\s+mqttStateSyncBegin\(\);/);
   assert.match(
     mainSource,
     /networkUpdate\(\);\s+mqttLoop\(\);\s+sessionRecoveryUpdate\(\);/,
   );
 
   assert.match(mainSource, /mqttStateSyncUpdate\(\)/);
+  assert.match(mainSource, /mqttCloudSyncUpdate\(\)/);
+  assert.doesNotMatch(mainSource, /firebaseBegin|firebaseUpdate|firebaseSync/);
   assert.doesNotMatch(mainSource, /mqttPublish(?:Status|Telemetry|Session|Event)\(/);
+  for (const source of [
+    "firebase_sync.cpp",
+    "firebase_paths.cpp",
+    "device_auth.cpp",
+    "firebase_integration_scaffold.cpp",
+  ]) {
+    assert.match(platformio, new RegExp(`-<${source.replace(".", "\\.")}>`));
+  }
 });
 
 test("state sync mirrors existing state without controlling the system", () => {
@@ -119,4 +149,11 @@ test("state sync mirrors existing state without controlling the system", () => {
     mqttStateSyncSource,
     /sessionStart\(|sessionStop\(|relaySet\(|storageAppend|sessionRecoveryUpdate\(/,
   );
+});
+
+test("LittleFS history uses the same device identity and waits for backend acknowledgement", () => {
+  assert.match(storageSource, /entry\["deviceId"\] = MqttConfig::DEVICE_ID/);
+  assert.match(storageSource, /mqttPublishHistoryJson\(payload\.c_str\(\), payload\.length\(\)\)/);
+  assert.match(mqttCloudSyncSource, /storageMarkSessionQueued\(historySessionId\)/);
+  assert.doesNotMatch(storageSource, /firebaseUploadHistory|firebaseSet/);
 });

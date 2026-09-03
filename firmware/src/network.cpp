@@ -2,7 +2,7 @@
 #include "config.h"
 #include "credentials.h"
 #include "display.h"
-#include "firebase_sync.h"
+#include "mqtt_cloud_sync.h"
 #include "relay.h"
 #include "session.h"
 #include "state.h"
@@ -258,7 +258,7 @@ void applyPortalConfigFromRequest(bool bumpRevision) {
 
 void syncPortalConfigIfPossible() {
   if (networkIsConnected()) {
-    if (!firebasePushDeviceConfig()) {
+    if (!mqttCloudPublishLocalConfig()) {
       appConfig.configPendingSync = true;
       saveLocalConfig();
       Serial.println("[config] Config pending sync");

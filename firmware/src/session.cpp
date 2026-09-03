@@ -1,6 +1,5 @@
 #include "session.h"
 #include "config.h"
-#include "firebase_sync.h"
 #include "network.h"
 #include "relay.h"
 #include "sensor.h"
@@ -282,21 +281,21 @@ static CompletedSessionSnapshot makeFinalSnapshot(EndReason reason) {
   return snapshot;
 }
 
-static void logHistoryOutcome(const char* sessionId, bool saved, bool pushed, bool pendingSync) {
+static void logHistoryOutcome(const char* sessionId, bool saved, bool queued, bool pendingSync) {
   Serial.print("[history] LittleFS save ");
   Serial.print(saved ? "OK" : "FAIL");
   Serial.print(" sessionId=");
   Serial.println(sessionId);
 
-  Serial.print("[history] Firebase push ");
-  Serial.print(pushed ? "OK" : "FAIL");
+  Serial.print("[history] Cloud queue ");
+  Serial.print(queued ? "QUEUED" : "PENDING");
   Serial.print(" sessionId=");
   Serial.println(sessionId);
 
   Serial.print("[history] pendingSync=");
   Serial.print(pendingSync ? "true" : "false");
   Serial.print(" syncStatus=");
-  Serial.println(pushed && !pendingSync ? "SYNCED" : (saved ? "PENDING" : "UNSAVED"));
+  Serial.println(queued && !pendingSync ? "SYNCED" : (saved ? "PENDING" : "UNSAVED"));
 }
 
 static bool shouldCheckpointState() {
@@ -739,10 +738,10 @@ bool sessionStart(const char* deviceName) {
 
 void sessionSetRemoteContext(const char* uid, const char* sessionId) {
   if (uid != nullptr) {
-    strlcpy(sessionData.uid, uid, sizeof(sessionData.uid)); // UID dari Firebase
+    strlcpy(sessionData.uid, uid, sizeof(sessionData.uid)); // UID dari command backend
   }
   if (sessionId != nullptr && sessionId[0] != '\0') {
-    strlcpy(sessionData.sessionId, sessionId, sizeof(sessionData.sessionId)); // Session ID dari Firebase
+    strlcpy(sessionData.sessionId, sessionId, sizeof(sessionData.sessionId)); // Session ID dari backend
   }
   if (shouldCheckpointState()) {
     sessionWriteCheckpoint(); // Simpan checkpoint jika ada perubahan konteks remote
@@ -869,7 +868,7 @@ void sessionStop(EndReason reason) {
   Serial.print(endReasonToString(reason));
   Serial.print(" saved=");
   Serial.print(saved ? "OK" : "FAIL");
-  Serial.print(" firebase=");
+  Serial.print(" cloud=");
   Serial.println(queued ? "QUEUED" : "PENDING");
 }
 

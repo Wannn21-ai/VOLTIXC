@@ -1,12 +1,12 @@
 import {
   requireAuth, renderShell, fillUserInfo, setSystemStatus,
   showToast, applyTheme, updateChartColors, startStatusWatcher,
-  loadAndApplySettings, isEspOnlineStatus, tr
+  loadAndApplySettings, tr
 } from "./auth-guard.js";
-import { db, ref, onValue, set, push, get } from "./firebase-config.js";
 import { loadDeviceHistory } from "./local-history.js";
 import { getCurrentDevice, readableFirebaseError } from "./user-state.js";
 import { clampRefreshInterval, createMetersUpdateScheduler } from "./dashboard-live-update.js";
+import { authenticatedApi } from "./cloud-api.js";
 import { startMqttLive } from "./mqtt-live.js";
 
 // ================= INIT =================
@@ -24,10 +24,6 @@ try {
   document.querySelector("#no-device-state .empty-state-title").textContent = tr("deviceAccessUnavailable");
   document.querySelector("#no-device-state .empty-state-sub").textContent = readableFirebaseError(error);
 }
-
-// ================= FIREBASE PATHS =================
-const historyRef  = ref(db, `users/${uid}/history`);
-const settingsRef = ref(db, `users/${uid}/settings`);
 
 // ================= SETTINGS =================
 const SETTING_DEFAULTS = {
@@ -47,24 +43,8 @@ settings = await loadAndApplySettings(uid);
 // Refresh settings tiap 10 detik
 setInterval(async () => {
   try {
-    const snap = await get(settingsRef);
-    const remote = snap.exists() ? { ...SETTING_DEFAULTS, ...snap.val() } : { ...settings };
-    const appConfigSnap = selectedDevice
-      ? await get(ref(db, `devices/${selectedDevice.id}/config`))
-      : null;
-    if (appConfigSnap?.exists()) {
-      const shared = appConfigSnap.val() || {};
-      const sharedThreshold = Number(shared.overloadThreshold ?? shared.threshold);
-      const sharedTariff = Number(shared.electricityCostPerKwh ?? shared.tariff ?? shared.tarif);
-      if (Number.isFinite(sharedThreshold) && sharedThreshold > 0) remote.overloadThreshold = sharedThreshold;
-      if (Number.isFinite(sharedTariff) && sharedTariff > 0) remote.tariff = sharedTariff;
-      if (shared.currency) remote.currency = shared.currency;
-      ["overloadWarningPercent", "loadPowerThreshold", "loadCurrentThreshold",
-       "loadRemovedDelaySec", "offlineTimeoutSec", "checkpointIntervalSec"].forEach(key => {
-        const value = Number(shared[key]);
-        if (Number.isFinite(value) && value > 0) remote[key] = value;
-      });
-    }
+    const payload = await authenticatedApi(user, "/api/settings");
+    const remote = { ...SETTING_DEFAULTS, ...(payload.settings || {}) };
     if (JSON.stringify(remote) !== JSON.stringify(settings)) {
       settings = remote;
       localStorage.setItem(`sem_settings_${uid}`, JSON.stringify(settings));
@@ -90,7 +70,7 @@ const SessionState = Object.freeze({
   FINISHED: "FINISHED"
 });
 
-// ================= STATE — FIREBASE DATA =================
+// ================= STATE — DEVICE LIVE DATA =================
 let voltage = 0, current = 0, firebasePower = 0, firebaseTimestamp = 0;
 let firebaseSystemReceivedAtMs = 0;
 let firebaseHeartbeatMs = 0;
@@ -153,6 +133,7 @@ let pendingSessionId = null;
 let pendingStartCommandAt = null;
 let pendingRelayConfirmed = false;
 let pendingUiState = "";
+let pendingCommandId = "";
 
 // ================= STATE — OFFLINE TRACKING =================
 let offlineDetectedAt       = null;
@@ -172,17 +153,16 @@ async function sendRelayCommand(type, payload = {}) {
 
   try {
     const on = type === "START";
-    const commandTimestamp = Date.now();
     const command = {
       ...payload,
-      id: makeId("cmd"),
-      type,
-      uid,
-      createdAt: commandTimestamp,
-      updatedAt: commandTimestamp
+      type
     };
-    await set(ref(db, `devices/${selectedDevice.id}/commands/current`), command);
-    console.log(`[Relay] Command ${on ? "ON" : "OFF"} → Firebase`);
+    const result = await authenticatedApi(user, "/api/device-command", {
+      method: "POST",
+      body: JSON.stringify(command),
+    });
+    pendingCommandId = result.id || "";
+    console.log(`[Relay] Command ${on ? "ON" : "OFF"} accepted by MQTT backend`);
     return true;
   } catch (e) {
     console.warn("[Relay] Command rejected:", e?.message || e);
@@ -197,7 +177,12 @@ async function getHistory() {
 }
 
 async function pushHistory(entry) {
-  try { await push(historyRef, entry); }
+  try {
+    await authenticatedApi(user, "/api/history", {
+      method: "POST",
+      body: JSON.stringify(entry),
+    });
+  }
   catch (e) { console.error("[History] pushHistory gagal:", e); }
 }
 
@@ -1055,30 +1040,6 @@ if (btnStop) {
   });
 }
 
-// ================= FIREBASE LIVE LISTENERS =================
-function timestampSeconds(value) {
-  const timestamp = Number(value || 0);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return 0;
-  return timestamp > 1000000000000 ? Math.floor(timestamp / 1000) : timestamp;
-}
-
-function epochMillis(value) {
-  const timestamp = Number(value || 0);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return 0;
-  if (timestamp > 1000000000000) return timestamp;
-  if (timestamp > 1500000000) return timestamp * 1000;
-  return 0;
-}
-
-function liveTimestampSeconds(finalTimestamp, legacyTimestamp) {
-  if (finalTimestamp !== undefined && finalTimestamp !== null) {
-    return timestampSeconds(finalTimestamp);
-  }
-  const legacy = Number(legacyTimestamp || 0);
-  if (!Number.isFinite(legacy) || legacy <= 0) return 0;
-  return legacy < 1500000000 ? 0 : timestampSeconds(legacy);
-}
-
 function relayIsOn(value) {
   return value === true || String(value || "").toUpperCase() === "ON";
 }
@@ -1167,91 +1128,62 @@ startMqttLive(user, {
     console.info("[mqtt-web] Device event:", event.type || "unknown");
     scheduleMetersUpdate();
   },
+  onCommandAck(ack) {
+    if (!pendingCommandId || ack.id !== pendingCommandId) return;
+    pendingCommandId = "";
+    if (["ERROR", "REJECTED"].includes(String(ack.status || "").toUpperCase())) {
+      showToast(ack.message || "Device rejected the command", "error");
+    }
+    scheduleMetersUpdate();
+  },
 }).catch(error => {
   mqttTransportConnected = false;
-  console.warn("[mqtt-web] Startup failed; using Firebase fallback:", error.message);
+  console.warn("[mqtt-web] Startup failed; using backend polling fallback:", error.message);
 });
 
-if (selectedDevice) {
-  const liveBase = `devices/${selectedDevice.id}/live`;
-
-  onValue(ref(db, `${liveBase}/system`), snapshot => {
-    if (mqttRealtimePreferred()) return;
-    firebaseSystemReceivedAtMs = Date.now();
-    const sys = snapshot.val() || {};
-    firebaseWifiStatus = String(sys.wifiStatus || "");
-    firebaseActiveSsid = String(sys.activeSsid || "");
-    firebaseFirmwareVersion = String(sys.firmwareVersion || "");
-    systemInternet = isEspOnlineStatus(sys);
-    firebaseHeartbeatMs =
-      epochMillis(sys.lastSeen) ||
-      epochMillis(sys.lastSeenAt) ||
-      epochMillis(sys.timestampUnixMs) ||
-      epochMillis(sys.timestamp);
-    firebaseTimestamp = firebaseHeartbeatMs > 0
-      ? Math.floor(firebaseHeartbeatMs / 1000)
-      : liveTimestampSeconds(sys.timestampUnixMs, sys.timestamp);
-    firebaseRelay = relayIsOn(sys.relayState ?? sys.relay);
-    firebaseOffline = sys.offline === true || String(sys.mode || sys.systemMode || "").toUpperCase() === "OFFLINE";
-    firebaseSessionActive = sys.sessionActive ?? firebaseSessionActive;
-    firebaseSessionStartTs = sys.sessionStartTs !== undefined
-      ? timestampSeconds(sys.sessionStartTs)
-      : firebaseSessionStartTs;
-    firebaseElapsedSec = Number(sys.elapsedSec ?? firebaseElapsedSec);
-    firebaseSessionId = sys.sessionId || firebaseSessionId;
-    firebaseSessionUid = sys.uid || firebaseSessionUid;
-    firebaseSystemMode = sys.mode || sys.systemMode || null;
-    firebaseSessionState = sys.sessionState || firebaseSessionState;
-    firebasePendingSync = Number(sys.pendingSync ?? firebasePendingSync);
-    deviceNameFromEsp = sys.deviceName || deviceNameFromEsp;
-    updateTimer();
-    scheduleMetersUpdate();
-  }, showLiveReadError);
-
-  onValue(ref(db, `${liveBase}/device`), snapshot => {
-    if (mqttRealtimePreferred()) return;
-    const dev = snapshot.val() || {};
-    firebaseLiveDeviceAvailable = snapshot.exists();
-    firebaseDeviceConnected = typeof dev.connected === "boolean" ? dev.connected : null;
-    voltage          = Number(dev.voltage || 0);
-    current          = Number(dev.current || 0);
-    firebasePower    = Number(dev.power || 0);
-    firebaseApparent = Number(dev.apparent ?? dev.apparentPower ?? 0);
-    firebasePF       = Number(dev.pf ?? dev.powerFactor ?? 0);
-    firebaseFreq     = Number(dev.frequency || 0);
-    firebaseEnergy   = Number(dev.energy ?? dev.energyKwh ?? 0);
-    firebaseCost     = Number(dev.cost || 0);
-    firebaseTelemetryAtMs =
-      epochMillis(dev.timestamp) ||
-      epochMillis(dev.timestampUnixMs) ||
-      epochMillis(dev.lastSeen) ||
-      firebaseHeartbeatMs;
-    firebaseElapsedSec = Number(dev.duration ?? firebaseElapsedSec ?? 0);
-    firebaseOverload = dev.overload === true;
+async function refreshBackendLive() {
+  if (mqttRealtimePreferred()) return;
+  try {
+    const live = await authenticatedApi(user, "/api/live");
+    const receivedAtMs = Date.parse(live.updated_at || "") || Date.now();
+    const status = live.status || {};
+    const telemetry = live.telemetry || {};
+    const session = live.session || {};
+    firebaseSystemReceivedAtMs = receivedAtMs;
+    firebaseHeartbeatMs = receivedAtMs;
+    firebaseTimestamp = Math.floor(receivedAtMs / 1000);
+    systemInternet = status.online === true;
+    firebaseRelay = relayIsOn(status.relay);
+    firebaseOffline = String(status.mode || "").toUpperCase() === "OFFLINE";
+    firebaseSystemMode = status.mode || firebaseSystemMode;
+    firebaseSessionState = status.sessionState || session.sessionState || firebaseSessionState;
+    firebaseSessionActive = status.sessionActive ?? session.active ?? firebaseSessionActive;
+    firebaseLiveDeviceAvailable = Boolean(live.updated_at);
+    firebaseDeviceConnected = typeof telemetry.valid === "boolean" ? telemetry.valid : null;
+    voltage = Number(telemetry.voltage || 0);
+    current = Number(telemetry.current || 0);
+    firebasePower = Number(telemetry.power || 0);
+    firebaseApparent = Number(telemetry.apparentPower ?? voltage * current);
+    firebasePF = Number(telemetry.powerFactor || 0);
+    firebaseFreq = Number(telemetry.frequency || 0);
+    firebaseEnergy = Number(telemetry.energy || session.energy || 0);
+    firebaseCost = Number(telemetry.cost || session.cost || 0);
+    firebaseElapsedSec = Number(telemetry.duration ?? session.duration ?? firebaseElapsedSec);
+    firebaseOverload = telemetry.overload === true;
+    firebaseTelemetryAtMs = receivedAtMs;
+    firebaseSessionId = session.sessionId || firebaseSessionId;
+    firebaseSessionUid = session.uid || firebaseSessionUid;
+    deviceNameFromEsp = session.deviceName || deviceNameFromEsp;
     updateTimer();
     updateLiveEnergyCheckpoint();
     scheduleMetersUpdate();
-  }, showLiveReadError);
-
-  // Transitional firmware still publishes active-session metadata here.
-  onValue(ref(db, `${liveBase}/session`), snapshot => {
-    if (mqttRealtimePreferred()) return;
-    const session = snapshot.val() || {};
-    firebaseSessionActive = session.active ?? firebaseSessionActive;
-    firebaseSessionStartTs = timestampSeconds(session.startTs ?? session.sessionStartTs ?? firebaseSessionStartTs);
-    firebaseElapsedSec = Number(session.elapsedSec ?? session.duration ?? firebaseElapsedSec);
-    firebaseSessionId = session.sessionId || session.id || firebaseSessionId;
-    firebaseSessionUid = session.uid || firebaseSessionUid;
-    firebaseSessionState = session.sessionState || firebaseSessionState;
-    deviceNameFromEsp = session.deviceName || session.name || deviceNameFromEsp;
-    updateTimer();
-    scheduleMetersUpdate();
-  }, error => {
-    if (error?.code !== "PERMISSION_DENIED" && error?.code !== "database/permission-denied") {
-      console.warn("[Dashboard] Transitional live session unavailable:", error?.message || error);
-    }
-  });
+  } catch (error) {
+    showLiveReadError(error);
+  }
 }
+
+refreshBackendLive();
+setInterval(refreshBackendLive, 5000);
 
 // ================================================================
 // MAIN LOOP

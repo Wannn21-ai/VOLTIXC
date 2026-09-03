@@ -6,8 +6,8 @@ const mainSource = await readFile(
   new URL("../firmware/src/main.cpp", import.meta.url),
   "utf8",
 );
-const firebaseSource = await readFile(
-  new URL("../firmware/src/firebase_sync.cpp", import.meta.url),
+const mqttCloudSource = await readFile(
+  new URL("../firmware/src/mqtt_cloud_sync.cpp", import.meta.url),
   "utf8",
 );
 
@@ -30,14 +30,14 @@ test("command polling uses completion-based state-aware cooldowns", () => {
   const pollEnd = mainSource.indexOf("\nstatic void serviceLocalRealtimeTasks", pollStart);
   const pollSource = mainSource.slice(pollStart, pollEnd);
   assert.equal(
-    pollSource.indexOf("firebasePollCommand()") <
-      pollSource.indexOf("lastFirebaseCommandCompletedMs = millis()"),
+    pollSource.indexOf("mqttCloudSyncUpdate()") <
+      pollSource.indexOf("lastCloudCommandCompletedMs = millis()"),
     true,
   );
-  assert.doesNotMatch(pollSource, /lastFirebaseCommandCompletedMs = now/);
+  assert.doesNotMatch(pollSource, /lastCloudCommandCompletedMs = now/);
 });
 
-test("online loop services local realtime tasks before command and Firebase work", () => {
+test("online loop services local realtime tasks before command and cloud work", () => {
   const loopStart = mainSource.indexOf("void loop()");
   const loopSource = mainSource.slice(loopStart);
   const localServiceIndex = loopSource.indexOf("serviceLocalRealtimeTasks(recoveryActive)");
@@ -57,11 +57,10 @@ test("online loop services local realtime tasks before command and Firebase work
   assert.equal(displayIndex < commandPollIndex, true);
   assert.equal(
     commandPollIndex <
-      loopSource.indexOf("storageSyncPendingHistoryToFirebase(AUTO_HISTORY_SYNC_MAX_UPLOADS)"),
+      loopSource.indexOf("storageSyncPendingHistoryToCloud(AUTO_HISTORY_SYNC_MAX_UPLOADS)"),
     true,
   );
-  assert.equal(commandPollIndex < loopSource.indexOf("firebasePushDeviceConfig()"), true);
-  assert.equal(commandPollIndex < loopSource.indexOf("firebaseReadConfig()"), true);
+  assert.equal(commandPollIndex < loopSource.indexOf("mqttCloudPublishLocalConfig()"), true);
 });
 
 test("local tasks gate command polls and background work without post-work repoll", () => {
@@ -76,9 +75,9 @@ test("local tasks gate command polls and background work without post-work repol
   const loopSource = mainSource.slice(loopStart);
   assert.match(loopSource, /const bool localTasksDueAfterCommand = localRealtimeTasksDue\(recoveryActive\)/);
   assert.match(loopSource, /const bool waitingLoad = sessionData\.state == SessionState::WAITING_LOAD/);
-  assert.match(loopSource, /commandPollRan &&\s+!waitingLoad[\s\S]*firebasePublishLive\(\)/);
+  assert.match(loopSource, /commandPollRan &&\s+!waitingLoad[\s\S]*mqttStateSyncUpdate\(\)/);
   assert.match(loopSource, /commandPollRan &&\s+!localTasksDueAfterCommand/);
-  assert.doesNotMatch(loopSource, /if \(backgroundFirebaseWorkRan\)/);
+  assert.doesNotMatch(loopSource, /firebase/);
 });
 
 test("WAITING_LOAD validates immediately after each fast sensor update", () => {
@@ -93,11 +92,10 @@ test("WAITING_LOAD validates immediately after each fast sensor update", () => {
   assert.match(serviceSource, /if \(validateAfterSensor \|\|[\s\S]*sessionUpdate\(\)/);
 });
 
-test("command poll and command HTTP timing diagnostics are present", () => {
-  assert.match(firebaseSource, /command poll started millis=/);
-  assert.match(firebaseSource, /command poll completed millis=/);
-  assert.match(firebaseSource, /command HTTP duration millis=/);
-  assert.match(firebaseSource, /accepted ageMs=/);
+test("command queue and local task timing diagnostics are present", () => {
+  assert.match(mqttCloudSource, /START received millis=/);
+  assert.match(mqttCloudSource, /STOP received millis=/);
+  assert.match(mqttCloudSource, /Expired command ignored/);
   assert.match(mainSource, /sensor update millis=/);
   assert.match(mainSource, /session update millis=/);
   assert.match(mainSource, /skipped command poll reason=/);

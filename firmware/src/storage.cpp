@@ -1,6 +1,7 @@
 #include "storage.h"
 #include "config.h"
-#include "firebase_sync.h"
+#include "mqtt_config.h"
+#include "mqtt_manager.h"
 #include "network.h"
 #include "state.h"
 #include "time_sync.h"
@@ -328,7 +329,7 @@ bool storageAppendCompletedSession(const CompletedSessionSnapshot& snapshot) {
 
   entry["id"] = snapshot.id;
   entry["sessionId"] = snapshot.sessionId;
-  entry["deviceId"] = Config::DEVICE_ID;
+  entry["deviceId"] = MqttConfig::DEVICE_ID;
   entry["uid"] = snapshot.uid;
   entry["name"] = snapshot.deviceName;
   entry["offlineSession"] = snapshot.offlineSession;
@@ -783,6 +784,10 @@ bool storageMarkSessionQueued(const char* sessionId) {
   Serial.print(sessionId);
   Serial.print(" ");
   Serial.println(saved ? "OK" : "FAIL");
+  if (saved) {
+    const int pendingCount = storageCountPendingHistory();
+    pendingHistorySyncRequested = pendingCount < 0 || pendingCount > 0;
+  }
   return saved;
 }
 
@@ -906,15 +911,13 @@ bool storageUploadFastCompletedSession() {
 
   Serial.print("[history] fast upload started sessionId=");
   Serial.println(sessionId);
-  entry["syncStatus"] = "SYNCED";
-  entry["pendingSync"] = false;
-  applySyncMetadata(entry);
-  const bool pushed = firebasePushCompletedSession(entry);
-  if (pushed && writeSessionDocument(path, entry)) {
+  String payload;
+  serializeJson(entry, payload);
+  const bool queued = mqttPublishHistoryJson(payload.c_str(), payload.length());
+  if (queued) {
     fastHistoryUploadRequested = false;
-    const int pendingCount = storageCountPendingHistory();
-    pendingHistorySyncRequested = pendingCount < 0 || pendingCount > 0;
-    Serial.print("[history] fast upload OK sessionId=");
+    pendingHistorySyncRequested = true;
+    Serial.print("[history] fast MQTT queue OK; awaiting backend ACK sessionId=");
     Serial.println(sessionId);
     return true;
   }
@@ -928,7 +931,7 @@ bool storageUploadFastCompletedSession() {
   return false;
 }
 
-bool storageSyncPendingHistoryToFirebase(unsigned int maxUploads) {
+bool storageSyncPendingHistoryToCloud(unsigned int maxUploads) {
   if (!mounted) {
     Serial.println("[storage] Cannot sync pending history, LittleFS is not mounted");
     return false;
@@ -1007,29 +1010,18 @@ bool storageSyncPendingHistoryToFirebase(unsigned int maxUploads) {
     Serial.print("/");
     Serial.println(maxUploads);
 
-    entry["syncStatus"] = "SYNCED";
-    entry["pendingSync"] = false;
-    applySyncMetadata(entry);
-    const bool pushed = firebasePushCompletedSession(entry);
-    Serial.print("[history] Firebase push ");
-    Serial.print(pushed ? "OK" : "FAIL");
+    String payload;
+    serializeJson(entry, payload);
+    const bool queued = mqttPublishHistoryJson(payload.c_str(), payload.length());
+    Serial.print("[history] MQTT queue ");
+    Serial.print(queued ? "OK" : "FAIL");
     Serial.print(" sessionId=");
     Serial.println(sessionId[0] == '\0' ? "(unknown)" : sessionId);
-    if (pushed) {
-      const bool saved = writeSessionDocument(path.c_str(), entry);
-      cycleSaveOk = cycleSaveOk && saved;
-      if (saved) {
-        uploadedCount++;
-      } else {
-        failedCount++;
-      }
-      Serial.print(saved
-        ? "[history] pendingSync=false syncStatus=SYNCED sessionId="
-        : "[history] Local sync mark failed; session file remains pending sessionId=");
+    if (queued) {
+      uploadedCount++;
+      Serial.print("[history] awaiting backend ACK sessionId=");
       Serial.println(sessionId[0] == '\0' ? "(unknown)" : sessionId);
-      if (!saved) {
-        break;
-      }
+      break;
     } else {
       failedCount++;
       Serial.print("[history] pendingSync=true syncStatus=PENDING sessionId=");
@@ -1038,7 +1030,7 @@ bool storageSyncPendingHistoryToFirebase(unsigned int maxUploads) {
     }
   }
 
-  const int remaining = pending - static_cast<int>(uploadedCount);
+  const int remaining = pending;
   pendingHistorySyncRequested = remaining > 0;
   Serial.print("[history] sync cycle uploaded=");
   Serial.print(uploadedCount);

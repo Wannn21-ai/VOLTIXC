@@ -30,7 +30,7 @@ test("web MQTT credentials stay server-side until authenticated config request",
   assert.match(envExample, /MQTT_WEB_USERNAME=/);
   assert.match(envExample, /Never reuse the ESP32 credential/);
   assert.match(build, /node_modules["],\s*["']mqtt["],\s*["']dist["],\s*["']mqtt\.min\.js/);
-  assert.match(endpoint, /verifyIdToken\(idToken, true\)/);
+  assert.match(endpoint, /verifyWebUser/);
   assert.match(endpoint, /Cache-Control", "no-store, private"/);
   assert.doesNotMatch(endpoint, /console\.(?:log|warn|error)/);
 });
@@ -43,23 +43,26 @@ test("MQTT.js reconnects and subscribes with topic-specific QoS", () => {
   assert.match(client, /\[topics\.telemetry\]: \{ qos: 0 \}/);
   assert.match(client, /\[topics\.session\]: \{ qos: 1 \}/);
   assert.match(client, /\[topics\.event\]: \{ qos: 1 \}/);
+  assert.match(client, /\[topics\.commandAck\]: \{ qos: 1 \}/);
   assert.match(client, /MAX_PAYLOAD_BYTES = 8192/);
   assert.match(client, /payload deviceId mismatch/);
 });
 
-test("dashboard prefers fresh MQTT and retains Firebase live fallback", () => {
+test("dashboard prefers fresh MQTT and uses authenticated backend fallback", () => {
   assert.match(dashboard, /startMqttLive\(user, \{/);
   assert.match(dashboard, /function mqttRealtimePreferred/);
   assert.match(dashboard, /if \(mqttRealtimePreferred\(\)\) return;/);
   assert.match(dashboard, /const mqttPreferred = mqttRealtimePreferred\(nowMs\)/);
   assert.match(dashboard, /mqttStatusOnline === true/);
-  assert.match(dashboard, /onValue\(ref\(db, `\$\{liveBase\}\/system`/);
-  assert.match(dashboard, /onValue\(ref\(db, `\$\{liveBase\}\/device`/);
+  assert.match(dashboard, /authenticatedApi\(user, "\/api\/live"\)/);
+  assert.doesNotMatch(dashboard, /firebase-database|onValue\(|\bref\(db/);
 });
 
-test("START and STOP remain on the reviewed Firebase command path", () => {
+test("START and STOP use authenticated backend MQTT command endpoint", () => {
   assert.match(dashboard, /async function sendRelayCommand/);
-  assert.match(dashboard, /devices\/\$\{selectedDevice\.id\}\/commands\/current/);
+  assert.match(dashboard, /authenticatedApi\(user, "\/api\/device-command"/);
+  assert.match(dashboard, /method: "POST"/);
+  assert.doesNotMatch(dashboard, /commands\/current|firebase-database/);
   assert.doesNotMatch(dashboard, /publishCommand|TOPIC_COMMAND/);
 });
 

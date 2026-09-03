@@ -1,6 +1,6 @@
 "use strict";
 
-const { getFirebaseAdminServices } = require("./device-token.js");
+const { verifyWebUser } = require("../backend/auth.js");
 
 const MQTT_HOST = "ed7655203a9e419493d52c0b8771c836.s1.eu.hivemq.cloud";
 const MQTT_PORT = 8884;
@@ -10,7 +10,6 @@ const REQUIRED_SERVER_ENV_VARS = [
   "FIREBASE_PROJECT_ID",
   "FIREBASE_CLIENT_EMAIL",
   "FIREBASE_PRIVATE_KEY",
-  "FIREBASE_DATABASE_URL",
   "MQTT_WEB_USERNAME",
   "MQTT_WEB_PASSWORD",
 ];
@@ -33,7 +32,7 @@ function bearerToken(header) {
 
 function createHandler(dependencies = {}) {
   const env = dependencies.env || process.env;
-  const getAdminServices = dependencies.getAdminServices || getFirebaseAdminServices;
+  const verifyUser = dependencies.verifyUser || verifyWebUser;
 
   return async function handler(request, response) {
     if (request.method !== "GET") {
@@ -50,15 +49,8 @@ function createHandler(dependencies = {}) {
       return sendJson(response, 401, { error: "authentication_required" });
     }
 
-    let services;
     try {
-      services = await getAdminServices(env);
-    } catch {
-      return sendJson(response, 503, { error: "mqtt_config_unavailable" });
-    }
-
-    try {
-      const decoded = await services.auth.verifyIdToken(idToken, true);
+      const decoded = await verifyUser(request, { ...dependencies, env });
       if (!decoded?.uid) {
         return sendJson(response, 401, { error: "authentication_required" });
       }

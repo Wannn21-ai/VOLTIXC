@@ -1,10 +1,8 @@
-import {
-  auth, db, ref, onValue, get,
-  FIREBASE_CONFIGURED, localUser
-} from "./firebase-config.js";
+import { auth, FIREBASE_CONFIGURED, localUser } from "./firebase-config.js";
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { authenticatedApi } from "./cloud-api.js";
 import { importCompletedSessionsForCurrentUser } from "./local-history.js";
-import { ensureInitialUserState, getCurrentDevice } from "./user-state.js";
+import { ensureInitialUserState } from "./user-state.js";
 
 // ── Auth guard ────────────────────────────────────
 export function requireAuth() {
@@ -202,7 +200,7 @@ Object.assign(LANG.en, {
   dashboardLinkLastKnown: "Using last known ESP32 update.",
   dashboardLinkWaitingFirst: "Waiting for first live packet.",
   dashboardNoDeviceTitle: "Device unavailable",
-  dashboardNoDeviceSub: "Check Firebase configuration and try again.",
+  dashboardNoDeviceSub: "Check cloud configuration and try again.",
   dashboardLiveUnavailable: "Device live data unavailable",
   dashboardCurrentSession: "Current session",
   dashboardEnergySummary: "Energy Summary",
@@ -339,7 +337,7 @@ Object.assign(LANG.en, {
   historyDeviceLocalCleared: "Device local history cleared",
   historyResolveSourceFail: "Unable to resolve history source",
   historyResolveDeviceFail: "Unable to resolve device history",
-  historyDeleteDenied: "Delete denied by Firebase rules",
+  historyDeleteDenied: "History delete was denied by the cloud API",
   historyCleanupRequestFailed: "Cloud history deleted. Device cleanup request failed.",
   historyDeleteFailed: "Failed to delete",
   historyNoExportData: "No data to export",
@@ -542,7 +540,7 @@ Object.assign(LANG.id, {
   dashboardLinkLastKnown: "Menggunakan update ESP32 terakhir.",
   dashboardLinkWaitingFirst: "Menunggu paket data langsung pertama.",
   dashboardNoDeviceTitle: "Device tidak tersedia",
-  dashboardNoDeviceSub: "Periksa konfigurasi Firebase lalu coba lagi.",
+  dashboardNoDeviceSub: "Periksa konfigurasi cloud lalu coba lagi.",
   dashboardLiveUnavailable: "Data langsung device tidak tersedia",
   dashboardCurrentSession: "Sesi saat ini",
   dashboardEnergySummary: "Ringkasan Energi",
@@ -679,7 +677,7 @@ Object.assign(LANG.id, {
   historyDeviceLocalCleared: "Riwayat lokal device dibersihkan",
   historyResolveSourceFail: "Sumber riwayat tidak dapat ditentukan",
   historyResolveDeviceFail: "Riwayat device tidak dapat ditentukan",
-  historyDeleteDenied: "Penghapusan ditolak oleh Firebase rules",
+  historyDeleteDenied: "Penghapusan history ditolak oleh cloud API",
   historyCleanupRequestFailed: "Riwayat cloud dihapus. Request cleanup device gagal.",
   historyDeleteFailed: "Gagal menghapus",
   historyNoExportData: "Tidak ada data untuk diekspor",
@@ -1056,7 +1054,7 @@ export function applyLanguage(lang) {
 }
 
 // ================================================================
-// Shell render — sekarang load settings dari Firebase/localStorage
+// Shell render — settings berasal dari cloud API/localStorage.
 // lalu apply theme + language sebelum render selesai
 // ================================================================
 export function renderShell(activePage, pageTitle) {
@@ -1148,7 +1146,7 @@ export function renderShell(activePage, pageTitle) {
 
 // ================================================================
 // loadAndApplySettings — dipanggil oleh setiap halaman setelah
-// requireAuth(). Membaca settings dari cache → Firebase, lalu
+// requireAuth(). Membaca settings dari cache lalu cloud API.
 // apply theme + language ke semua elemen di halaman saat ini.
 // ================================================================
 export async function loadAndApplySettings(uid) {
@@ -1180,11 +1178,11 @@ export async function loadAndApplySettings(uid) {
   applyTheme(settings.theme);
   applyLanguage(settings.language);
 
-  // 2. Fetch dari Firebase (sumber kebenaran)
+  // 2. Fetch dari backend PostgreSQL (sumber kebenaran)
   try {
-    const snap = await get(ref(db, `users/${uid}/settings`));
-    if (snap.exists()) { // Check if settings exist in Firebase
-      const remote = { ...DEFAULTS, ...snap.val() }; // Merge remote settings with defaults
+    const payload = await authenticatedApi(auth.currentUser, "/api/settings");
+    if (payload.settings && Object.keys(payload.settings).length > 0) {
+      const remote = { ...DEFAULTS, ...payload.settings };
       // Sync to localStorage for immediate access by other pages and devices
       localStorage.setItem(`sem_settings_${uid}`, JSON.stringify(remote)); 
       // Apply theme and language if they have changed from the cached version
@@ -1193,33 +1191,7 @@ export async function loadAndApplySettings(uid) {
       settings = remote; // Update current settings to the remote version
     }
   } catch (e) {
-    console.warn("[SEM] Gagal load settings dari Firebase:", e);
-  }
-
-  try {
-    const currentDevice = await getCurrentDevice(uid);
-    if (!currentDevice) return settings;
-    const appSnap = await get(ref(db, `devices/${currentDevice.id}/config`));
-    if (appSnap.exists()) {
-      const shared = appSnap.val() || {};
-      const sharedThreshold = Number(shared.overloadThreshold ?? shared.threshold);
-      const sharedTariff = Number(shared.electricityCostPerKwh ?? shared.tariff ?? shared.tarif);
-      const next = { ...settings };
-      if (Number.isFinite(sharedThreshold) && sharedThreshold > 0) next.overloadThreshold = sharedThreshold;
-      if (Number.isFinite(sharedTariff) && sharedTariff > 0) next.tariff = sharedTariff;
-      if (shared.currency) next.currency = shared.currency;
-      ["overloadWarningPercent", "loadPowerThreshold", "loadCurrentThreshold",
-       "loadRemovedDelaySec", "offlineTimeoutSec", "checkpointIntervalSec"].forEach(key => {
-        const value = Number(shared[key]);
-        if (Number.isFinite(value) && value > 0) next[key] = value;
-      });
-      if (JSON.stringify(next) !== JSON.stringify(settings)) {
-        settings = next;
-        localStorage.setItem(`sem_settings_${uid}`, JSON.stringify(settings));
-      }
-    }
-  } catch (e) {
-    console.warn("[SEM] Gagal load config global:", e);
+    console.warn("[SEM] Gagal load settings dari backend:", e);
   }
 
   return settings;
@@ -1252,23 +1224,19 @@ export function setSystemStatus(status) {
   text.textContent = online ? "Online" : "Offline";
 }
 
-// ── Firebase status watcher ───────────────────────
+// ── Backend status watcher ────────────────────────
 export function startStatusWatcher() {
-  getCurrentDevice(auth.currentUser?.uid)
-    .then(currentDevice => {
-      if (!currentDevice) {
-        setSystemStatus(false);
-        return;
-      }
-      onValue(ref(db, `devices/${currentDevice.id}/live/system`), snapshot => {
-        const sys = snapshot.val() || {};
-        setSystemStatus(sys);
-      });
-    })
-    .catch(error => {
-      console.warn("[Status] Device status unavailable:", error?.code || error?.message || error);
+  const refresh = async () => {
+    try {
+      const live = await authenticatedApi(auth.currentUser, "/api/live");
+      setSystemStatus(live.status || false);
+    } catch (error) {
+      console.warn("[Status] Device status unavailable:", error?.message || error);
       setSystemStatus(false);
-    });
+    }
+  };
+  refresh();
+  return setInterval(refresh, 5000);
 }
 
 // ── Toast ─────────────────────────────────────────
